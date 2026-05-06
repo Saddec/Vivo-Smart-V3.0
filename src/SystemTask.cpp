@@ -152,6 +152,17 @@ void checkPrayerTimes() {
     if (millis() - adhanStartTime > 660000UL) setLedState(LED_IDLE);
 }
 
+void playStartupAlert() {
+    Preferences prefs;
+    prefs.begin("startup", true);
+    bool enabled = prefs.getBool("enabled", false);
+    String file = prefs.getString("file", "");
+    prefs.end();
+    if (enabled && file.length() > 0) {
+        sendPlayCommand(file.c_str(), 1, 0); // priority 1 (alert)
+    }
+}
+
 void systemTask(void *pvParameters) {
     currentPrayerConfig.latitude = 30.0444; currentPrayerConfig.longitude = 31.2357;
     currentPrayerConfig.timezone = 2; currentPrayerConfig.method = 0;
@@ -164,6 +175,8 @@ void systemTask(void *pvParameters) {
     maghribManager.begin();
     scheduler.begin();
     initGPIO();
+    
+    playStartupAlert(); 
 
     for (;;) {
         updateLEDTask();

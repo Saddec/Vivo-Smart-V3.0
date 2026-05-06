@@ -5,6 +5,7 @@
 #include "PrayerTimesEngine.h"
 #include "AudioTask.h"   // حتى يرى AudioMessage
 
+void playStartupAlert();
 void systemTask(void *pvParameters);
 void sendPlayCommand(const char* file, int priority, int duration);
 void setupWiFi();

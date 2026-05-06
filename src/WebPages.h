@@ -114,6 +114,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> المشغل</a>
     <a href="#maghrib" onclick="showTab('maghrib')"><i class="fas fa-sun"></i> المغرب</a>
     <a href="#manual" onclick="showTab('manual')"><i class="fas fa-edit"></i> ضبط يدوي</a>
+    <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
     <a href="#csv" onclick="showTab('csv')"><i class="fas fa-file-csv"></i> CSV</a>
     <span class="version">v3.0 ESP32-S3</span>
   </nav>
@@ -319,6 +320,25 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         <div id="otaStatus"></div>
       </div>
     </div>
+    <div id="tab-startup" class="tab">
+  <h1><i class="fas fa-power-off"></i> تنبيه بدء التشغيل</h1>
+  <div class="glass-card">
+    <h3>تفعيل التنبيه</h3>
+    <label class="switch">
+      <input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()">
+      <span class="slider"></span>
+    </label>
+    <span id="startupAlertLabel">تشغيل ملف صوتي عند بدء تشغيل الجهاز</span>
+  </div>
+  <div class="glass-card">
+    <h3>اختيار الملف</h3>
+    <select id="startupFileSelect">
+      <option value="">اختر ملف</option>
+    </select>
+    <button class="btn" onclick="saveStartupSettings()"><i class="fas fa-save"></i> حفظ</button>
+    <div id="startupSaveStatus"></div>
+  </div>
+</div>
 
     <!-- CSV -->
     <div id="tab-csv" class="tab">
@@ -386,6 +406,59 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     function stopAudio() { fetch('/api/stop'); }
     function triggerAdhan(p) { fetch(`/api/adhan?prayer=${p}`); }
     function triggerIqama() { fetch('/api/iqama'); }
+
+    // --- Startup Alert ---
+function loadStartupSettings() {
+  fetch('/api/startup/status')
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('startupAlertEnabled').checked = data.enabled;
+      document.getElementById('startupAlertLabel').innerText = data.enabled ? 'مفعل' : 'معطل';
+      // populate file list
+      fetch('/api/files/list?dir=/')
+        .then(r => r.json())
+        .then(files => {
+          let sel = document.getElementById('startupFileSelect');
+          sel.innerHTML = '<option value="">اختر ملف</option>';
+          files.forEach(f => {
+            if (!f.isDirectory) {
+              let o = document.createElement('option');
+              o.value = f.name;
+              o.textContent = f.name;
+              sel.appendChild(o);
+            }
+          });
+          // set selected if matches
+          if (data.file) sel.value = data.file;
+        });
+    });
+}
+
+function toggleStartupAlert() {
+  let en = document.getElementById('startupAlertEnabled').checked;
+  document.getElementById('startupAlertLabel').innerText = en ? 'مفعل' : 'معطل';
+}
+
+function saveStartupSettings() {
+  let enabled = document.getElementById('startupAlertEnabled').checked;
+  let file = document.getElementById('startupFileSelect').value;
+  fetch('/api/startup/save', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: enabled, file: file})
+  })
+  .then(r => r.text())
+  .then(msg => {
+    document.getElementById('startupSaveStatus').innerHTML = '<div class="alert alert-success">'+msg+'</div>';
+  });
+}
+
+// استدعاء تحميل الإعدادات عند فتح التبويب
+window.addEventListener('load', function() {
+  if (document.getElementById('startupFileSelect')) {
+    loadStartupSettings();
+  }
+});
 
     // WiFi
     function scanWiFi() {

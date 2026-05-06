@@ -290,6 +290,34 @@ void startWebServer() {
         }
         r->send(200);
     });
+    // ========== Startup Alert APIs ==========
+server.on("/api/startup/status", HTTP_GET, [](AsyncWebServerRequest *r){
+    Preferences prefs;
+    prefs.begin("startup", true);
+    bool enabled = prefs.getBool("enabled", false);
+    String file = prefs.getString("file", "");
+    prefs.end();
+    DynamicJsonDocument doc(128);
+    doc["enabled"] = enabled;
+    doc["file"] = file;
+    String json;
+    serializeJson(doc, json);
+    r->send(200, "application/json", json);
+});
+
+server.on("/api/startup/save", HTTP_POST, [](AsyncWebServerRequest *r){
+    if (!r->hasArg("plain")) { r->send(400); return; }
+    DynamicJsonDocument doc(128);
+    deserializeJson(doc, r->arg("plain"));
+    bool enabled = doc["enabled"] | false;
+    String file = doc["file"] | "";
+    Preferences prefs;
+    prefs.begin("startup", false);
+    prefs.putBool("enabled", enabled);
+    prefs.putString("file", file);
+    prefs.end();
+    r->send(200, "text/plain", "تم حفظ إعدادات بدء التشغيل");
+});
 
     server.begin();
 }
