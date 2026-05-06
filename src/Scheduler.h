@@ -6,20 +6,21 @@
 
 struct ScheduledAlert {
     String fileName;
-    String type; // "daily", "weekly", "monthly", "specific", "prayer_relative"
+    String type; // daily, weekly, monthly, specific, prayer_relative
     int hour, minute;
     int dayOfWeek;
     int dayOfMonth;
     String specificDate;
     int durationSec;
     bool enabled;
+    uint8_t volume = 20; // 0-30, individual volume for this alert
 
-    // new fields for prayer-relative alerts
+    // prayer-relative fields
     bool isPrayerRelative = false;
-    int prayerIndex = 0;       // 0=fajr,1=dhuhr,2=asr,3=maghrib,4=isha
-    int offsetSeconds = 0;     // positive = after prayer, negative = before
-    String validFrom;          // optional start date "YYYY-MM-DD"
-    String validTo;            // optional end date "YYYY-MM-DD"
+    int prayerIndex = 0;
+    int offsetSeconds = 0;
+    String validFrom;
+    String validTo;
 };
 
 class Scheduler {

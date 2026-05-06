@@ -114,8 +114,8 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> المشغل</a>
     <a href="#maghrib" onclick="showTab('maghrib')"><i class="fas fa-sun"></i> المغرب</a>
     <a href="#manual" onclick="showTab('manual')"><i class="fas fa-edit"></i> ضبط يدوي</a>
-    <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
     <a href="#csv" onclick="showTab('csv')"><i class="fas fa-file-csv"></i> CSV</a>
+    <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
     <span class="version">v3.0 ESP32-S3</span>
   </nav>
   <main class="main-content" id="mainContent">
@@ -232,6 +232,9 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         </select>
         <div id="scheduleExtraFields"></div>
         <label>الوقت</label><input type="time" id="scheduleTime">
+        <label>مستوى الصوت (0-30)</label>
+        <input type="range" id="scheduleVolume" min="0" max="30" value="20" oninput="document.getElementById('scheduleVolumeValue').innerText=this.value">
+        <span id="scheduleVolumeValue">20</span>
         <button class="btn" onclick="addSchedule()">حفظ</button>
       </div>
       <div class="glass-card"><h3>التنبيهات المجدولة</h3><ul id="scheduleList"></ul></div>
@@ -320,25 +323,6 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         <div id="otaStatus"></div>
       </div>
     </div>
-    <div id="tab-startup" class="tab">
-  <h1><i class="fas fa-power-off"></i> تنبيه بدء التشغيل</h1>
-  <div class="glass-card">
-    <h3>تفعيل التنبيه</h3>
-    <label class="switch">
-      <input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()">
-      <span class="slider"></span>
-    </label>
-    <span id="startupAlertLabel">تشغيل ملف صوتي عند بدء تشغيل الجهاز</span>
-  </div>
-  <div class="glass-card">
-    <h3>اختيار الملف</h3>
-    <select id="startupFileSelect">
-      <option value="">اختر ملف</option>
-    </select>
-    <button class="btn" onclick="saveStartupSettings()"><i class="fas fa-save"></i> حفظ</button>
-    <div id="startupSaveStatus"></div>
-  </div>
-</div>
 
     <!-- CSV -->
     <div id="tab-csv" class="tab">
@@ -365,6 +349,27 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         <h3>الشهور المحملة</h3>
         <div id="loadedMonthsList"></div>
         <button class="btn" onclick="loadLoadedMonths()">تحديث</button>
+      </div>
+    </div>
+
+    <!-- Startup Alert -->
+    <div id="tab-startup" class="tab">
+      <h1><i class="fas fa-power-off"></i> تنبيه بدء التشغيل</h1>
+      <div class="glass-card">
+        <h3>تفعيل التنبيه</h3>
+        <label class="switch">
+          <input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()">
+          <span class="slider"></span>
+        </label>
+        <span id="startupAlertLabel">تشغيل ملف صوتي عند بدء تشغيل الجهاز</span>
+      </div>
+      <div class="glass-card">
+        <h3>اختيار الملف</h3>
+        <select id="startupFileSelect">
+          <option value="">اختر ملف</option>
+        </select>
+        <button class="btn" onclick="saveStartupSettings()"><i class="fas fa-save"></i> حفظ</button>
+        <div id="startupSaveStatus"></div>
       </div>
     </div>
   </main>
@@ -407,59 +412,6 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     function triggerAdhan(p) { fetch(`/api/adhan?prayer=${p}`); }
     function triggerIqama() { fetch('/api/iqama'); }
 
-    // --- Startup Alert ---
-function loadStartupSettings() {
-  fetch('/api/startup/status')
-    .then(r => r.json())
-    .then(data => {
-      document.getElementById('startupAlertEnabled').checked = data.enabled;
-      document.getElementById('startupAlertLabel').innerText = data.enabled ? 'مفعل' : 'معطل';
-      // populate file list
-      fetch('/api/files/list?dir=/')
-        .then(r => r.json())
-        .then(files => {
-          let sel = document.getElementById('startupFileSelect');
-          sel.innerHTML = '<option value="">اختر ملف</option>';
-          files.forEach(f => {
-            if (!f.isDirectory) {
-              let o = document.createElement('option');
-              o.value = f.name;
-              o.textContent = f.name;
-              sel.appendChild(o);
-            }
-          });
-          // set selected if matches
-          if (data.file) sel.value = data.file;
-        });
-    });
-}
-
-function toggleStartupAlert() {
-  let en = document.getElementById('startupAlertEnabled').checked;
-  document.getElementById('startupAlertLabel').innerText = en ? 'مفعل' : 'معطل';
-}
-
-function saveStartupSettings() {
-  let enabled = document.getElementById('startupAlertEnabled').checked;
-  let file = document.getElementById('startupFileSelect').value;
-  fetch('/api/startup/save', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({enabled: enabled, file: file})
-  })
-  .then(r => r.text())
-  .then(msg => {
-    document.getElementById('startupSaveStatus').innerHTML = '<div class="alert alert-success">'+msg+'</div>';
-  });
-}
-
-// استدعاء تحميل الإعدادات عند فتح التبويب
-window.addEventListener('load', function() {
-  if (document.getElementById('startupFileSelect')) {
-    loadStartupSettings();
-  }
-});
-
     // WiFi
     function scanWiFi() {
       fetch('/api/wifi/scan').then(r=>r.json()).then(nets=> {
@@ -490,7 +442,7 @@ window.addEventListener('load', function() {
       });
     }
 
-    // Files
+    // Files (advanced)
     let currentDir = '/';
     function loadFileList(dir = currentDir) {
       currentDir = dir;
@@ -564,7 +516,7 @@ window.addEventListener('load', function() {
         .then(() => { document.getElementById('newFolderName').value=''; loadFileList(currentDir); });
     }
     function populateSelects(files) {
-      ['scheduleFile','musicFile','inputFile','alertForGPIO'].forEach(id => {
+      ['scheduleFile','musicFile','inputFile','alertForGPIO','startupFileSelect'].forEach(id => {
         let sel = document.getElementById(id); if(!sel) return;
         sel.innerHTML = '<option value="">اختر</option>';
         files.forEach(f => { let o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
@@ -575,7 +527,7 @@ window.addEventListener('load', function() {
     function playFile(name) { fetch(`/api/player/play?file=${encodeURIComponent(name)}&duration=0`); }
     loadFileList('/');
 
-    // Scheduler
+    // Scheduler (with volume and prayer-relative)
     function toggleScheduleFields() {
       let type = document.getElementById('scheduleType').value;
       let div = document.getElementById('scheduleExtraFields');
@@ -607,6 +559,7 @@ window.addEventListener('load', function() {
       let type = document.getElementById('scheduleType').value;
       let time = document.getElementById('scheduleTime').value.split(':');
       let data = { file, type, hour: parseInt(time[0]), minute: parseInt(time[1]), enabled: true };
+      data.volume = parseInt(document.getElementById('scheduleVolume').value);
       if(type==='weekly') data.dayOfWeek = parseInt(document.getElementById('weekDay').value);
       else if(type==='monthly') data.dayOfMonth = parseInt(document.getElementById('monthDay').value);
       else if(type==='specific') data.specificDate = document.getElementById('specificDate').value;
@@ -637,6 +590,7 @@ window.addEventListener('load', function() {
             if (a.validFrom) desc += ' من ' + a.validFrom;
             if (a.validTo) desc += ' حتى ' + a.validTo;
           }
+          desc += ' | مستوى الصوت: ' + (a.volume || 20);
           html += `<li>${desc} <button onclick="deleteSchedule(${i})" class="btn btn-danger"><i class="fas fa-trash"></i></button></li>`;
         });
         document.getElementById('scheduleList').innerHTML = html;
@@ -672,14 +626,15 @@ window.addEventListener('load', function() {
     function stopMusic() { fetch('/api/stop'); }
     function adjustMusicVolume(v) { fetch(`/api/volume?level=${v}`); }
 
-    // Maghrib
+    // Maghrib (with volume)
     const days = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
     function loadMaghribAlerts() {
       fetch('/api/maghrib/alerts').then(r=>r.json()).then(arr => {
-        let html='<table style="width:100%"><tr><th>اليوم</th><th>الملف</th><th>المدة (ثانية)</th><th>تفعيل</th></tr>';
+        let html='<table style="width:100%"><tr><th>اليوم</th><th>الملف</th><th>المدة (ث)</th><th>مستوى الصوت</th><th>تفعيل</th></tr>';
         arr.forEach((a,i) => {
           html += `<tr><td>${days[i]}</td><td><select class="maghribFile" data-day="${i}"><option value="">-- لا يوجد --</option></select></td>
             <td><span id="dur-${i}">${a.duration||0}</span></td>
+            <td><input type="range" class="maghribVolume" data-day="${i}" min="0" max="30" value="${a.volume||15}" oninput="document.getElementById('vol-${i}').innerText=this.value"> <span id="vol-${i}">${a.volume||15}</span></td>
             <td><label class="switch"><input type="checkbox" class="maghribEnable" data-day="${i}" ${a.enabled?'checked':''}><span class="slider"></span></label></td></tr>`;
         });
         html += '</table>';
@@ -699,7 +654,8 @@ window.addEventListener('load', function() {
         let day = sel.getAttribute('data-day');
         let file = sel.value;
         let enabled = document.querySelector(`.maghribEnable[data-day='${day}']`).checked;
-        alerts.push({day: parseInt(day), file, enabled});
+        let volume = parseInt(document.querySelector(`.maghribVolume[data-day='${day}']`).value);
+        alerts.push({day: parseInt(day), file, enabled, volume});
       });
       fetch('/api/maghrib/save', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({alerts})})
         .then(() => alert('تم الحفظ'));
@@ -784,11 +740,54 @@ window.addEventListener('load', function() {
     }
     function deleteCSVMonth(month) { if(confirm('حذف شهر '+month+'؟')) fetch('/api/csv/delete?month='+month, {method:'DELETE'}).then(()=>loadLoadedMonths()); }
 
-    // تأكد من تحميل الإعدادات عند فتح التبويبات
+    // Startup Alert
+    function loadStartupSettings() {
+      fetch('/api/startup/status')
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('startupAlertEnabled').checked = data.enabled;
+          document.getElementById('startupAlertLabel').innerText = data.enabled ? 'مفعل' : 'معطل';
+          fetch('/api/files/list?dir=/')
+            .then(r => r.json())
+            .then(files => {
+              let sel = document.getElementById('startupFileSelect');
+              sel.innerHTML = '<option value="">اختر ملف</option>';
+              files.forEach(f => {
+                if (!f.isDirectory) {
+                  let o = document.createElement('option');
+                  o.value = f.name;
+                  o.textContent = f.name;
+                  sel.appendChild(o);
+                }
+              });
+              if (data.file) sel.value = data.file;
+            });
+        });
+    }
+    function toggleStartupAlert() {
+      let en = document.getElementById('startupAlertEnabled').checked;
+      document.getElementById('startupAlertLabel').innerText = en ? 'مفعل' : 'معطل';
+    }
+    function saveStartupSettings() {
+      let enabled = document.getElementById('startupAlertEnabled').checked;
+      let file = document.getElementById('startupFileSelect').value;
+      fetch('/api/startup/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: enabled, file: file})
+      })
+      .then(r => r.text())
+      .then(msg => {
+        document.getElementById('startupSaveStatus').innerHTML = '<div class="alert alert-success">'+msg+'</div>';
+      });
+    }
+
+    // تحميل الإعدادات عند فتح التبويبات المعنية
     window.addEventListener('load', function() {
       if (document.getElementById('manualModeToggle')) loadManualSettings();
       if (document.getElementById('csvModeToggle')) loadCSVStatus();
       if (document.getElementById('maghribAlerts')) loadMaghribAlerts();
+      if (document.getElementById('startupFileSelect')) loadStartupSettings();
     });
   </script>
 </body>

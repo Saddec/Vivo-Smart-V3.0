@@ -89,13 +89,12 @@ String getCurrentDateStr() {
     char buf[11]; snprintf(buf, sizeof(buf), "%04d-%02d-%02d", t.tm_year+1900, t.tm_mon+1, t.tm_mday);
     return String(buf);
 }
-
-void sendPlayCommand(const char* file, int priority, int duration) {
+// SystemTask.cpp
+void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume) {
     strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
-    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority};
+    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume};
     xQueueSend(audioQueue, &msg, 0);
 }
-
 void checkPrayerTimes() {
     time_t now = time(nullptr);
 
@@ -175,7 +174,7 @@ void systemTask(void *pvParameters) {
     maghribManager.begin();
     scheduler.begin();
     initGPIO();
-    
+
     playStartupAlert(); 
 
     for (;;) {

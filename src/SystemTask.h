@@ -3,11 +3,10 @@
 
 #include <Arduino.h>
 #include "PrayerTimesEngine.h"
-#include "AudioTask.h"   // حتى يرى AudioMessage
+#include "AudioTask.h"   // needed for AudioMessage
 
-void playStartupAlert();
 void systemTask(void *pvParameters);
-void sendPlayCommand(const char* file, int priority, int duration);
+void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume = 0);
 void setupWiFi();
 void syncTimeFromNTP();
 String getCurrentTimeStr();

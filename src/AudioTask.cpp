@@ -13,7 +13,7 @@ AudioManager audioManager;
 void AudioManager::begin() {
     SPI.begin(18, 19, 23);
     if (!SD.begin(SD_CS)) {
-        Serial.println("[Audio] فشل تهيئة بطاقة SD!");
+        Serial.println("[Audio] SD Card failed!");
     } else {
         Serial.println("[Audio] SD Card OK.");
     }
@@ -27,10 +27,12 @@ void AudioManager::begin() {
     _customDuration = 0;
 }
 
-bool AudioManager::playFile(const char* path, int priority, uint32_t duration) {
+bool AudioManager::playFile(const char* path, int priority, uint32_t duration, uint8_t volume) {
     if (!_audio) return false;
+    // priority check: do not interrupt higher priority audio
     if (_state == AUDIO_PLAYING && priority < _currentPriority) return false;
     if (_state != AUDIO_IDLE) _audio->stopSong();
+
     String fullPath = "/" + String(path);
     if (!_audio->connecttoSD(fullPath.c_str())) {
         _state = AUDIO_IDLE;
@@ -41,25 +43,71 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration) {
     _currentFile = path;
     _playStartTime = millis();
     _customDuration = duration;
-    if (priority == 3) _audio->setVolume(25);
-    else if (priority == 2) _audio->setVolume(22);
-    else _audio->setVolume(15);
+
+    // volume decision: explicit > priority defaults
+    if (volume > 0) {
+        _audio->setVolume(volume);
+    } else if (priority == 3) { // Adhan
+        _audio->setVolume(25);
+    } else if (priority == 2) { // Iqama
+        _audio->setVolume(22);
+    } else {
+        _audio->setVolume(15);
+    }
     return true;
 }
 
-void AudioManager::setVolume(uint8_t vol) { if (_audio) _audio->setVolume(vol); }
-void AudioManager::stop() { if (_audio) { _audio->stopSong(); _state = AUDIO_IDLE; _currentPriority = 0; _customDuration = 0; } }
-void AudioManager::pause() { if (_audio && _state == AUDIO_PLAYING) { _audio->pauseResume(); _state = AUDIO_PAUSED; } }
-void AudioManager::resume() { if (_audio && _state == AUDIO_PAUSED) { _audio->pauseResume(); _state = AUDIO_PLAYING; } }
+void AudioManager::setVolume(uint8_t vol) {
+    if (_audio) _audio->setVolume(vol);
+}
+
+void AudioManager::stop() {
+    if (_audio) {
+        _audio->stopSong();
+        _state = AUDIO_IDLE;
+        _currentPriority = 0;
+        _customDuration = 0;
+    }
+}
+
+void AudioManager::pause() {
+    if (_audio && _state == AUDIO_PLAYING) {
+        _audio->pauseResume();
+        _state = AUDIO_PAUSED;
+    }
+}
+
+void AudioManager::resume() {
+    if (_audio && _state == AUDIO_PAUSED) {
+        _audio->pauseResume();
+        _state = AUDIO_PLAYING;
+    }
+}
+
 AudioState AudioManager::getState() {
-    if (_state == AUDIO_PLAYING && !_audio->isRunning()) { _state = AUDIO_IDLE; _currentPriority = 0; }
-    if (_state == AUDIO_PLAYING && _customDuration > 0 && (millis() - _playStartTime >= _customDuration * 1000)) stop();
+    if (_state == AUDIO_PLAYING && !_audio->isRunning()) {
+        _state = AUDIO_IDLE;
+        _currentPriority = 0;
+    }
+    if (_state == AUDIO_PLAYING && _customDuration > 0 &&
+        (millis() - _playStartTime >= _customDuration * 1000)) {
+        stop();
+    }
     return _state;
 }
-const char* AudioManager::getCurrentFile() { return _currentFile.c_str(); }
+
+const char* AudioManager::getCurrentFile() {
+    return _currentFile.c_str();
+}
+
 void AudioManager::audioOnStop(void *userData) {
     AudioManager* self = static_cast<AudioManager*>(userData);
-    if (self) { self->_state = AUDIO_IDLE; self->_currentPriority = 0; self->_currentFile = ""; self->_customDuration = 0; }
+    if (self) {
+        self->_state = AUDIO_IDLE;
+        self->_currentPriority = 0;
+        self->_currentFile = "";
+        self->_customDuration = 0;
+    }
 }
 
 void audioTask(void *pvParameters) {
@@ -70,15 +118,28 @@ void audioTask(void *pvParameters) {
             switch (msg.cmd) {
                 case CMD_PLAY_FILE: {
                     const char* path;
-                    if (msg.param1 == 0) path = fileBuffer;
-                    else { static char buf[64]; snprintf(buf, sizeof(buf), "/audio/%04d.mp3", msg.param1); path = buf; }
-                    audioManager.playFile(path, msg.priority, msg.param2);
+                    if (msg.param1 == 0) {
+                        path = fileBuffer;
+                    } else {
+                        static char buf[64];
+                        snprintf(buf, sizeof(buf), "/audio/%04d.mp3", msg.param1);
+                        path = buf;
+                    }
+                    audioManager.playFile(path, msg.priority, msg.param2, msg.volume);
                     break;
                 }
-                case CMD_STOP: audioManager.stop(); break;
-                case CMD_SET_VOLUME: audioManager.setVolume(msg.param1); break;
-                case CMD_PAUSE: audioManager.pause(); break;
-                case CMD_RESUME: audioManager.resume(); break;
+                case CMD_STOP:
+                    audioManager.stop();
+                    break;
+                case CMD_SET_VOLUME:
+                    audioManager.setVolume(msg.param1);
+                    break;
+                case CMD_PAUSE:
+                    audioManager.pause();
+                    break;
+                case CMD_RESUME:
+                    audioManager.resume();
+                    break;
             }
         }
         vTaskDelay(5 / portTICK_PERIOD_MS);
