@@ -1,28 +1,25 @@
 #include "SystemTask.h"
 #include "AudioTask.h"
 #include "PrayerTimesEngine.h"
-#include "Scheduler.h"        // 👈 يوفر extern scheduler
-#include "GPIOManager.h"      // 👈 يوفر initGPIO(), checkGPIOInputs()
-#include "EidMode.h"          // 👈 يوفر isEidMode(), checkEidSchedule()
-#include "MaghribManager.h"   // 👈 يوفر extern maghribManager
-#include "VivoWebServer.h"    // 👈 يوفر startWebServer()
+#include "Scheduler.h"
+#include "GPIOManager.h"
+#include "EidMode.h"
+#include "MaghribManager.h"
+#include "VivoWebServer.h"
+#include "LEDManager.h"
+#include "CSVManager.h"        // NEW
 #include <WiFi.h>
 #include <time.h>
 #include <Preferences.h>
 
-// ... باقي الكود كما في الرد السابق ...
-
-// ---- تعريفات خارجية (من main.cpp) ----
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
 extern char fileBuffer[128];
 
-// ---- إعدادات WiFi الافتراضية ----
 static const char* defaultSSID = "your_ssid";
 static const char* defaultPass = "your_password";
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
-// ---- تعريف المتغيرات العامة المطلوبة ----
 PrayerTimesResult todayPrayer;
 PrayerConfig currentPrayerConfig;
 time_t lastPrayerCalc = 0;
@@ -30,7 +27,29 @@ bool adhanPlayed[5] = {false};
 bool iqamaPlayed[5] = {false};
 unsigned long adhanStartTime = 0;
 
-// ---- دوال WiFi والوقت ----
+String todayHijri;   // used in WebServer
+bool todayHasEvent = false;
+String todayEvent;
+
+// ---------- manual mode helpers ----------
+bool loadManualPrayerTimes(PrayerTimesResult &result) {
+    Preferences prefs;
+    prefs.begin("prayer_manual", true);
+    bool enabled = prefs.getBool("enabled", false);
+    if (!enabled) { prefs.end(); return false; }
+    result.fajr = prefs.getString("fajr", "04:30");
+    result.dhuhr = prefs.getString("dhuhr", "12:00");
+    result.asr = prefs.getString("asr", "15:30");
+    result.maghrib = prefs.getString("maghrib", "18:00");
+    result.isha = prefs.getString("isha", "19:30");
+    result.sunrise = prefs.getString("sunrise", "06:00");
+    result.valid = true;
+    prefs.end();
+    todayHijri = ""; // reset hijri when manual
+    return true;
+}
+
+// ---------- WiFi ----------
 void setupWiFi() {
     WiFi.mode(WIFI_STA);
     prefs.begin("network", true);
@@ -46,57 +65,69 @@ void setupWiFi() {
     String pass = prefs.getString("pass", defaultPass);
     prefs.end();
 
+    setLedState(LED_WIFI_CONNECTING);
     WiFi.begin(ssid.c_str(), pass.c_str());
     int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries < 30) {
-        delay(500);
-        tries++;
-    }
-    if (WiFi.status() != WL_CONNECTED) {
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP("VivoSmart-Setup");
-    }
+    while (WiFi.status() != WL_CONNECTED && tries < 30) { delay(500); tries++; }
+    if (WiFi.status() == WL_CONNECTED) setLedState(LED_WIFI_OK);
+    else { setLedState(LED_ERROR); WiFi.mode(WIFI_AP); WiFi.softAP("VivoSmart-Setup"); }
 }
 
 void syncTimeFromNTP() {
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    setenv("TZ", "EET-2", 1);
-    tzset();
+    setenv("TZ", "EET-2", 1); tzset();
 }
 
 String getCurrentTimeStr() {
-    time_t now = time(nullptr);
-    struct tm t;
-    localtime_r(&now, &t);
-    char buf[6];
-    snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
+    time_t now = time(nullptr); struct tm t; localtime_r(&now, &t);
+    char buf[6]; snprintf(buf, sizeof(buf), "%02d:%02d", t.tm_hour, t.tm_min);
     return String(buf);
 }
 
 String getCurrentDateStr() {
-    time_t now = time(nullptr);
-    struct tm t;
-    localtime_r(&now, &t);
-    char buf[11];
-    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", t.tm_year+1900, t.tm_mon+1, t.tm_mday);
+    time_t now = time(nullptr); struct tm t; localtime_r(&now, &t);
+    char buf[11]; snprintf(buf, sizeof(buf), "%04d-%02d-%02d", t.tm_year+1900, t.tm_mon+1, t.tm_mday);
     return String(buf);
 }
 
-// ---- دالة إرسال الأوامر الصوتية ----
 void sendPlayCommand(const char* file, int priority, int duration) {
     strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
     AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority};
     xQueueSend(audioQueue, &msg, 0);
 }
 
-// ---- فحص وتحغيل الأذان ----
 void checkPrayerTimes() {
     time_t now = time(nullptr);
-    if (now - lastPrayerCalc > 3600) {
-        todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
-        lastPrayerCalc = now;
-        for (int i=0; i<5; i++) { adhanPlayed[i]=false; iqamaPlayed[i]=false; }
+
+    // 1) CSV mode (highest priority)
+    if (CSVManager::isEnabled() && CSVManager::isAvailable()) {
+        static time_t lastCSVLoad = 0;
+        if (now - lastCSVLoad > 60) {
+            DailyData csv = CSVManager::getTodayData();
+            todayPrayer.fajr = csv.fajr;
+            todayPrayer.dhuhr = csv.dhuhr;
+            todayPrayer.asr = csv.asr;
+            todayPrayer.maghrib = csv.maghrib;
+            todayPrayer.isha = csv.isha;
+            todayPrayer.valid = true;
+            todayHijri = ""; // CSV does not contain hijri in this format
+            lastCSVLoad = now;
+        }
     }
+    // 2) manual mode
+    else if (loadManualPrayerTimes(todayPrayer)) {
+        // already filled
+    }
+    // 3) astronomical calculation
+    else {
+        if (now - lastPrayerCalc > 3600) {
+            todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
+            lastPrayerCalc = now;
+            for (int i=0; i<5; i++) { adhanPlayed[i]=false; iqamaPlayed[i]=false; }
+            todayHijri = PrayerTimesEngine::gregorianToHijri(now);
+        }
+    }
+
     if (!todayPrayer.valid) return;
 
     String ct = getCurrentTimeStr();
@@ -108,23 +139,24 @@ void checkPrayerTimes() {
             sendPlayCommand(files[i], 3, 0);
             adhanPlayed[i] = true;
             adhanStartTime = millis();
+            setLedState(LED_ADHAN);
         }
     }
     for (int i=0; i<5; i++) {
         if (adhanPlayed[i] && !iqamaPlayed[i] && (millis() - adhanStartTime > 600000UL) && i != 3) {
             sendPlayCommand("iqama.mp3", 2, 0);
             iqamaPlayed[i] = true;
+            setLedState(LED_IQAMA);
         }
     }
+    if (millis() - adhanStartTime > 660000UL) setLedState(LED_IDLE);
 }
 
-// ---- مهمة النظام الرئيسية (Core 0) ----
 void systemTask(void *pvParameters) {
-    // إعدادات افتراضية لموقع القاهرة
-    currentPrayerConfig.latitude = 30.0444;
-    currentPrayerConfig.longitude = 31.2357;
-    currentPrayerConfig.timezone = 2;
-    currentPrayerConfig.method = 0;
+    currentPrayerConfig.latitude = 30.0444; currentPrayerConfig.longitude = 31.2357;
+    currentPrayerConfig.timezone = 2; currentPrayerConfig.method = 0;
+
+    initLED(); setLedState(LED_BOOTING);
 
     setupWiFi();
     syncTimeFromNTP();
@@ -134,6 +166,7 @@ void systemTask(void *pvParameters) {
     initGPIO();
 
     for (;;) {
+        updateLEDTask();
         checkPrayerTimes();
         if (!isEidMode()) {
             scheduler.checkAndTrigger();
