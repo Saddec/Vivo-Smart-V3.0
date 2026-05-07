@@ -7,6 +7,7 @@
 struct DailyData {
     int day;            // 1-31
     String fajr, shuruk, dhuhr, asr, maghrib, isha;
+    String hijri;   // <-- أضف هذا السطر
 };
 
 class CSVManager {

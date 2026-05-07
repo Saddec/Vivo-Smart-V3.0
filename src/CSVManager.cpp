@@ -1,3 +1,4 @@
+// CSVManager.cpp
 #include "CSVManager.h"
 #include <SD.h>
 #include <Preferences.h>
@@ -20,7 +21,8 @@ std::vector<DailyData> CSVManager::loadMonth(int month, const String& filename) 
         int idx = 0, last = 0;
         for (int i = 0; i < line.length(); i++) {
             if (line[i] == ',') {
-                String cell = line.substring(last, i); cell.trim();
+                String cell = line.substring(last, i);
+                cell.trim();
                 switch (idx) {
                     case 0: d.day = cell.toInt(); break;
                     case 1: d.fajr = cell; break;
@@ -29,12 +31,20 @@ std::vector<DailyData> CSVManager::loadMonth(int month, const String& filename) 
                     case 4: d.asr = cell; break;
                     case 5: d.maghrib = cell; break;
                     case 6: d.isha = cell; break;
+                    case 7: d.hijri = cell; break; // optional hijri column
                 }
-                last = i + 1; idx++;
+                last = i + 1;
+                idx++;
             }
         }
-        String cell = line.substring(last); cell.trim(); d.isha = cell;
-        if (d.day >= 1 && d.day <= 31) data.push_back(d);
+        // last cell (isha or hijri)
+        String cell = line.substring(last);
+        cell.trim();
+        if (idx == 7) d.isha = cell;
+        else if (idx == 8) d.hijri = cell;
+        if (d.day >= 1 && d.day <= 31) {
+            data.push_back(d);
+        }
     }
     f.close();
     monthData[month] = data;
@@ -58,11 +68,15 @@ DailyData CSVManager::getTodayData() {
         if (SD.exists(fname)) loadMonth(month, fname);
         else return DailyData();
     }
-    for (const auto& d : monthData[month]) if (d.day == day) return d;
+    for (const auto& d : monthData[month]) {
+        if (d.day == day) return d;
+    }
     return DailyData();
 }
 
-bool CSVManager::isAvailable() { return getTodayData().day != 0; }
+bool CSVManager::isAvailable() {
+    return getTodayData().day != 0;
+}
 
 bool CSVManager::isEnabled() {
     Preferences prefs;

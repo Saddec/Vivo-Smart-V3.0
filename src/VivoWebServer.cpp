@@ -232,6 +232,32 @@ void startWebServer() {
         sendPlayCommand(r->arg("file").c_str(), 0, r->arg("duration").toInt(), 0);
         r->send(200);
     });
+    // Playlist endpoint (CMD_PLAY_PLAYLIST)
+    server.on("/api/player/playlist", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400); return; }
+        DynamicJsonDocument doc(1024);
+        deserializeJson(doc, r->arg("plain"));
+        JsonArray files = doc["files"];
+        uint8_t volume = doc["volume"] | 15;
+        bool respectAdhan = doc["respectAdhan"] | false;
+        int pauseAfterAdhan = doc["pauseAfterAdhan"] | 120;
+        String list = "";
+        for (String file : files) {
+            if(list.length()>0) list += ",";
+            list += file;
+        }
+        AudioMessage msg;
+        msg.cmd = CMD_PLAY_PLAYLIST;
+        msg.param1 = 0;
+        msg.param2 = 0;
+        msg.priority = 0;
+        msg.volume = volume;
+        uint32_t encoded = (respectAdhan ? 1 : 0) | (pauseAfterAdhan << 1);
+        msg.loopDuration = encoded;
+        strncpy(fileBuffer, list.c_str(), 127);
+        xQueueSend(audioQueue, &msg, 0);
+        r->send(200, "text/plain", "قائمة التشغيل بدأت");
+    });
 
     // --- Prayer Times ---
     server.on("/api/prayer/fetch", HTTP_GET, [](AsyncWebServerRequest *r){
@@ -293,6 +319,20 @@ void startWebServer() {
         r->send(200, "text/plain", "تم ضبط الوقت");
     });
 
+    // --- Adhan file assignment ---
+    server.on("/api/adhan/assign", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400); return; }
+        DynamicJsonDocument doc(256);
+        deserializeJson(doc, r->arg("plain"));
+        Preferences prefs;
+        prefs.begin("adhan_files", false);
+        if(doc.containsKey("fajr")) prefs.putString("fajr", doc["fajr"].as<String>());
+        if(doc.containsKey("adhan")) prefs.putString("adhan", doc["adhan"].as<String>());
+        if(doc.containsKey("iqama")) prefs.putString("iqama", doc["iqama"].as<String>());
+        prefs.end();
+        r->send(200, "text/plain", "تم الحفظ");
+    });
+
     // --- CSV Management ---
     server.on("/api/csv/upload", HTTP_POST, [](AsyncWebServerRequest *r){},
         [](AsyncWebServerRequest *r, String filename, size_t index, uint8_t *data, size_t len, bool final){
@@ -347,7 +387,6 @@ void startWebServer() {
         serializeJson(doc, json);
         r->send(200, "application/json", json);
     });
-
     server.on("/api/startup/save", HTTP_POST, [](AsyncWebServerRequest *r){
         if (!r->hasArg("plain")) { r->send(400); return; }
         DynamicJsonDocument doc(128);
@@ -362,7 +401,7 @@ void startWebServer() {
         r->send(200, "text/plain", "تم حفظ إعدادات بدء التشغيل");
     });
 
-    // --- Scheduler (with volume support) ---
+    // --- Scheduler (with volume, loop, prayer-relative) ---
     server.on("/api/schedule/list", HTTP_GET, [](AsyncWebServerRequest *r){
         r->send(200, "application/json", scheduler.getAlertsJson());
     });
@@ -379,13 +418,13 @@ void startWebServer() {
         a.specificDate = doc["specificDate"] | "";
         a.durationSec = doc["duration"] | 0;
         a.enabled = doc["enabled"] | true;
-        a.volume = doc["volume"] | 20;  // default volume 20
+        a.volume = doc["volume"] | 20;
+        a.loopDuration = doc["loop"] | 0;
         a.isPrayerRelative = doc["isPrayerRelative"] | false;
         a.prayerIndex = doc["prayerIndex"] | 0;
         a.offsetSeconds = doc["offsetSeconds"] | 0;
         a.validFrom = doc["validFrom"] | "";
         a.validTo = doc["validTo"] | "";
-        a.loopDuration = doc["loop"] | 0; // seconds
         scheduler.addAlert(a);
         r->send(200);
     });
@@ -394,7 +433,7 @@ void startWebServer() {
         r->send(200);
     });
 
-    // --- GPIO ---
+    // --- GPIO (Input/output mapping) ---
     server.on("/api/gpio/list", HTTP_GET, [](AsyncWebServerRequest *r){
         r->send(200, "application/json", getGpioMappingsJson());
     });
@@ -409,6 +448,28 @@ void startWebServer() {
         r->send(200);
     });
 
+    // --- GPIO scheduling ---
+    server.on("/api/gpio/schedule/list", HTTP_GET, [](AsyncWebServerRequest *r){
+        r->send(200, "application/json", getGpioSchedulesJson());
+    });
+    server.on("/api/gpio/schedule/add", HTTP_POST, [](AsyncWebServerRequest *r){}, NULL, [](AsyncWebServerRequest *r, uint8_t *d, size_t l, size_t i, size_t t){
+        DynamicJsonDocument doc(512); deserializeJson(doc, d);
+        GpioScheduleEntry e;
+        e.pin = doc["pin"]; e.state = doc["state"] | false;
+        e.type = doc["type"].as<String>();
+        e.startHour = doc["startHour"]; e.startMin = doc["startMin"];
+        e.endHour = doc["endHour"]; e.endMin = doc["endMin"];
+        e.dayOfWeek = doc["dayOfWeek"] | -1; e.dayOfMonth = doc["dayOfMonth"] | -1;
+        e.specificDate = doc["specificDate"].as<String>();
+        e.enabled = doc["enabled"] | true;
+        addGpioSchedule(e);
+        r->send(200);
+    });
+    server.on("/api/gpio/schedule/remove", HTTP_DELETE, [](AsyncWebServerRequest *r){
+        removeGpioSchedule(r->arg("index").toInt());
+        r->send(200);
+    });
+
     // --- Eid ---
     server.on("/api/eid/mode", HTTP_POST, [](AsyncWebServerRequest *r){
         setEidMode(r->arg("enable").toInt());
@@ -418,8 +479,31 @@ void startWebServer() {
         sendPlayCommand("takbeer.mp3", 1, 60, 0);
         r->send(200);
     });
+    server.on("/api/eid/file", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400); return; }
+        DynamicJsonDocument doc(128);
+        deserializeJson(doc, r->arg("plain"));
+        Preferences prefs;
+        prefs.begin("eid", false);
+        prefs.putString("takbeer_file", doc["file"].as<String>());
+        prefs.end();
+        r->send(200, "text/plain", "تم");
+    });
+    server.on("/api/eid/schedule", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400); return; }
+        DynamicJsonDocument doc(512);
+        deserializeJson(doc, r->arg("plain"));
+        Preferences prefs;
+        prefs.begin("eid_sched", false);
+        prefs.putString("type", doc["type"].as<String>());
+        prefs.putInt("before", doc["before"] | 0);
+        prefs.putInt("after", doc["after"] | 0);
+        prefs.putString("custom", doc["custom"] | "");
+        prefs.end();
+        r->send(200, "text/plain", "تم");
+    });
 
-    // --- Maghrib (with volume support) ---
+    // --- Maghrib (with offset, volume, loop) ---
     server.on("/api/maghrib/alerts", HTTP_GET, [](AsyncWebServerRequest *r){
         r->send(200, "application/json", maghribManager.getAlertsJson());
     });
@@ -428,14 +512,25 @@ void startWebServer() {
         JsonArray arr = doc["alerts"];
         for (JsonObject o : arr) {
             int day = o["day"]; String file = o["file"]; bool en = o["enabled"];
-            uint8_t vol = o["volume"] | 15; // default 15 for Maghrib
+            uint8_t vol = o["volume"] | 15;
             uint32_t loopSec = o["loop"] | 0;
-            maghribManager.setLoopForDay(day, loopSec);
             maghribManager.setFileForDay(day, file);
             maghribManager.setEnabledForDay(day, en);
             maghribManager.setVolumeForDay(day, vol);
+            maghribManager.setLoopForDay(day, loopSec);
         }
         r->send(200);
+    });
+    server.on("/api/maghrib/offset", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400); return; }
+        DynamicJsonDocument doc(64);
+        deserializeJson(doc, r->arg("plain"));
+        int offset = doc["offset"] | 1;
+        Preferences prefs;
+        prefs.begin("maghrib", false);
+        prefs.putInt("offset", offset);
+        prefs.end();
+        r->send(200, "text/plain", "تم");
     });
 
     // --- DDNS API (keep existing) ---
@@ -476,27 +571,67 @@ void startWebServer() {
         String json; serializeJson(doc, json);
         r->send(200, "application/json", json);
     });
-    // API لإرجاع قائمة الدول
-server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *r){
-    std::vector<String> countries = PrayerTimesEngine::getCountries();
-    DynamicJsonDocument doc(2048);
-    JsonArray arr = doc.to<JsonArray>();
-    for (const auto& c : countries) arr.add(c);
-    String json; serializeJson(doc, json);
-    r->send(200, "application/json", json);
-});
 
-// API لإرجاع مدن دولة معينة
-server.on("/api/location/cities", HTTP_GET, [](AsyncWebServerRequest *r){
-    if (!r->hasParam("country")) { r->send(400); return; }
-    String country = r->getParam("country")->value();
-    std::vector<String> cities = PrayerTimesEngine::getCities(country);
-    DynamicJsonDocument doc(4096);
-    JsonArray arr = doc.to<JsonArray>();
-    for (const auto& c : cities) arr.add(c);
-    String json; serializeJson(doc, json);
-    r->send(200, "application/json", json);
-});
+    // --- Location (countries/cities for prayer UI) ---
+    server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *r){
+        std::vector<String> countries = PrayerTimesEngine::getCountries();
+        DynamicJsonDocument doc(2048);
+        JsonArray arr = doc.to<JsonArray>();
+        for (const auto& c : countries) arr.add(c);
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
+
+    server.on("/api/location/cities", HTTP_GET, [](AsyncWebServerRequest *r){
+        if (!r->hasParam("country")) { r->send(400); return; }
+        String country = r->getParam("country")->value();
+        std::vector<String> cities = PrayerTimesEngine::getCities(country);
+        DynamicJsonDocument doc(4096);
+        JsonArray arr = doc.to<JsonArray>();
+        for (const auto& c : cities) arr.add(c);
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
+
+    // --- Time & Date (for dashboard) ---
+    server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *r){
+        r->send(200, "text/plain", getCurrentTimeStr());
+    });
+    server.on("/api/date", HTTP_GET, [](AsyncWebServerRequest *r){
+        DynamicJsonDocument doc(128);
+        doc["greg"] = getCurrentDateStr();
+        String hijri;
+        if (CSVManager::isEnabled()) {
+            hijri = CSVManager::getTodayData().hijri;
+        }
+        if (hijri.isEmpty()) {
+            hijri = PrayerTimesEngine::gregorianToHijri(time(nullptr));
+        }
+        doc["hijri"] = hijri;
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
+    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *r){
+        DynamicJsonDocument doc(128);
+        doc["playing"] = (audioManager.getState() != AUDIO_IDLE);
+        doc["file"] = audioManager.getCurrentFile();
+        doc["volume"] = 15; // could be actual volume
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
+
+    // --- Prayer times for dashboard display ---
+    server.on("/api/prayer/times", HTTP_GET, [](AsyncWebServerRequest *r){
+        extern PrayerTimesResult todayPrayer;
+        DynamicJsonDocument doc(200);
+        doc["fajr"] = todayPrayer.fajr;
+        doc["dhuhr"] = todayPrayer.dhuhr;
+        doc["asr"] = todayPrayer.asr;
+        doc["maghrib"] = todayPrayer.maghrib;
+        doc["isha"] = todayPrayer.isha;
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
 
     server.begin();
 }
