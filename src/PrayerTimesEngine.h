@@ -1,13 +1,14 @@
+// PrayerTimesEngine.h
 #ifndef PRAYERTIMESENGINE_H
 #define PRAYERTIMESENGINE_H
 
 #include <Arduino.h>
 #include <time.h>
+#include <vector>
 
 struct PrayerTimesResult {
-    bool valid = false;
-    String fajr, dhuhr, asr, maghrib, isha;
-     String sunrise; 
+    bool valid;
+    String fajr, sunrise, dhuhr, asr, maghrib, isha;
 };
 
 struct PrayerConfig {
@@ -22,6 +23,14 @@ struct PrayerConfig {
     int offsetIsha;
 };
 
+struct CityInfo {
+    String country;
+    String city;
+    float lat;
+    float lng;
+    int tz;
+};
+
 class PrayerTimesEngine {
 public:
     static PrayerTimesResult calculate(time_t date, const PrayerConfig& config);
@@ -29,8 +38,10 @@ public:
     static String gregorianToHijri(time_t date);
     static void syncTime(const char* ntpServer = "pool.ntp.org");
     static String minutesToTimeStr(int minutes);
+    static std::vector<String> getCountries();
+    static std::vector<String> getCities(const String& country);
 };
 
-extern PrayerConfig currentPrayerConfig;   // تعريف خارجي
+extern PrayerConfig currentPrayerConfig;
 
 #endif

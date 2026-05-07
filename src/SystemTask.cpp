@@ -21,7 +21,7 @@ static const char* defaultPass = "your_password";
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
 PrayerTimesResult todayPrayer;
-PrayerConfig currentPrayerConfig;
+extern PrayerConfig currentPrayerConfig;
 time_t lastPrayerCalc = 0;
 bool adhanPlayed[5] = {false};
 bool iqamaPlayed[5] = {false};
@@ -90,9 +90,9 @@ String getCurrentDateStr() {
     return String(buf);
 }
 // SystemTask.cpp
-void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume) {
+void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume, uint32_t loopDuration) {
     strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
-    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume};
+    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume, loopDuration};
     xQueueSend(audioQueue, &msg, 0);
 }
 void checkPrayerTimes() {

@@ -170,9 +170,20 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
       <div class="row">
         <div class="col glass-card">
           <h3>الموقع</h3>
-          <select id="countrySelect" onchange="loadCities()"><option value="EG">مصر</option></select>
-          <select id="citySelect"><option value="Cairo">القاهرة</option></select>
-          <select id="methodSelect"><option value="5">الهيئة المصرية</option></select>
+          <label>الدولة</label>
+          <select id="countrySelect" onchange="onCountryChange()">
+            <option value="">اختر الدولة</option>
+          </select>
+          <label>المدينة</label>
+          <select id="citySelect">
+            <option value="">اختر المدينة</option>
+          </select>
+          <label>طريقة الحساب</label>
+          <select id="methodSelect">
+            <option value="0">الهيئة المصرية</option>
+            <option value="1">رابطة العالم الإسلامي</option>
+            <option value="2">أم القرى</option>
+          </select>
           <button class="btn" onclick="fetchPrayerTimes()">جلب المواقيت</button>
         </div>
         <div class="col glass-card">
@@ -235,6 +246,8 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         <label>مستوى الصوت (0-30)</label>
         <input type="range" id="scheduleVolume" min="0" max="30" value="20" oninput="document.getElementById('scheduleVolumeValue').innerText=this.value">
         <span id="scheduleVolumeValue">20</span>
+        <label>التكرار (0 = بدون) دقائق</label>
+        <input type="number" id="scheduleLoop" value="0" min="0">
         <button class="btn" onclick="addSchedule()">حفظ</button>
       </div>
       <div class="glass-card"><h3>التنبيهات المجدولة</h3><ul id="scheduleList"></ul></div>
@@ -432,17 +445,63 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
       alert('تم الحفظ');
     }
 
-    // Prayer
-    function fetchPrayerTimes() {
-      let c = document.getElementById('countrySelect').value;
-      let city = document.getElementById('citySelect').value;
-      let m = document.getElementById('methodSelect').value;
-      fetch(`/api/prayer/fetch?country=${c}&city=${city}&method=${m}`).then(r=>r.json()).then(times => {
-        document.getElementById('nextPrayer').innerText = `الفجر ${times.fajr} | الظهر ${times.dhuhr} | العصر ${times.asr} | المغرب ${times.maghrib} | العشاء ${times.isha}`;
-      });
+    // الدول والمدن
+    let allCountries = [];
+    let citiesMap = {};
+
+    function loadCountries() {
+      fetch('/api/location/countries')
+        .then(r => r.json())
+        .then(data => {
+          allCountries = data;
+          let sel = document.getElementById('countrySelect');
+          sel.innerHTML = '<option value="">اختر الدولة</option>';
+          allCountries.forEach(c => {
+            let o = document.createElement('option');
+            o.value = c;
+            o.textContent = c;
+            sel.appendChild(o);
+          });
+        });
     }
 
-    // Files (advanced)
+    function onCountryChange() {
+      let country = document.getElementById('countrySelect').value;
+      let citySel = document.getElementById('citySelect');
+      citySel.innerHTML = '<option value="">اختر المدينة</option>';
+      if (!country) return;
+      fetch('/api/location/cities?country=' + encodeURIComponent(country))
+        .then(r => r.json())
+        .then(cities => {
+          citiesMap[country] = cities;
+          cities.forEach(city => {
+            let o = document.createElement('option');
+            o.value = city;
+            o.textContent = city;
+            citySel.appendChild(o);
+          });
+        });
+    }
+
+    // جلب المواقيت بعد اختيار الدولة والمدينة
+    function fetchPrayerTimes() {
+      let country = document.getElementById('countrySelect').value;
+      let city = document.getElementById('citySelect').value;
+      let method = document.getElementById('methodSelect').value;
+      if (!country || !city) return alert('اختر الدولة والمدينة');
+      fetch(`/api/prayer/fetch?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}`)
+        .then(r => r.json())
+        .then(times => {
+          document.getElementById('nextPrayer').innerText = `الفجر ${times.fajr} | الظهر ${times.dhuhr} | العصر ${times.asr} | المغرب ${times.maghrib} | العشاء ${times.isha}`;
+        });
+    }
+
+    // تحميل الدول عند فتح الصفحة
+    window.addEventListener('load', () => {
+      if (document.getElementById('countrySelect')) loadCountries();
+    });
+
+    // ملفات (متطورة)
     let currentDir = '/';
     function loadFileList(dir = currentDir) {
       currentDir = dir;
@@ -527,7 +586,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     function playFile(name) { fetch(`/api/player/play?file=${encodeURIComponent(name)}&duration=0`); }
     loadFileList('/');
 
-    // Scheduler (with volume and prayer-relative)
+    // الجدولة
     function toggleScheduleFields() {
       let type = document.getElementById('scheduleType').value;
       let div = document.getElementById('scheduleExtraFields');
@@ -560,6 +619,8 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
       let time = document.getElementById('scheduleTime').value.split(':');
       let data = { file, type, hour: parseInt(time[0]), minute: parseInt(time[1]), enabled: true };
       data.volume = parseInt(document.getElementById('scheduleVolume').value);
+      // loop duration in seconds
+      data.loop = parseInt(document.getElementById('scheduleLoop').value) * 60 || 0;
       if(type==='weekly') data.dayOfWeek = parseInt(document.getElementById('weekDay').value);
       else if(type==='monthly') data.dayOfMonth = parseInt(document.getElementById('monthDay').value);
       else if(type==='specific') data.specificDate = document.getElementById('specificDate').value;
@@ -590,7 +651,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
             if (a.validFrom) desc += ' من ' + a.validFrom;
             if (a.validTo) desc += ' حتى ' + a.validTo;
           }
-          desc += ' | مستوى الصوت: ' + (a.volume || 20);
+          desc += ' | مستوى الصوت: ' + (a.volume || 20) + ' | تكرار: ' + ((a.loop||0)/60) + ' دقيقة';
           html += `<li>${desc} <button onclick="deleteSchedule(${i})" class="btn btn-danger"><i class="fas fa-trash"></i></button></li>`;
         });
         document.getElementById('scheduleList').innerHTML = html;
@@ -626,16 +687,20 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     function stopMusic() { fetch('/api/stop'); }
     function adjustMusicVolume(v) { fetch(`/api/volume?level=${v}`); }
 
-    // Maghrib (with volume)
+    // Maghrib (with volume & loop)
     const days = ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
     function loadMaghribAlerts() {
       fetch('/api/maghrib/alerts').then(r=>r.json()).then(arr => {
-        let html='<table style="width:100%"><tr><th>اليوم</th><th>الملف</th><th>المدة (ث)</th><th>مستوى الصوت</th><th>تفعيل</th></tr>';
+        let html='<table style="width:100%"><tr><th>اليوم</th><th>الملف</th><th>المدة (ث)</th><th>مستوى الصوت</th><th>التكرار (دقيقة)</th><th>تفعيل</th></tr>';
         arr.forEach((a,i) => {
-          html += `<tr><td>${days[i]}</td><td><select class="maghribFile" data-day="${i}"><option value="">-- لا يوجد --</option></select></td>
+          html += `<tr>
+            <td>${days[i]}</td>
+            <td><select class="maghribFile" data-day="${i}"><option value="">-- لا يوجد --</option></select></td>
             <td><span id="dur-${i}">${a.duration||0}</span></td>
             <td><input type="range" class="maghribVolume" data-day="${i}" min="0" max="30" value="${a.volume||15}" oninput="document.getElementById('vol-${i}').innerText=this.value"> <span id="vol-${i}">${a.volume||15}</span></td>
-            <td><label class="switch"><input type="checkbox" class="maghribEnable" data-day="${i}" ${a.enabled?'checked':''}><span class="slider"></span></label></td></tr>`;
+            <td><input type="number" class="maghribLoop" data-day="${i}" value="${(a.loop||0)/60}" min="0" style="width:60px;"> دقائق</td>
+            <td><label class="switch"><input type="checkbox" class="maghribEnable" data-day="${i}" ${a.enabled?'checked':''}><span class="slider"></span></label></td>
+          </tr>`;
         });
         html += '</table>';
         document.getElementById('maghribAlerts').innerHTML = html;
@@ -655,7 +720,8 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
         let file = sel.value;
         let enabled = document.querySelector(`.maghribEnable[data-day='${day}']`).checked;
         let volume = parseInt(document.querySelector(`.maghribVolume[data-day='${day}']`).value);
-        alerts.push({day: parseInt(day), file, enabled, volume});
+        let loopMin = parseInt(document.querySelector(`.maghribLoop[data-day='${day}']`).value) || 0;
+        alerts.push({day: parseInt(day), file, enabled, volume, loop: loopMin * 60});
       });
       fetch('/api/maghrib/save', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({alerts})})
         .then(() => alert('تم الحفظ'));

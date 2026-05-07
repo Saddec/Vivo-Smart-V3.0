@@ -1,26 +1,23 @@
 #ifndef SCHEDULER_H
 #define SCHEDULER_H
-
 #include <Arduino.h>
 #include <vector>
 
 struct ScheduledAlert {
     String fileName;
-    String type; // daily, weekly, monthly, specific, prayer_relative
+    String type;
     int hour, minute;
     int dayOfWeek;
     int dayOfMonth;
     String specificDate;
     int durationSec;
     bool enabled;
-    uint8_t volume = 20; // 0-30, individual volume for this alert
-
-    // prayer-relative fields
+    uint8_t volume = 20;
+    uint32_t loopDuration = 0; // seconds
     bool isPrayerRelative = false;
     int prayerIndex = 0;
     int offsetSeconds = 0;
-    String validFrom;
-    String validTo;
+    String validFrom, validTo;
 };
 
 class Scheduler {

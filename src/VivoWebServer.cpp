@@ -385,6 +385,7 @@ void startWebServer() {
         a.offsetSeconds = doc["offsetSeconds"] | 0;
         a.validFrom = doc["validFrom"] | "";
         a.validTo = doc["validTo"] | "";
+        a.loopDuration = doc["loop"] | 0; // seconds
         scheduler.addAlert(a);
         r->send(200);
     });
@@ -428,6 +429,8 @@ void startWebServer() {
         for (JsonObject o : arr) {
             int day = o["day"]; String file = o["file"]; bool en = o["enabled"];
             uint8_t vol = o["volume"] | 15; // default 15 for Maghrib
+            uint32_t loopSec = o["loop"] | 0;
+            maghribManager.setLoopForDay(day, loopSec);
             maghribManager.setFileForDay(day, file);
             maghribManager.setEnabledForDay(day, en);
             maghribManager.setVolumeForDay(day, vol);
@@ -473,6 +476,27 @@ void startWebServer() {
         String json; serializeJson(doc, json);
         r->send(200, "application/json", json);
     });
+    // API لإرجاع قائمة الدول
+server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *r){
+    std::vector<String> countries = PrayerTimesEngine::getCountries();
+    DynamicJsonDocument doc(2048);
+    JsonArray arr = doc.to<JsonArray>();
+    for (const auto& c : countries) arr.add(c);
+    String json; serializeJson(doc, json);
+    r->send(200, "application/json", json);
+});
+
+// API لإرجاع مدن دولة معينة
+server.on("/api/location/cities", HTTP_GET, [](AsyncWebServerRequest *r){
+    if (!r->hasParam("country")) { r->send(400); return; }
+    String country = r->getParam("country")->value();
+    std::vector<String> cities = PrayerTimesEngine::getCities(country);
+    DynamicJsonDocument doc(4096);
+    JsonArray arr = doc.to<JsonArray>();
+    for (const auto& c : cities) arr.add(c);
+    String json; serializeJson(doc, json);
+    r->send(200, "application/json", json);
+});
 
     server.begin();
 }
