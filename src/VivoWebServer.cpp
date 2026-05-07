@@ -1,4 +1,3 @@
-// VivoWebServer.cpp
 #include "VivoWebServer.h"
 #include "AudioTask.h"
 #include "PrayerTimesEngine.h"
@@ -7,17 +6,18 @@
 #include "EidMode.h"
 #include "MaghribManager.h"
 #include "SystemTask.h"
-#include "WebPages.h"
 #include "CSVManager.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <Update.h>
+#include <LittleFS.h>
 
 AsyncWebServer server(80);
 
 extern QueueHandle_t audioQueue;
 extern AudioManager audioManager;
+extern char fileBuffer[128];
 
 // ======================== FILE UPLOAD / ADVANCED FILE MANAGEMENT ========================
 void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -140,26 +140,55 @@ void handleOTAUpload(AsyncWebServerRequest *request, String filename, size_t ind
 
 // ======================== MAIN SERVER SETUP ========================
 void startWebServer() {
-    // --- Main page ---
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        String html = FPSTR(MAIN_PAGE);
-        html.replace("%TIME%", getCurrentTimeStr());
-        html.replace("%DATE%", getCurrentDateStr());
-        extern PrayerTimesResult todayPrayer;
-        html.replace("%FAJR%", todayPrayer.fajr);
-        html.replace("%DHUHR%", todayPrayer.dhuhr);
-        html.replace("%ASR%", todayPrayer.asr);
-        html.replace("%MAGHRIB%", todayPrayer.maghrib);
-        html.replace("%ISHA%", todayPrayer.isha);
-        html.replace("%STATUS%", (audioManager.getState() != AUDIO_IDLE) ? "قيد التشغيل" : "متوقف");
-        request->send(200, "text/html", html);
+    // --- نظام الملفات LittleFS (يقدم الصفحات الثابتة) ---
+    if (!LittleFS.begin(true)) {
+        Serial.println("[WebServer] فشل تحميل LittleFS");
+    } else {
+        server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+        server.serveStatic("/style.css", LittleFS, "/style.css");
+        server.serveStatic("/script.js", LittleFS, "/script.js");
+    }
+
+    // --- Login API ---
+    server.on("/api/login", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false}"); return; }
+        DynamicJsonDocument doc(128);
+        deserializeJson(doc, r->arg("plain"));
+        String password = doc["password"] | "";
+        Preferences prefs;
+        prefs.begin("system", true);
+        String storedPassword = prefs.getString("password", "admin");
+        prefs.end();
+        if (password == storedPassword) {
+            r->send(200, "application/json", "{\"success\":true}");
+        } else {
+            r->send(200, "application/json", "{\"success\":false}");
+        }
     });
 
-    // --- Static pages (mocked) ---
-    server.on("/edit", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(200, "text/html", "صفحة التعديل"); });
-    server.on("/alerts", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(200, "text/html", "صفحة التنبيهات"); });
-    server.on("/audio", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(200, "text/html", "صفحة الصوتيات"); });
-    server.on("/control", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(200, "text/html", "صفحة التحكم"); });
+    // --- Change Password API ---
+    server.on("/api/change_password", HTTP_POST, [](AsyncWebServerRequest *r){
+        if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false,\"message\":\"بيانات غير صالحة\"}"); return; }
+        DynamicJsonDocument doc(256);
+        deserializeJson(doc, r->arg("plain"));
+        String oldPassword = doc["old_password"] | "";
+        String newPassword = doc["new_password"] | "";
+        if (oldPassword.length() == 0 || newPassword.length() == 0) {
+            r->send(400, "application/json", "{\"success\":false,\"message\":\"كلمة المرور مطلوبة\"}");
+            return;
+        }
+        Preferences prefs;
+        prefs.begin("system", false);
+        String storedPassword = prefs.getString("password", "admin");
+        if (oldPassword != storedPassword) {
+            prefs.end();
+            r->send(200, "application/json", "{\"success\":false,\"message\":\"كلمة المرور القديمة غير صحيحة\"}");
+            return;
+        }
+        prefs.putString("password", newPassword);
+        prefs.end();
+        r->send(200, "application/json", "{\"success\":true,\"message\":\"تم تغيير كلمة المرور\"}");
+    });
 
     // --- WiFi API ---
     server.on("/api/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *r){
@@ -271,6 +300,18 @@ void startWebServer() {
         PrayerTimesResult times = PrayerTimesEngine::calculate(time(nullptr), currentPrayerConfig);
         DynamicJsonDocument doc(256);
         doc["fajr"] = times.fajr; doc["dhuhr"] = times.dhuhr; doc["asr"] = times.asr; doc["maghrib"] = times.maghrib; doc["isha"] = times.isha;
+        String json; serializeJson(doc, json);
+        r->send(200, "application/json", json);
+    });
+
+    server.on("/api/prayer/times", HTTP_GET, [](AsyncWebServerRequest *r){
+        extern PrayerTimesResult todayPrayer;
+        DynamicJsonDocument doc(200);
+        doc["fajr"] = todayPrayer.fajr;
+        doc["dhuhr"] = todayPrayer.dhuhr;
+        doc["asr"] = todayPrayer.asr;
+        doc["maghrib"] = todayPrayer.maghrib;
+        doc["isha"] = todayPrayer.isha;
         String json; serializeJson(doc, json);
         r->send(200, "application/json", json);
     });
@@ -449,9 +490,6 @@ void startWebServer() {
     });
 
     // --- GPIO scheduling ---
-    server.on("/api/gpio/schedule/list", HTTP_GET, [](AsyncWebServerRequest *r){
-        r->send(200, "application/json", getGpioSchedulesJson());
-    });
     server.on("/api/gpio/schedule/add", HTTP_POST, [](AsyncWebServerRequest *r){}, NULL, [](AsyncWebServerRequest *r, uint8_t *d, size_t l, size_t i, size_t t){
         DynamicJsonDocument doc(512); deserializeJson(doc, d);
         GpioScheduleEntry e;
@@ -463,10 +501,6 @@ void startWebServer() {
         e.specificDate = doc["specificDate"].as<String>();
         e.enabled = doc["enabled"] | true;
         addGpioSchedule(e);
-        r->send(200);
-    });
-    server.on("/api/gpio/schedule/remove", HTTP_DELETE, [](AsyncWebServerRequest *r){
-        removeGpioSchedule(r->arg("index").toInt());
         r->send(200);
     });
 
@@ -615,63 +649,10 @@ void startWebServer() {
         DynamicJsonDocument doc(128);
         doc["playing"] = (audioManager.getState() != AUDIO_IDLE);
         doc["file"] = audioManager.getCurrentFile();
-        doc["volume"] = 15; // could be actual volume
+        doc["volume"] = 15;
         String json; serializeJson(doc, json);
         r->send(200, "application/json", json);
     });
 
-    // --- Prayer times for dashboard display ---
-    server.on("/api/prayer/times", HTTP_GET, [](AsyncWebServerRequest *r){
-        extern PrayerTimesResult todayPrayer;
-        DynamicJsonDocument doc(200);
-        doc["fajr"] = todayPrayer.fajr;
-        doc["dhuhr"] = todayPrayer.dhuhr;
-        doc["asr"] = todayPrayer.asr;
-        doc["maghrib"] = todayPrayer.maghrib;
-        doc["isha"] = todayPrayer.isha;
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
-    });
-
-    // --- Login API ---
-server.on("/api/login", HTTP_POST, [](AsyncWebServerRequest *r){
-    if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false}"); return; }
-    DynamicJsonDocument doc(128);
-    deserializeJson(doc, r->arg("plain"));
-    String password = doc["password"] | "";
-    Preferences prefs;
-    prefs.begin("system", true);
-    String storedPassword = prefs.getString("password", "admin"); // "admin" هو الافتراضي
-    prefs.end();
-    if (password == storedPassword) {
-        r->send(200, "application/json", "{\"success\":true}");
-    } else {
-        r->send(200, "application/json", "{\"success\":false}");
-    }
-});
-
-// --- Change Password API ---
-server.on("/api/change_password", HTTP_POST, [](AsyncWebServerRequest *r){
-    if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false,\"message\":\"بيانات غير صالحة\"}"); return; }
-    DynamicJsonDocument doc(256);
-    deserializeJson(doc, r->arg("plain"));
-    String oldPassword = doc["old_password"] | "";
-    String newPassword = doc["new_password"] | "";
-    if (oldPassword.length() == 0 || newPassword.length() == 0) {
-        r->send(400, "application/json", "{\"success\":false,\"message\":\"كلمة المرور مطلوبة\"}");
-        return;
-    }
-    Preferences prefs;
-    prefs.begin("system", false);
-    String storedPassword = prefs.getString("password", "admin");
-    if (oldPassword != storedPassword) {
-        prefs.end();
-        r->send(200, "application/json", "{\"success\":false,\"message\":\"كلمة المرور القديمة غير صحيحة\"}");
-        return;
-    }
-    prefs.putString("password", newPassword);
-    prefs.end();
-    r->send(200, "application/json", "{\"success\":true,\"message\":\"تم تغيير كلمة المرور\"}");
-});
     server.begin();
 }
