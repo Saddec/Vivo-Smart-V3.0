@@ -1,4 +1,4 @@
-// WebPages.h
+// WebPages.h (Updated with dropdown styling)
 #ifndef WEBPAGES_H
 #define WEBPAGES_H
 
@@ -83,10 +83,28 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
       border: 1px solid var(--glass-border); border-radius: var(--radius-xl);
       background: rgba(255,255,255,0.1); color: #fff; font-size: 15px; outline: none;
     }
+    /* تنسيق القوائم المنسدلة */
     select {
-      -webkit-appearance: none; -moz-appearance: none; appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>");
-      background-repeat: no-repeat; background-position: left 10px center; background-size: 14px; padding-left: 40px;
+      background-repeat: no-repeat;
+      background-position: left 10px center;
+      background-size: 14px;
+      padding-left: 40px;
+      cursor: pointer;
+    }
+    select option {
+      background: rgba(20, 30, 50, 0.9);
+      backdrop-filter: blur(10px);
+      color: #fff;
+      padding: 10px;
+    }
+    select:focus {
+      border-color: #fff;
+      background: rgba(255,255,255,0.2);
+      box-shadow: 0 0 20px rgba(142, 68, 173, 0.5);
     }
     label { color: rgba(255,255,255,0.85); font-size: 14px; font-weight: 500; }
     .file-list { max-height: 350px; overflow-y: auto; background: rgba(0,0,0,0.2); border-radius: var(--radius-xl); padding: 15px; }
@@ -109,6 +127,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
   </style>
 </head>
 <body>
+  <!-- طبقة تسجيل الدخول (تظهر مرة واحدة لكل جلسة متصفح) -->
   <div id="loginOverlay">
     <div class="glass-card" style="width:350px; text-align:center;">
       <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
@@ -118,6 +137,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
     </div>
   </div>
 
+  <!-- الشريط الجانبي والمحتوى (نفس الهيكل السابق) -->
   <nav class="sidebar" id="sidebar">
     <div class="logo"><i class="fas fa-mosque"></i> Vivo Smart</div>
     <a href="#dashboard" class="active" onclick="showTab('dashboard')"><i class="fas fa-home"></i> الرئيسية</a>
@@ -138,6 +158,7 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
   </nav>
 
   <main class="main-content" id="mainContent" style="display:none;">
+        
     <!-- Dashboard -->
     <div id="tab-dashboard" class="tab active">
       <h1><i class="fas fa-tachometer-alt"></i> لوحة التحكم</h1>
