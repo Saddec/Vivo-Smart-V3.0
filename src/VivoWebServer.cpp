@@ -633,5 +633,45 @@ void startWebServer() {
         r->send(200, "application/json", json);
     });
 
+    // --- Login API ---
+server.on("/api/login", HTTP_POST, [](AsyncWebServerRequest *r){
+    if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false}"); return; }
+    DynamicJsonDocument doc(128);
+    deserializeJson(doc, r->arg("plain"));
+    String password = doc["password"] | "";
+    Preferences prefs;
+    prefs.begin("system", true);
+    String storedPassword = prefs.getString("password", "admin"); // "admin" هو الافتراضي
+    prefs.end();
+    if (password == storedPassword) {
+        r->send(200, "application/json", "{\"success\":true}");
+    } else {
+        r->send(200, "application/json", "{\"success\":false}");
+    }
+});
+
+// --- Change Password API ---
+server.on("/api/change_password", HTTP_POST, [](AsyncWebServerRequest *r){
+    if(!r->hasArg("plain")) { r->send(400, "application/json", "{\"success\":false,\"message\":\"بيانات غير صالحة\"}"); return; }
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, r->arg("plain"));
+    String oldPassword = doc["old_password"] | "";
+    String newPassword = doc["new_password"] | "";
+    if (oldPassword.length() == 0 || newPassword.length() == 0) {
+        r->send(400, "application/json", "{\"success\":false,\"message\":\"كلمة المرور مطلوبة\"}");
+        return;
+    }
+    Preferences prefs;
+    prefs.begin("system", false);
+    String storedPassword = prefs.getString("password", "admin");
+    if (oldPassword != storedPassword) {
+        prefs.end();
+        r->send(200, "application/json", "{\"success\":false,\"message\":\"كلمة المرور القديمة غير صحيحة\"}");
+        return;
+    }
+    prefs.putString("password", newPassword);
+    prefs.end();
+    r->send(200, "application/json", "{\"success\":true,\"message\":\"تم تغيير كلمة المرور\"}");
+});
     server.begin();
 }

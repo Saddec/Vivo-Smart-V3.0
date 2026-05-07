@@ -23,6 +23,7 @@ static const char* defaultSSID = "your_ssid";
 static const char* defaultPass = "your_password";
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
+
 // ---- public variables used across modules ----
 PrayerTimesResult todayPrayer;
 time_t lastPrayerCalc = 0;
@@ -33,6 +34,15 @@ String todayHijri;
 
 // ---- WiFi function ----
 void setupWiFi() {
+
+    // في بداية systemTask()
+Preferences prefs;
+prefs.begin("system", false);
+if (!prefs.isKey("password")) {
+    prefs.putString("password", "admin");
+}
+prefs.end();
+
     WiFi.mode(WIFI_STA);
     prefs.begin("network", true);
     bool useStatic = prefs.getBool("dhcp", true) == false;
@@ -223,6 +233,15 @@ void playStartupAlert() {
 
 // ---- system task (core 0) ----
 void systemTask(void *pvParameters) {
+
+    // تهيئة كلمة مرور افتراضية إذا لم تكن موجودة
+Preferences prefs;
+prefs.begin("system", false);
+if (!prefs.isKey("password")) {
+    prefs.putString("password", "admin");
+}
+prefs.end();
+
     // default prayer config (Cairo)
     currentPrayerConfig.latitude = 30.0444;
     currentPrayerConfig.longitude = 31.2357;
