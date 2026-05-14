@@ -12,10 +12,7 @@ QueueHandle_t audioQueue;
 SemaphoreHandle_t wifiMutex;
 Preferences prefs;
 
-// متغير عام لتخزين اسم الملف المُمرر إلى مهمة الصوت
 char fileBuffer[128] = {0};
-// أضف هذا السطر:
-SemaphoreHandle_t fileBufferMutex;
 
 void setup() {
     Serial.begin(115200);
@@ -23,14 +20,11 @@ void setup() {
 
     audioQueue = xQueueCreate(10, sizeof(AudioMessage));
     wifiMutex = xSemaphoreCreateMutex();
-    fileBufferMutex = xSemaphoreCreateMutex();
 
-    // مهمة النظام (Core 0)
     xTaskCreatePinnedToCore(
         systemTask, "SystemTask", 16384, NULL, 4, NULL, 0
     );
 
-    // مهمة الصوت (Core 1)
     xTaskCreatePinnedToCore(
         audioTask, "AudioTask", 16384, NULL, 6, NULL, 1
     );
