@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vivo Smart – لوحة التحكم</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- طبقة تسجيل الدخول -->
+  <div id="loginOverlay">
+    <div class="glass-card" style="width:350px; text-align:center;">
+      <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
+      <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center;">
+      <button class="btn" onclick="doLogin()" style="width:100%; margin-top:15px;">دخول</button>
+      <p id="loginError" style="color:#e74c3c; margin-top:10px; display:none;">كلمة المرور غير صحيحة</p>
+    </div>
+  </div>
+
+  <nav class="sidebar" id="sidebar">
+    <div class="logo"><i class="fas fa-mosque"></i> Vivo Smart</div>
+    <a href="#dashboard" class="active" onclick="showTab('dashboard')"><i class="fas fa-home"></i> الرئيسية</a>
+    <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
+    <a href="#prayer" onclick="showTab('prayer')"><i class="fas fa-clock"></i> الصلاة</a>
+    <a href="#files" onclick="showTab('files')"><i class="fas fa-folder-open"></i> الملفات</a>
+    <a href="#scheduler" onclick="showTab('scheduler')"><i class="fas fa-calendar-alt"></i> الجدولة</a>
+    <a href="#gpio" onclick="showTab('gpio')"><i class="fas fa-microchip"></i> GPIO</a>
+    <a href="#gpio_schedule" onclick="showTab('gpio_schedule')"><i class="fas fa-clock"></i> جدولة GPIO</a>
+    <a href="#eid" onclick="showTab('eid')"><i class="fas fa-star-and-crescent"></i> العيد</a>
+    <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> المشغل</a>
+    <a href="#maghrib" onclick="showTab('maghrib')"><i class="fas fa-sun"></i> المغرب</a>
+    <a href="#manual" onclick="showTab('manual')"><i class="fas fa-edit"></i> ضبط يدوي</a>
+    <a href="#csv" onclick="showTab('csv')"><i class="fas fa-file-csv"></i> CSV</a>
+    <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
+    <a href="#password" onclick="showTab('password')"><i class="fas fa-key"></i> كلمة المرور</a>
+    <span class="version">v3.0 ESP32-S3</span>
+  </nav>
+
+  <main class="main-content" id="mainContent" style="display:none;">
+    <!-- Dashboard -->
+    <div id="tab-dashboard" class="tab active">
+      <h1><i class="fas fa-tachometer-alt"></i> لوحة التحكم</h1>
+      <div class="row">
+        <div class="col glass-card">
+          <h3><i class="far fa-clock"></i> الوقت</h3>
+          <p style="font-size:28px; font-weight:700"><span id="timeDisplay">--:--</span></p>
+          <p><span id="hijriDate"></span> | <span id="gregDate"></span></p>
+        </div>
+        <div class="col glass-card">
+          <h3><i class="fas fa-volume-up"></i> الحالة</h3>
+          <p id="playingStatus">متوقف</p>
+          <input type="range" id="volumeSlider" min="0" max="30" value="15" onchange="setVolume(this.value)" style="width:100%">
+          <button class="btn" onclick="stopAudio()"><i class="fas fa-stop"></i> إيقاف</button>
+        </div>
+      </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-mosque"></i> مواقيت الصلاة</h3>
+        <div class="row" style="justify-content:center">
+          <div style="padding:10px"><span>الفجر</span><br><span id="fajrTime">--:--</span></div>
+          <div style="padding:10px"><span>الظهر</span><br><span id="dhuhrTime">--:--</span></div>
+          <div style="padding:10px"><span>العصر</span><br><span id="asrTime">--:--</span></div>
+          <div style="padding:10px"><span>المغرب</span><br><span id="maghribTime">--:--</span></div>
+          <div style="padding:10px"><span>العشاء</span><br><span id="ishaTime">--:--</span></div>
+        </div>
+        <p id="nextPrayer" style="text-align:center; font-size:18px;"></p>
+      </div>
+    </div>
+    <!-- Network -->
+    <div id="tab-network" class="tab">
+      <h1><i class="fas fa-wifi"></i> إعدادات الشبكة</h1>
+      <div class="glass-card">
+        <h3>WiFi</h3>
+        <label>اسم الشبكة</label><input type="text" id="ssid" placeholder="SSID">
+        <label>كلمة المرور</label><input type="password" id="wifiPass" placeholder="كلمة السر">
+        <button class="btn" onclick="scanWiFi()"><i class="fas fa-search"></i> بحث</button>
+        <div id="wifiList" style="max-height:150px;overflow:auto;margin:10px 0"></div>
+        <label class="switch"><input type="checkbox" id="dhcpToggle" onchange="toggleDHCP()" checked><span class="slider"></span></label> DHCP
+        <div id="staticIPFields" style="display:none">
+          <label>IP</label><input type="text" id="staticIP" placeholder="192.168.1.100">
+          <label>البوابة</label><input type="text" id="gateway" placeholder="192.168.1.1">
+          <label>القناع</label><input type="text" id="subnet" placeholder="255.255.255.0">
+          <label>DNS</label><input type="text" id="dns" placeholder="8.8.8.8">
+        </div>
+        <button class="btn" onclick="saveNetwork()"><i class="fas fa-save"></i> حفظ</button>
+      </div>
+    </div>
+    <!-- Prayer -->
+    <div id="tab-prayer" class="tab">
+      <h1><i class="fas fa-mosque"></i> مواقيت الصلاة</h1>
+      <div class="row">
+        <div class="col glass-card">
+          <label>الدولة</label>
+          <select id="countrySelect" onchange="onCountryChange()"><option value="">اختر الدولة</option></select>
+          <label>المدينة</label>
+          <select id="citySelect"><option value="">اختر المدينة</option></select>
+          <label>طريقة الحساب</label>
+          <select id="methodSelect"><option value="0">الهيئة المصرية</option><option value="1">رابطة العالم الإسلامي</option><option value="2">أم القرى</option></select>
+          <button class="btn" onclick="fetchPrayerTimes()">حساب المواقيت</button>
+        </div>
+        <div class="col glass-card">
+          <h3>الإزاحات (دقائق)</h3>
+          <label>الفجر</label><input type="number" id="offsetFajr" value="0">
+          <label>الظهر</label><input type="number" id="offsetDhuhr" value="0">
+          <label>العصر</label><input type="number" id="offsetAsr" value="0">
+          <label>المغرب</label><input type="number" id="offsetMaghrib" value="0">
+          <label>العشاء</label><input type="number" id="offsetIsha" value="0">
+          <button class="btn" onclick="saveOffsets()">حفظ</button>
+        </div>
+      </div>
+    </div>
+    <!-- Files -->
+    <div id="tab-files" class="tab">
+      <h1><i class="fas fa-folder-open"></i> الملفات</h1>
+      <div class="glass-card">
+        <h3>رفع ملف</h3>
+        <input type="file" id="fileInput" accept=".mp3,.wav">
+        <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
+        <div id="uploadStatus"></div>
+      </div>
+      <div class="glass-card">
+        <h3>مدير الملفات</h3>
+        <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> إنشاء مجلد</button>
+        <input type="text" id="newFolderName" placeholder="اسم المجلد الجديد">
+        <div class="file-list" id="fileList"></div>
+      </div>
+      <div class="glass-card" id="previewCard" style="display:none">
+        <h3>معاينة: <span id="previewName"></span></h3>
+        <audio id="audioPlayer" controls style="width:100%"></audio>
+        <button class="btn" onclick="closePreview()">إغلاق</button>
+      </div>
+      <div class="glass-card">
+        <h3>تعيين ملفات الأذان والإقامة</h3>
+        <label>أذان الفجر</label><select id="fajrAdhanFileSelect"></select>
+        <label>باقي الصلوات</label><select id="adhanFileSelect"></select>
+        <label>الإقامة</label><select id="iqamaFileSelect"></select>
+        <button class="btn" onclick="saveAdhanAssignments()">حفظ</button>
+      </div>
+    </div>
+    <!-- Scheduler -->
+    <div id="tab-scheduler" class="tab">
+      <h1><i class="fas fa-calendar-alt"></i> الجدولة</h1>
+      <div class="glass-card">
+        <label>ملف الصوت</label><select id="scheduleFile"></select>
+        <label>النوع</label>
+        <select id="scheduleType" onchange="toggleScheduleFields()">
+          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+          <option value="prayer_relative">مرتبط بالصلاة</option>
+        </select>
+        <div id="scheduleExtraFields"></div>
+        <label>الوقت</label><input type="time" id="scheduleTime">
+        <label>مستوى الصوت (0-30)</label>
+        <input type="range" id="scheduleVolume" min="0" max="30" value="20">
+        <span id="scheduleVolumeValue">20</span>
+        <label>التكرار</label>
+        <select id="scheduleLoopToggle" onchange="toggleLoopFields()">
+          <option value="no">بدون تكرار</option>
+          <option value="yes">بتكرار</option>
+        </select>
+        <div id="loopFields" style="display:none">
+          <label>مدة التكرار (دقائق)</label><input type="number" id="scheduleLoopDuration" value="0" min="0">
+        </div>
+        <button class="btn" onclick="addSchedule()">حفظ</button>
+      </div>
+      <div class="glass-card"><h3>التنبيهات</h3><ul id="scheduleList"></ul></div>
+    </div>
+    <!-- GPIO -->
+    <div id="tab-gpio" class="tab">
+      <h1><i class="fas fa-microchip"></i> GPIO</h1>
+      <div class="glass-card">
+        <h3>ربط مدخل</h3>
+        <label>الدبوس</label><select id="inputPin"><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>21</option><option>22</option><option>23</option><option>25</option><option>26</option><option>27</option><option>32</option><option>33</option></select>
+        <label>الملف</label><select id="inputFile"></select>
+        <button class="btn" onclick="saveInputMapping()">حفظ</button>
+      </div>
+      <div class="glass-card">
+        <h3>ربط مخرج</h3>
+        <label>الدبوس</label><select id="outputPin"><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>21</option><option>22</option><option>23</option><option>25</option><option>26</option><option>27</option><option>32</option><option>33</option></select>
+        <label>المدة (ثواني)</label><input type="number" id="outputDuration" value="5">
+        <button class="btn" onclick="saveOutputMapping()">حفظ</button>
+      </div>
+    </div>
+    <!-- GPIO Schedule -->
+    <div id="tab-gpio_schedule" class="tab">
+      <h1><i class="fas fa-clock"></i> جدولة المخارج</h1>
+      <div class="glass-card">
+        <label>الدبوس</label><select id="gpioSchedPin"></select>
+        <label>وقت البدء</label><input type="time" id="gpioSchedStart">
+        <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
+        <button class="btn" onclick="addGpioSchedule()">حفظ</button>
+      </div>
+    </div>
+    <!-- Eid -->
+    <div id="tab-eid" class="tab">
+      <h1><i class="fas fa-star-and-crescent"></i> وضع العيد</h1>
+      <div class="glass-card">
+        <label class="switch"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label> تفعيل
+        <br><br>
+        <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
+        <button class="btn" onclick="triggerTakbeer()">تشغيل التكبيرات</button>
+        <button class="btn" onclick="saveEidFile()">حفظ الملف</button>
+      </div>
+    </div>
+    <!-- Player -->
+    <div id="tab-player" class="tab">
+      <h1><i class="fas fa-music"></i> مشغل الموسيقى</h1>
+      <div class="glass-card">
+        <div id="playlist"></div>
+        <button class="btn" onclick="addToPlaylist()">إضافة ملف</button>
+        <select id="playlistFileSelect"></select>
+      </div>
+      <div class="glass-card">
+        <button class="btn" onclick="playPlaylist()"><i class="fas fa-play"></i> تشغيل الكل</button>
+        <button class="btn" onclick="stopPlaylist()"><i class="fas fa-stop"></i> إيقاف</button>
+        <button class="btn" onclick="clearPlaylist()">مسح القائمة</button>
+        <label>مستوى الصوت</label><input type="range" id="playlistVolume" min="0" max="30" value="15">
+        <label class="switch"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> احترام الأذان
+      </div>
+    </div>
+    <!-- Maghrib -->
+    <div id="tab-maghrib" class="tab">
+      <h1><i class="fas fa-sun"></i> تنبيهات المغرب</h1>
+      <div class="glass-card">
+        <label>قبل المغرب بـ (دقائق)</label><input type="number" id="maghribOffset" value="1">
+        <button class="btn" onclick="saveMaghribOffset()">حفظ</button>
+      </div>
+      <div class="glass-card">
+        <div id="maghribAlerts"></div>
+        <button class="btn" onclick="saveMaghribAlerts()">حفظ التنبيهات</button>
+        <button class="btn" onclick="loadMaghribAlerts()">تحديث</button>
+      </div>
+    </div>
+    <!-- Manual -->
+    <div id="tab-manual" class="tab">
+      <h1><i class="fas fa-edit"></i> ضبط يدوي</h1>
+      <div class="glass-card">
+        <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> الوضع اليدوي
+        <br><br>
+        <label>الفجر</label><input type="time" id="manFajr" value="04:30">
+        <label>الظهر</label><input type="time" id="manDhuhr" value="12:00">
+        <label>العصر</label><input type="time" id="manAsr" value="15:30">
+        <label>المغرب</label><input type="time" id="manMaghrib" value="18:00">
+        <label>العشاء</label><input type="time" id="manIsha" value="19:30">
+        <button class="btn" onclick="saveManualPrayerTimes()">حفظ</button>
+      </div>
+      <div class="glass-card">
+        <h3>تحديث OTA</h3>
+        <input type="file" id="otaFile" accept=".bin">
+        <button class="btn" onclick="startOTA()">رفع التحديث</button>
+      </div>
+    </div>
+    <!-- CSV -->
+    <div id="tab-csv" class="tab">
+      <h1><i class="fas fa-file-csv"></i> CSV</h1>
+      <div class="glass-card">
+        <label>الشهر</label>
+        <select id="csvMonthSelect">
+          <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option><option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option><option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
+        </select>
+        <input type="file" id="csvFileInput" accept=".csv">
+        <button class="btn" onclick="uploadCSV()"><i class="fas fa-upload"></i> رفع</button>
+      </div>
+      <div class="glass-card">
+        <label class="switch"><input type="checkbox" id="csvModeToggle" onchange="toggleCSVMode()"><span class="slider"></span></label> تفعيل CSV
+      </div>
+    </div>
+    <!-- Startup -->
+    <div id="tab-startup" class="tab">
+      <h1><i class="fas fa-power-off"></i> بدء التشغيل</h1>
+      <div class="glass-card">
+        <label class="switch"><input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()"><span class="slider"></span></label>
+        <label>الملف</label><select id="startupFileSelect"></select>
+        <button class="btn" onclick="saveStartupSettings()">حفظ</button>
+      </div>
+    </div>
+    <!-- Password -->
+    <div id="tab-password" class="tab">
+      <h1><i class="fas fa-key"></i> كلمة المرور</h1>
+      <div class="glass-card">
+        <label>القديمة</label><input type="password" id="oldPassword">
+        <label>الجديدة</label><input type="password" id="newPassword">
+        <label>تأكيد الجديدة</label><input type="password" id="confirmPassword">
+        <button class="btn" onclick="changePassword()">تغيير</button>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div class="footer">
+      <span>جميع الحقوق محفوظة © 2027 - تصميم المهندس</span>
+      <span class="name">صديق عبد العظيم</span>
+    </div>
+  </main>
+  <script src="/script.js"></script>
+</body>
+</html>
