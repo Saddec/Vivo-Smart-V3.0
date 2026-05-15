@@ -16,8 +16,8 @@ extern Preferences prefs;
 extern QueueHandle_t audioQueue;
 extern char fileBuffer[128];
 
-static const char* defaultSSID = "your_ssid";
-static const char* defaultPass = "your_password";
+static const char* defaultSSID = "HONOR X9d";
+static const char* defaultPass = "123456789";
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
 PrayerTimesResult todayPrayer;
