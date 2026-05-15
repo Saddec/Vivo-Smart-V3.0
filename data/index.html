@@ -4,8 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vivo Smart – لوحة التحكم</title>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/all.min.css">   <!-- ضع ملف font-awesome محلي في LittleFS -->
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -76,14 +75,16 @@
         <label>كلمة المرور</label><input type="password" id="wifiPass" placeholder="كلمة السر">
         <button class="btn" onclick="scanWiFi()"><i class="fas fa-search"></i> بحث</button>
         <div id="wifiList" style="max-height:150px;overflow:auto;margin:10px 0"></div>
-        <label class="switch"><input type="checkbox" id="dhcpToggle" onchange="toggleDHCP()" checked><span class="slider"></span></label> DHCP
-        <div id="staticIPFields" style="display:none">
-          <label>IP</label><input type="text" id="staticIP" placeholder="192.168.1.100">
-          <label>البوابة</label><input type="text" id="gateway" placeholder="192.168.1.1">
-          <label>القناع</label><input type="text" id="subnet" placeholder="255.255.255.0">
-          <label>DNS</label><input type="text" id="dns" placeholder="8.8.8.8">
+        <label class="switch"><input type="checkbox" id="dhcpToggle" onchange="toggleDHCP()"><span class="slider"></span></label> DHCP
+        <div id="staticIPFields">
+          <label>IP</label><input type="text" id="staticIP" value="192.168.1.100" placeholder="192.168.1.100">
+          <label>البوابة</label><input type="text" id="gateway" value="192.168.1.1" placeholder="192.168.1.1">
+          <label>القناع</label><input type="text" id="subnet" value="255.255.255.0" placeholder="255.255.255.0">
+          <label>DNS</label><input type="text" id="dns" value="8.8.8.8" placeholder="8.8.8.8">
         </div>
         <button class="btn" onclick="saveNetwork()"><i class="fas fa-save"></i> حفظ</button>
+        <button class="btn" onclick="connectNetwork()"><i class="fas fa-wifi"></i> اتصال الآن</button>
+        <div id="wifiStatus" style="margin-top:10px"></div>
       </div>
     </div>
     <!-- Prayer -->
@@ -113,6 +114,17 @@
     <!-- Files -->
     <div id="tab-files" class="tab">
       <h1><i class="fas fa-folder-open"></i> الملفات</h1>
+      <div class="glass-card">
+        <h3>حالة بطاقة SD</h3>
+        <div id="sdStatus">جاري الفحص...</div>
+        <div style="margin-top:10px; line-height:1.9">
+          <strong>توصيل SD Card بنظام SPI:</strong><br>
+          CS = GPIO38 ، SCK = GPIO36 ، MISO = GPIO37 ، MOSI = GPIO35 ، VCC = 3.3V ، GND = GND
+          <br>
+          <strong>توصيل I2S للصوت:</strong><br>
+          BCLK = GPIO16 ، LRCK/LRC = GPIO17 ، DOUT/DIN = GPIO18 ، VCC = 3.3V ، GND = GND
+        </div>
+      </div>
       <div class="glass-card">
         <h3>رفع ملف</h3>
         <input type="file" id="fileInput" accept=".mp3,.wav">
@@ -171,13 +183,13 @@
       <h1><i class="fas fa-microchip"></i> GPIO</h1>
       <div class="glass-card">
         <h3>ربط مدخل</h3>
-        <label>الدبوس</label><select id="inputPin"><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>21</option><option>22</option><option>23</option><option>25</option><option>26</option><option>27</option><option>32</option><option>33</option></select>
+        <label>الدبوس</label><select id="inputPin"><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>19</option><option>47</option></select>
         <label>الملف</label><select id="inputFile"></select>
         <button class="btn" onclick="saveInputMapping()">حفظ</button>
       </div>
       <div class="glass-card">
         <h3>ربط مخرج</h3>
-        <label>الدبوس</label><select id="outputPin"><option>13</option><option>14</option><option>15</option><option>16</option><option>17</option><option>18</option><option>19</option><option>21</option><option>22</option><option>23</option><option>25</option><option>26</option><option>27</option><option>32</option><option>33</option></select>
+        <label>الدبوس</label><select id="outputPin"><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option><option>13</option><option>14</option><option>15</option><option>19</option><option>47</option></select>
         <label>المدة (ثواني)</label><input type="number" id="outputDuration" value="5">
         <button class="btn" onclick="saveOutputMapping()">حفظ</button>
       </div>

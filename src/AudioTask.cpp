@@ -1,19 +1,25 @@
 #include "AudioTask.h"
+#include "SDManager.h"
 #include <SD.h>
-#include <SPI.h>
 #include "Audio.h"
 
-#define I2S_BCLK 26
-#define I2S_LRCK 25
-#define I2S_DOUT 22
-#define SD_CS    5
+#define I2S_BCLK 16
+#define I2S_LRCK 17
+#define I2S_DOUT 18
+
+static String normalizeAudioPath(const char* path) {
+    String fullPath = String(path);
+    fullPath.trim();
+    if (!fullPath.startsWith("/")) fullPath = "/" + fullPath;
+    fullPath.replace("//", "/");
+    return fullPath;
+}
 
 AudioManager audioManager;
 
 void AudioManager::begin() {
-    SPI.begin(18, 19, 23);
-    if (!SD.begin(SD_CS)) {
-        Serial.println("[Audio] SD Card failed!");
+    if (!initSDCard(true)) {
+        Serial.printf("[Audio] SD Card failed: %s\n", getLastSDError().c_str());
     } else {
         Serial.println("[Audio] SD Card OK.");
     }
@@ -31,6 +37,10 @@ void AudioManager::begin() {
 
 bool AudioManager::playFile(const char* path, int priority, uint32_t duration, uint8_t volume, uint32_t loopDuration) {
     if (!_audio) return false;
+    if (!isSDReady()) {
+        Serial.printf("[Audio] SD not ready: %s\n", getLastSDError().c_str());
+        return false;
+    }
     if (_state == AUDIO_PLAYING && priority < _currentPriority) return false;
 
     if (_respectAdhan && !_playlist.empty() && priority == 3 && _state == AUDIO_PLAYING) {
@@ -41,8 +51,14 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
 
     if (_state != AUDIO_IDLE) _audio->stopSong();
 
-    String fullPath = "/" + String(path);
+    String fullPath = normalizeAudioPath(path);
+    if (!SD.exists(fullPath)) {
+        Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
+        _state = AUDIO_IDLE;
+        return false;
+    }
     if (!_audio->connecttoSD(fullPath.c_str())) {
+        Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
         _state = AUDIO_IDLE;
         return false;
     }
@@ -164,8 +180,12 @@ void AudioManager::audioOnStop(void *userData) {
         return;
     }
     if (self->_loopDuration > 0 && (millis() < self->_loopEndTime) && self->_lastPlayedFile.length() > 0) {
-        self->_audio->connecttoSD(("/" + self->_lastPlayedFile).c_str());
-        self->_state = AUDIO_PLAYING;
+        String loopPath = normalizeAudioPath(self->_lastPlayedFile.c_str());
+        if (SD.exists(loopPath) && self->_audio->connecttoSD(loopPath.c_str())) {
+            self->_state = AUDIO_PLAYING;
+        } else {
+            self->_state = AUDIO_IDLE;
+        }
         return;
     }
     self->_state = AUDIO_IDLE;

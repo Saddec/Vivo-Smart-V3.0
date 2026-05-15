@@ -56,7 +56,13 @@ void Scheduler::checkAndTrigger() {
             if(alert.validTo.length()==10){ int y=alert.validTo.substring(0,4).toInt(), m=alert.validTo.substring(5,7).toInt(), d=alert.validTo.substring(8,10).toInt(); if(curYear>y||(curYear==y&&curMon>m)||(curYear==y&&curMon==m&&curMday>d)) inPeriod=false; }
             match=(inPeriod && curHour==aH && curMin==aM);
         }
-        if(match) sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
+        if(match) {
+            time_t triggerMinute = now - timeinfo.tm_sec;
+            if (alert.lastTriggered != triggerMinute) {
+                sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
+                alert.lastTriggered = triggerMinute;
+            }
+        }
     }
 }
 
@@ -73,6 +79,7 @@ void Scheduler::loadFromNVS() {
             a.volume=obj["volume"]|20; a.loopDuration=obj["loop"]|0;
             a.isPrayerRelative=obj["isPrayerRelative"]|false; a.prayerIndex=obj["prayerIndex"]|0; a.offsetSeconds=obj["offsetSeconds"]|0;
             a.validFrom=obj["validFrom"]|""; a.validTo=obj["validTo"]|"";
+            a.lastTriggered = 0;
             alerts.push_back(a);
         }
     }

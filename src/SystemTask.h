@@ -8,6 +8,7 @@
 void systemTask(void *pvParameters);
 void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume = 0, uint32_t loopDuration = 0);
 void setupWiFi();
+void maintainWiFi();
 void syncTimeFromNTP();
 String getCurrentTimeStr();
 String getCurrentDateStr();

@@ -8,6 +8,7 @@
 #include "VivoWebServer.h"
 #include "LEDManager.h"
 #include "CSVManager.h"
+#include "SDManager.h"
 #include <WiFi.h>
 #include <time.h>
 #include <Preferences.h>
@@ -16,8 +17,12 @@ extern Preferences prefs;
 extern QueueHandle_t audioQueue;
 extern char fileBuffer[128];
 
-static const char* defaultSSID = "your_ssid";
-static const char* defaultPass = "your_password";
+static const char* defaultSSID = "HONOR X9d";
+static const char* defaultPass = "123456789";
+static const char* setupApName = "VivoSmart-Setup";
+static const unsigned long reconnectIntervalMs = 15000;
+static const unsigned long apEnableDelayMs = 30000;
+static const unsigned long apDisableStableMs = 5000;
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
 PrayerTimesResult todayPrayer;
@@ -26,12 +31,38 @@ bool adhanPlayed[5] = {false};
 bool iqamaPlayed[5] = {false};
 unsigned long adhanStartTime = 0;
 String todayHijri;
+static bool setupApActive = false;
+static bool lastWifiConnected = false;
+static unsigned long wifiDisconnectedAt = 0;
+static unsigned long wifiConnectedAt = 0;
+static unsigned long lastReconnectAttempt = 0;
+
+static bool isApModeActive() {
+    wifi_mode_t mode = WiFi.getMode();
+    return mode == WIFI_AP || mode == WIFI_AP_STA;
+}
+
+static void startSetupAp() {
+    if (!isApModeActive()) WiFi.mode(WIFI_AP_STA);
+    if (!setupApActive) {
+        WiFi.softAP(setupApName);
+        setupApActive = true;
+    }
+}
+
+static void stopSetupAp() {
+    if (isApModeActive()) {
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+    }
+    setupApActive = false;
+}
 
 // ---------- WiFi ----------
 void setupWiFi() {
     WiFi.mode(WIFI_STA);
     prefs.begin("network", true);
-    bool useStatic = prefs.getBool("dhcp", true) == false;
+    bool useStatic = prefs.getBool("dhcp", false) == false;
     if (useStatic) {
         staticIP.fromString(prefs.getString("ip", "192.168.1.100"));
         gateway.fromString(prefs.getString("gw", "192.168.1.1"));
@@ -47,8 +78,52 @@ void setupWiFi() {
     WiFi.begin(ssid.c_str(), pass.c_str());
     int tries = 0;
     while (WiFi.status() != WL_CONNECTED && tries < 30) { delay(500); tries++; }
-    if (WiFi.status() == WL_CONNECTED) setLedState(LED_WIFI_OK);
-    else { setLedState(LED_ERROR); WiFi.mode(WIFI_AP); WiFi.softAP("VivoSmart-Setup"); }
+    if (WiFi.status() == WL_CONNECTED) {
+        setLedState(LED_WIFI_OK);
+        lastWifiConnected = true;
+        wifiConnectedAt = millis();
+    } else {
+        setLedState(LED_ERROR);
+        startSetupAp();
+        wifiDisconnectedAt = millis();
+    }
+}
+
+void maintainWiFi() {
+    bool connected = WiFi.status() == WL_CONNECTED;
+    unsigned long nowMs = millis();
+
+    if (connected) {
+        if (!lastWifiConnected) {
+            lastWifiConnected = true;
+            wifiConnectedAt = nowMs;
+            setLedState(LED_WIFI_OK);
+            syncTimeFromNTP();
+        }
+
+        if (setupApActive && nowMs - wifiConnectedAt >= apDisableStableMs) {
+            stopSetupAp();
+        }
+        return;
+    }
+
+    if (lastWifiConnected) {
+        lastWifiConnected = false;
+        wifiDisconnectedAt = nowMs;
+        lastReconnectAttempt = 0;
+        setLedState(LED_WIFI_CONNECTING);
+    }
+
+    if (!setupApActive && nowMs - wifiDisconnectedAt >= apEnableDelayMs) {
+        setLedState(LED_ERROR);
+        startSetupAp();
+    }
+
+    if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
+        lastReconnectAttempt = nowMs;
+        if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
+        WiFi.reconnect();
+    }
 }
 
 void syncTimeFromNTP() {
@@ -70,6 +145,7 @@ String getCurrentDateStr() {
 
 void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume, uint32_t loopDuration) {
     strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
+    fileBuffer[sizeof(fileBuffer)-1] = '\0';
     AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume, loopDuration};
     xQueueSend(audioQueue, &msg, 0);
 }
@@ -188,6 +264,14 @@ void systemTask(void *pvParameters) {
     currentPrayerConfig.timezone = 2;
     currentPrayerConfig.method = 0;
 
+    prefs.begin("prayer_cfg", true);
+    currentPrayerConfig.offsetFajr = prefs.getInt("fajr", 0);
+    currentPrayerConfig.offsetDhuhr = prefs.getInt("dhuhr", 0);
+    currentPrayerConfig.offsetAsr = prefs.getInt("asr", 0);
+    currentPrayerConfig.offsetMaghrib = prefs.getInt("maghrib", 0);
+    currentPrayerConfig.offsetIsha = prefs.getInt("isha", 0);
+    prefs.end();
+
     initLED(); setLedState(LED_BOOTING);
     setupWiFi();
     syncTimeFromNTP();
@@ -195,12 +279,17 @@ void systemTask(void *pvParameters) {
     maghribManager.begin();
     scheduler.begin();
     initGPIO();
+    loadGpioSchedules();
 
     playStartupAlert();
 
     for (;;) {
         updateLEDTask();
+        maintainWiFi();
+        if (shouldRetrySDCard()) initSDCard(false);
         checkPrayerTimes();
+        checkGpioSchedules();
+        checkOutputTimers();
         if (!isEidMode()) {
             scheduler.checkAndTrigger();
             maghribManager.checkAndTrigger();

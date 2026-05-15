@@ -7,6 +7,7 @@
 #include "MaghribManager.h"
 #include "SystemTask.h"
 #include "CSVManager.h"
+#include "SDManager.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
@@ -18,17 +19,122 @@ extern QueueHandle_t audioQueue;
 extern AudioManager audioManager;
 extern char fileBuffer[128];
 
-// ======================== FILE LIST ========================
+static File uploadFile;
+static const uint8_t I2S_BCLK_PIN = 16;
+static const uint8_t I2S_LRCK_PIN = 17;
+static const uint8_t I2S_DOUT_PIN = 18;
+
+static bool sdReady() {
+    return isSDReady();
+}
+
+static String postValue(AsyncWebServerRequest *request, const char *name, const String &fallback = "") {
+    if (request->hasParam(name, true)) return request->getParam(name, true)->value();
+    if (request->hasParam(name)) return request->getParam(name)->value();
+    return fallback;
+}
+
+static bool postBool(AsyncWebServerRequest *request, const char *name, bool fallback = false) {
+    String value = postValue(request, name, fallback ? "1" : "0");
+    value.toLowerCase();
+    return value == "1" || value == "true" || value == "on" || value == "yes";
+}
+
+static void saveWifiSettings(AsyncWebServerRequest *request) {
+    prefs.begin("network", false);
+    prefs.putString("ssid", postValue(request, "ssid", ""));
+    prefs.putString("pass", postValue(request, "pass", ""));
+    prefs.putBool("dhcp", postBool(request, "dhcp", false));
+    prefs.putString("ip", postValue(request, "ip", "192.168.1.100"));
+    prefs.putString("gw", postValue(request, "gw", "192.168.1.1"));
+    prefs.putString("mask", postValue(request, "mask", "255.255.255.0"));
+    prefs.putString("dns", postValue(request, "dns", "8.8.8.8"));
+    prefs.end();
+}
+
+static void applyWifiIpConfig(AsyncWebServerRequest *request) {
+    if (postBool(request, "dhcp", false)) {
+        WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+        return;
+    }
+
+    IPAddress ip, gateway, subnet, dns;
+    ip.fromString(postValue(request, "ip", "192.168.1.100"));
+    gateway.fromString(postValue(request, "gw", "192.168.1.1"));
+    subnet.fromString(postValue(request, "mask", "255.255.255.0"));
+    dns.fromString(postValue(request, "dns", "8.8.8.8"));
+    WiFi.config(ip, gateway, subnet, dns);
+}
+
+static String cleanPath(const String &name) {
+    String path = name;
+    path.replace("\\", "/");
+    while (path.startsWith("/")) path.remove(0, 1);
+    path.replace("..", "");
+    return "/" + path;
+}
+
+static void sendJson(AsyncWebServerRequest *request, JsonDocument &doc) {
+    String json;
+    serializeJson(doc, json);
+    request->send(200, "application/json", json);
+}
+
+static void sendOk(AsyncWebServerRequest *request) {
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+static String nextPrayerName(const PrayerTimesResult &times) {
+    if (!times.valid) return "";
+    String nowStr = getCurrentTimeStr();
+    const char *names[] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
+    const String values[] = {times.fajr, times.dhuhr, times.asr, times.maghrib, times.isha};
+    for (int i = 0; i < 5; ++i) {
+        if (nowStr < values[i]) return String(names[i]) + " " + values[i];
+    }
+    return String(names[0]) + " " + values[0];
+}
+
+static void writePrayerJson(AsyncWebServerRequest *request, const PrayerTimesResult &times) {
+    DynamicJsonDocument doc(512);
+    doc["valid"] = times.valid;
+    doc["fajr"] = times.fajr;
+    doc["sunrise"] = times.sunrise;
+    doc["dhuhr"] = times.dhuhr;
+    doc["asr"] = times.asr;
+    doc["maghrib"] = times.maghrib;
+    doc["isha"] = times.isha;
+    doc["next"] = nextPrayerName(times);
+    sendJson(request, doc);
+}
+
 void handleFileList(AsyncWebServerRequest *request) {
     DynamicJsonDocument doc(12288);
     JsonArray arr = doc.createNestedArray("files");
-    if (SD.cardSize()) {
+
+    bool mounted = sdReady();
+    doc["sd"]["connected"] = mounted;
+    doc["sd"]["cardType"] = mounted ? getSDCardTypeName() : "NONE";
+    doc["sd"]["totalMB"] = mounted ? getSDTotalMB() : 0;
+    doc["sd"]["usedMB"] = mounted ? getSDUsedMB() : 0;
+    doc["sd"]["error"] = getLastSDError();
+    doc["sd"]["cs"] = getActiveSDCsPin();
+    doc["sd"]["sck"] = getActiveSDSckPin();
+    doc["sd"]["miso"] = getActiveSDMisoPin();
+    doc["sd"]["mosi"] = getActiveSDMosiPin();
+    doc["i2s"]["bclk"] = I2S_BCLK_PIN;
+    doc["i2s"]["lrck"] = I2S_LRCK_PIN;
+    doc["i2s"]["dout"] = I2S_DOUT_PIN;
+
+    if (mounted) {
         File root = SD.open("/");
         if (root) {
             File f = root.openNextFile();
             while (f) {
                 JsonObject o = arr.createNestedObject();
-                o["name"] = String(f.name()).substring(1);
+                String name = f.name();
+                while (name.startsWith("/")) name.remove(0, 1);
+                o["name"] = name;
                 o["size"] = f.size();
                 o["isDirectory"] = f.isDirectory();
                 f.close();
@@ -37,137 +143,479 @@ void handleFileList(AsyncWebServerRequest *request) {
             root.close();
         }
     }
-    String json;
-    serializeJson(doc, json);
-    request->send(200, "application/json", json);
+
+    sendJson(request, doc);
 }
 
-// ======================== MAIN SERVER ========================
+static void handleSdDownload(AsyncWebServerRequest *request) {
+    String url = request->url();
+    if (!url.startsWith("/sd/")) {
+        request->send(404, "text/plain", "Not Found");
+        return;
+    }
+    String path = cleanPath(url.substring(4));
+    if (!sdReady()) {
+        request->send(503, "text/plain", "SD card not connected");
+        return;
+    }
+    if (!SD.exists(path)) {
+        request->send(404, "text/plain", "File not found");
+        return;
+    }
+    request->send(SD, path, "application/octet-stream");
+}
+
+static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    if (!sdReady()) return;
+    if (!index) {
+        String path = cleanPath(filename);
+        if (SD.exists(path)) SD.remove(path);
+        uploadFile = SD.open(path, FILE_WRITE);
+    }
+    if (uploadFile && len) uploadFile.write(data, len);
+    if (final && uploadFile) uploadFile.close();
+}
+
+static void handleCsvUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    if (!sdReady()) return;
+    int month = postValue(request, "month", "1").toInt();
+    if (month < 1 || month > 12) month = 1;
+    String path = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    if (!index) {
+        if (SD.exists(path)) SD.remove(path);
+        uploadFile = SD.open(path, FILE_WRITE);
+    }
+    if (uploadFile && len) uploadFile.write(data, len);
+    if (final && uploadFile) {
+        uploadFile.close();
+        CSVManager::loadMonth(month, path);
+    }
+}
+
+static void handleOtaUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    if (!index) {
+        Update.begin(UPDATE_SIZE_UNKNOWN);
+    }
+    if (len) Update.write(data, len);
+    if (final) Update.end(true);
+}
+
 void startWebServer() {
-    LittleFS.begin(true);
+    if (!LittleFS.begin(true)) {
+        Serial.println("LittleFS Mount Failed");
+        return;
+    }
+
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
+    DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "*");
+
     server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
-    // favicon
-    server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(404); });
-
-    // الوقت والتاريخ
-    server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *r){
-        r->send(200, "text/plain", getCurrentTimeStr());
+    server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "text/plain", getCurrentTimeStr());
     });
-    server.on("/api/date", HTTP_GET, [](AsyncWebServerRequest *r){
-        DynamicJsonDocument doc(128);
+
+    server.on("/api/date", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
         doc["greg"] = getCurrentDateStr();
         doc["hijri"] = PrayerTimesEngine::gregorianToHijri(time(nullptr));
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+        sendJson(request, doc);
     });
-    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *r){
-        DynamicJsonDocument doc(128);
+
+    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
         doc["playing"] = (audioManager.getState() != AUDIO_IDLE);
         doc["file"] = audioManager.getCurrentFile();
         doc["volume"] = 15;
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+        doc["wifi"] = WiFi.status() == WL_CONNECTED;
+        doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
+        sendJson(request, doc);
     });
 
-    // WiFi scan
-    server.on("/api/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *r){
+    server.on("/api/audio/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
+        AudioMessage msg = {CMD_STOP, 0, 0, 0, 0, 0};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/volume", HTTP_POST, [](AsyncWebServerRequest *request) {
+        AudioMessage msg = {CMD_SET_VOLUME, postValue(request, "volume", "15").toInt(), 0, 0, 0, 0};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/play", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String file = postValue(request, "file", "");
+        if (file.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing file\"}");
+            return;
+        }
+        sendPlayCommand(file.c_str(), postValue(request, "priority", "1").toInt(), 0, postValue(request, "volume", "0").toInt(), 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/playlist", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String files = postValue(request, "files", "");
+        if (files.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing files\"}");
+            return;
+        }
+        strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
+        uint32_t packed = (postBool(request, "respectAdhan") ? 1 : 0);
+        AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, (uint8_t)postValue(request, "volume", "15").toInt(), packed};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
         int n = WiFi.scanComplete();
-        if (n == -2) { WiFi.scanNetworks(true); r->send(200, "application/json", "{\"networks\":[]}"); return; }
-        if (n < 0) { r->send(200, "application/json", "{\"networks\":[]}"); return; }
-        DynamicJsonDocument doc(2048);
+        if (n == WIFI_SCAN_FAILED || n == -2) {
+            WiFi.scanNetworks(true, false);
+            request->send(202, "application/json", "{\"status\":\"scanning\"}");
+            return;
+        }
+        DynamicJsonDocument doc(4096);
         JsonArray arr = doc.createNestedArray("networks");
-        for (int i = 0; i < n; i++) {
-            JsonObject o = arr.createNestedObject();
-            o["ssid"] = WiFi.SSID(i);
-            o["rssi"] = WiFi.RSSI(i);
+        for (int i = 0; i < n && i < 30; ++i) {
+            JsonObject obj = arr.createNestedObject();
+            obj["ssid"] = WiFi.SSID(i);
+            obj["rssi"] = WiFi.RSSI(i);
+            obj["enc"] = WiFi.encryptionType(i);
         }
         WiFi.scanDelete();
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+        sendJson(request, doc);
     });
 
-    // WiFi save
-    server.on("/api/wifi/save", HTTP_POST, [](AsyncWebServerRequest *r){
-        if (!r->hasArg("plain")) { r->send(400); return; }
-        DynamicJsonDocument doc(512); deserializeJson(doc, r->arg("plain"));
-        Preferences prefs; prefs.begin("network", false);
-        prefs.putString("ssid", doc["ssid"] | "");
-        prefs.putString("pass", doc["pass"] | "");
-        prefs.putBool("dhcp", doc["dhcp"] | true);
-        if (!doc["dhcp"]) {
-            prefs.putString("ip", doc["ip"] | "192.168.1.100");
-            prefs.putString("gw", doc["gw"] | "192.168.1.1");
-            prefs.putString("mask", doc["mask"] | "255.255.255.0");
-            prefs.putString("dns", doc["dns"] | "8.8.8.8");
+    server.on("/api/wifi/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String ssid = postValue(request, "ssid", "");
+        if (ssid.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing ssid\"}");
+            return;
         }
+        saveWifiSettings(request);
+        sendOk(request);
+    });
+
+    server.on("/api/wifi/connect", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String ssid = postValue(request, "ssid", "");
+        String pass = postValue(request, "pass", "");
+        if (ssid.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing ssid\"}");
+            return;
+        }
+
+        saveWifiSettings(request);
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.softAP("VivoSmart-Setup");
+        WiFi.disconnect(false);
+        delay(100);
+        applyWifiIpConfig(request);
+        WiFi.begin(ssid.c_str(), pass.c_str());
+
+        uint8_t tries = 0;
+        while (WiFi.status() != WL_CONNECTED && tries < 24) {
+            delay(500);
+            tries++;
+        }
+
+        DynamicJsonDocument doc(384);
+        bool connected = WiFi.status() == WL_CONNECTED;
+        doc["ok"] = true;
+        doc["connected"] = connected;
+        doc["ssid"] = connected ? WiFi.SSID() : ssid;
+        doc["ip"] = connected ? WiFi.localIP().toString() : "";
+        doc["apIp"] = connected ? "" : WiFi.softAPIP().toString();
+        sendJson(request, doc);
+    });
+
+    server.on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(384);
+        bool connected = WiFi.status() == WL_CONNECTED;
+        prefs.begin("network", true);
+        doc["connected"] = connected;
+        doc["ssid"] = connected ? WiFi.SSID() : "";
+        doc["ip"] = connected ? WiFi.localIP().toString() : "";
+        doc["apIp"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) ? WiFi.softAPIP().toString() : "";
+        doc["dhcp"] = prefs.getBool("dhcp", false);
+        doc["savedSsid"] = prefs.getString("ssid", "");
+        doc["staticIp"] = prefs.getString("ip", "192.168.1.100");
+        doc["gateway"] = prefs.getString("gw", "192.168.1.1");
+        doc["subnet"] = prefs.getString("mask", "255.255.255.0");
+        doc["dns"] = prefs.getString("dns", "8.8.8.8");
         prefs.end();
-        r->send(200, "text/plain", "OK");
+        sendJson(request, doc);
     });
 
-    // File list
-    server.on("/api/files/list", HTTP_GET, handleFileList);
-
-    // Scheduler (مبسط للاختبار)
-    server.on("/api/schedule/list", HTTP_GET, [](AsyncWebServerRequest *r){
-        r->send(200, "application/json", "[]");
+    server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(2048);
+        JsonArray arr = doc.createNestedArray("countries");
+        for (const String &country : PrayerTimesEngine::getCountries()) arr.add(country);
+        sendJson(request, doc);
     });
 
-    // Location countries
-    server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *r){
-        std::vector<String> countries = PrayerTimesEngine::getCountries();
-        DynamicJsonDocument doc(2048); JsonArray arr = doc.to<JsonArray>();
-        for (const auto& c : countries) arr.add(c);
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+    server.on("/api/location/cities", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String country = request->hasParam("country") ? request->getParam("country")->value() : "";
+        DynamicJsonDocument doc(2048);
+        JsonArray arr = doc.createNestedArray("cities");
+        for (const String &city : PrayerTimesEngine::getCities(country)) arr.add(city);
+        sendJson(request, doc);
     });
 
-    // Location cities
-    server.on("/api/location/cities", HTTP_GET, [](AsyncWebServerRequest *r){
-        if (!r->hasParam("country")) { r->send(400); return; }
-        std::vector<String> cities = PrayerTimesEngine::getCities(r->getParam("country")->value());
-        DynamicJsonDocument doc(4096); JsonArray arr = doc.to<JsonArray>();
-        for (const auto& c : cities) arr.add(c);
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
-    });
-
-    // Prayer fetch
-    server.on("/api/prayer/fetch", HTTP_GET, [](AsyncWebServerRequest *r){
-        extern PrayerConfig currentPrayerConfig;
-        String country = r->arg("country"), city = r->arg("city");
-        int method = r->arg("method").toInt();
-        if (!PrayerTimesEngine::getCoordinates(country, city, currentPrayerConfig.latitude, currentPrayerConfig.longitude, currentPrayerConfig.timezone)) {
-            r->send(400); return;
+    server.on("/api/prayer/times", HTTP_GET, [](AsyncWebServerRequest *request) {
+        PrayerConfig config = currentPrayerConfig;
+        if (request->hasParam("country") && request->hasParam("city")) {
+            float lat, lng;
+            int tz;
+            if (PrayerTimesEngine::getCoordinates(request->getParam("country")->value(), request->getParam("city")->value(), lat, lng, tz)) {
+                config.latitude = lat;
+                config.longitude = lng;
+                config.timezone = tz;
+                currentPrayerConfig.latitude = lat;
+                currentPrayerConfig.longitude = lng;
+                currentPrayerConfig.timezone = tz;
+            }
         }
-        currentPrayerConfig.method = method;
-        PrayerTimesResult times = PrayerTimesEngine::calculate(time(nullptr), currentPrayerConfig);
+        if (request->hasParam("method")) {
+            config.method = request->getParam("method")->value().toInt();
+            currentPrayerConfig.method = config.method;
+        }
+        PrayerTimesResult result = PrayerTimesEngine::calculate(time(nullptr), config);
+        if (result.valid) todayPrayer = result;
+        writePrayerJson(request, result);
+    });
+
+    server.on("/api/prayer/offsets", HTTP_POST, [](AsyncWebServerRequest *request) {
+        currentPrayerConfig.offsetFajr = postValue(request, "fajr", "0").toInt();
+        currentPrayerConfig.offsetDhuhr = postValue(request, "dhuhr", "0").toInt();
+        currentPrayerConfig.offsetAsr = postValue(request, "asr", "0").toInt();
+        currentPrayerConfig.offsetMaghrib = postValue(request, "maghrib", "0").toInt();
+        currentPrayerConfig.offsetIsha = postValue(request, "isha", "0").toInt();
+        prefs.begin("prayer_cfg", false);
+        prefs.putInt("fajr", currentPrayerConfig.offsetFajr);
+        prefs.putInt("dhuhr", currentPrayerConfig.offsetDhuhr);
+        prefs.putInt("asr", currentPrayerConfig.offsetAsr);
+        prefs.putInt("maghrib", currentPrayerConfig.offsetMaghrib);
+        prefs.putInt("isha", currentPrayerConfig.offsetIsha);
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/prayer/manual/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        prefs.begin("prayer_manual", true);
+        doc["enabled"] = prefs.getBool("enabled", false);
+        doc["fajr"] = prefs.getString("fajr", "04:30");
+        doc["dhuhr"] = prefs.getString("dhuhr", "12:00");
+        doc["asr"] = prefs.getString("asr", "15:30");
+        doc["maghrib"] = prefs.getString("maghrib", "18:00");
+        doc["isha"] = prefs.getString("isha", "19:30");
+        prefs.end();
+        sendJson(request, doc);
+    });
+
+    server.on("/api/prayer/manual/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("prayer_manual", false);
+        prefs.putBool("enabled", postBool(request, "enabled"));
+        prefs.putString("fajr", postValue(request, "fajr", "04:30"));
+        prefs.putString("dhuhr", postValue(request, "dhuhr", "12:00"));
+        prefs.putString("asr", postValue(request, "asr", "15:30"));
+        prefs.putString("maghrib", postValue(request, "maghrib", "18:00"));
+        prefs.putString("isha", postValue(request, "isha", "19:30"));
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/adhan/files", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("adhan_files", false);
+        prefs.putString("fajr", postValue(request, "fajr", "fajr_adhan.mp3"));
+        prefs.putString("adhan", postValue(request, "adhan", "adhan.mp3"));
+        prefs.putString("iqama", postValue(request, "iqama", "iqama.mp3"));
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/files/list", HTTP_GET, handleFileList);
+    server.on("/api/files/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(sdReady() ? 200 : 503, "application/json", sdReady() ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+    }, handleSdUpload);
+    server.on("/api/files/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        String path = cleanPath(postValue(request, "name", ""));
+        bool ok = SD.exists(path) && SD.remove(path);
+        request->send(ok ? 200 : 404, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+    });
+    server.on("/api/files/mkdir", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        String path = cleanPath(postValue(request, "name", ""));
+        bool ok = SD.mkdir(path);
+        request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+    });
+
+    server.on("/api/scheduler/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", scheduler.getAlertsJson());
+    });
+    server.on("/api/scheduler/add", HTTP_POST, [](AsyncWebServerRequest *request) {
+        ScheduledAlert alert;
+        alert.fileName = postValue(request, "file", "");
+        String filePath = cleanPath(alert.fileName);
+        if (alert.fileName.length() > 0 && (!sdReady() || !SD.exists(filePath))) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
+            return;
+        }
+        alert.type = postValue(request, "type", "daily");
+        alert.hour = postValue(request, "hour", "0").toInt();
+        alert.minute = postValue(request, "minute", "0").toInt();
+        alert.dayOfWeek = postValue(request, "dayOfWeek", "-1").toInt();
+        alert.dayOfMonth = postValue(request, "dayOfMonth", "-1").toInt();
+        alert.specificDate = postValue(request, "specificDate", "");
+        alert.durationSec = postValue(request, "duration", "0").toInt();
+        alert.enabled = true;
+        alert.volume = postValue(request, "volume", "20").toInt();
+        alert.loopDuration = postValue(request, "loop", "0").toInt();
+        alert.isPrayerRelative = alert.type == "prayer_relative";
+        alert.prayerIndex = postValue(request, "prayerIndex", "0").toInt();
+        alert.offsetSeconds = postValue(request, "offsetSeconds", "0").toInt();
+        scheduler.addAlert(alert);
+        sendOk(request);
+    });
+    server.on("/api/scheduler/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        scheduler.removeAlert(postValue(request, "index", "-1").toInt());
+        sendOk(request);
+    });
+
+    server.on("/api/gpio/mappings", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", getGpioMappingsJson());
+    });
+    server.on("/api/gpio/input", HTTP_POST, [](AsyncWebServerRequest *request) {
+        addInputMapping(postValue(request, "pin", "0").toInt(), postValue(request, "file", ""));
+        sendOk(request);
+    });
+    server.on("/api/gpio/output", HTTP_POST, [](AsyncWebServerRequest *request) {
+        addOutputMapping(postValue(request, "pin", "0").toInt(), postValue(request, "alert", ""), postValue(request, "duration", "5").toInt());
+        sendOk(request);
+    });
+    server.on("/api/gpio/schedule/list", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", getGpioSchedulesJson());
+    });
+    server.on("/api/gpio/schedule/add", HTTP_POST, [](AsyncWebServerRequest *request) {
+        GpioScheduleEntry entry;
+        entry.pin = postValue(request, "pin", "0").toInt();
+        entry.state = postBool(request, "state", true);
+        entry.type = postValue(request, "type", "daily");
+        entry.startHour = postValue(request, "startHour", "0").toInt();
+        entry.startMin = postValue(request, "startMin", "0").toInt();
+        entry.endHour = postValue(request, "endHour", "0").toInt();
+        entry.endMin = postValue(request, "endMin", "0").toInt();
+        entry.dayOfWeek = postValue(request, "dayOfWeek", "-1").toInt();
+        entry.dayOfMonth = postValue(request, "dayOfMonth", "-1").toInt();
+        entry.specificDate = postValue(request, "specificDate", "");
+        entry.enabled = true;
+        addGpioSchedule(entry);
+        sendOk(request);
+    });
+
+    server.on("/api/eid/mode", HTTP_POST, [](AsyncWebServerRequest *request) {
+        setEidMode(postBool(request, "enabled"));
+        sendOk(request);
+    });
+    server.on("/api/eid/file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("eid", false);
+        prefs.putString("takbeer_file", postValue(request, "file", "takbeer.mp3"));
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/maghrib/alerts", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", maghribManager.getAlertsJson());
+    });
+    server.on("/api/maghrib/offset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("maghrib", false);
+        prefs.putInt("offset", postValue(request, "offset", "1").toInt());
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/csv/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        doc["enabled"] = CSVManager::isEnabled();
+        doc["available"] = CSVManager::isAvailable();
+        JsonArray months = doc.createNestedArray("months");
+        for (int month : CSVManager::getLoadedMonths()) months.add(month);
+        sendJson(request, doc);
+    });
+    server.on("/api/csv/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
+        CSVManager::setEnabled(postBool(request, "enabled"));
+        sendOk(request);
+    });
+    server.on("/api/csv/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(sdReady() ? 200 : 503, "application/json", sdReady() ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+    }, handleCsvUpload);
+
+    server.on("/api/startup/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
-        doc["fajr"] = times.fajr; doc["dhuhr"] = times.dhuhr; doc["asr"] = times.asr; doc["maghrib"] = times.maghrib; doc["isha"] = times.isha;
-        String json; serializeJson(doc, json); r->send(200, "application/json", json);
+        prefs.begin("startup", true);
+        doc["enabled"] = prefs.getBool("enabled", false);
+        doc["file"] = prefs.getString("file", "");
+        prefs.end();
+        sendJson(request, doc);
+    });
+    server.on("/api/startup/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("startup", false);
+        prefs.putBool("enabled", postBool(request, "enabled"));
+        prefs.putString("file", postValue(request, "file", ""));
+        prefs.end();
+        sendOk(request);
     });
 
-    // Startup status
-    server.on("/api/startup/status", HTTP_GET, [](AsyncWebServerRequest *r){
-        DynamicJsonDocument doc(128);
-        doc["enabled"] = false; doc["file"] = "";
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+    server.on("/api/password/check", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("auth", true);
+        String saved = prefs.getString("password", "admin");
+        prefs.end();
+        bool ok = postValue(request, "password", "") == saved;
+        request->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+    });
+    server.on("/api/password/change", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("auth", true);
+        String saved = prefs.getString("password", "admin");
+        prefs.end();
+        if (postValue(request, "old", "") != saved) {
+            request->send(200, "application/json", "{\"ok\":false}");
+            return;
+        }
+        prefs.begin("auth", false);
+        prefs.putString("password", postValue(request, "password", "admin"));
+        prefs.end();
+        request->send(200, "application/json", "{\"ok\":true}");
     });
 
-    // Maghrib alerts
-    server.on("/api/maghrib/alerts", HTTP_GET, [](AsyncWebServerRequest *r){
-        r->send(200, "application/json", "[]");
-    });
+    server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {
+        bool ok = !Update.hasError();
+        request->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+        if (ok) {
+            delay(1000);
+            ESP.restart();
+        }
+    }, handleOtaUpload);
 
-    // Manual prayer status
-    server.on("/api/prayer/manual/status", HTTP_GET, [](AsyncWebServerRequest *r){
-        DynamicJsonDocument doc(256); doc["enabled"] = false;
-        JsonObject t = doc.createNestedObject("times");
-        t["fajr"] = "04:30"; t["dhuhr"] = "12:00"; t["asr"] = "15:30"; t["maghrib"] = "18:00"; t["isha"] = "19:30";
-        String json; serializeJson(doc, json);
-        r->send(200, "application/json", json);
+    server.onNotFound([](AsyncWebServerRequest *request) {
+        if (request->method() == HTTP_OPTIONS) {
+            request->send(204);
+            return;
+        }
+        if (request->url().startsWith("/sd/")) {
+            handleSdDownload(request);
+            return;
+        }
+        request->send(404, "text/plain", "Not Found");
     });
 
     server.begin();
+    Serial.println("Web Server Started Successfully");
 }

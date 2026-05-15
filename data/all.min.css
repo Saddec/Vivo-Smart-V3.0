@@ -1,0 +1,11 @@
+.fas,
+.far {
+  display: inline-block;
+  width: 1.25em;
+  text-align: center;
+}
+
+.fas::before,
+.far::before {
+  content: "";
+}
