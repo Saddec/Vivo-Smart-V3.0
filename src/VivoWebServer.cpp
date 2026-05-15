@@ -42,6 +42,39 @@ void handleFileList(AsyncWebServerRequest *request) {
     request->send(200, "application/json", json);
 }
 
+// ======================== FILE UPLOAD ========================
+void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    static File uploadFile;
+    
+    if (index == 0) {
+        if (!SD.exists("/" + filename)) {
+            uploadFile = SD.open("/" + filename, FILE_WRITE);
+            if (!uploadFile) {
+                Serial.printf("[Upload] Failed to create: %s\n", filename.c_str());
+                request->send(500, "application/json", "{\"error\":\"Failed to create file\"}");
+                return;
+            }
+            Serial.printf("[Upload] Starting: %s\n", filename.c_str());
+        } else {
+            uploadFile = SD.open("/" + filename, FILE_WRITE);
+        }
+    }
+    
+    if (uploadFile && data && len) {
+        uploadFile.write(data, len);
+    }
+    
+    if (final) {
+        if (uploadFile) {
+            uploadFile.close();
+            Serial.printf("[Upload] Completed: %s (%d bytes)\n", filename.c_str(), index + len);
+            request->send(200, "application/json", "{\"status\":\"uploaded\"}");
+        } else {
+            request->send(500, "application/json", "{\"error\":\"Upload failed\"}");
+        }
+    }
+}
+
 // ======================== MAIN SERVER ========================
 void startWebServer() {
     if (!LittleFS.begin(true)) {

@@ -15,11 +15,25 @@ function doLogin() {
     isLoggedIn = true;
     document.getElementById('loginOverlay').style.display = 'none';
     document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('loginPassword').value = '';
     initializeUI();
   } else {
     document.getElementById('loginError').style.display = 'block';
+    document.getElementById('loginPassword').value = '';
+    setTimeout(() => { document.getElementById('loginError').style.display = 'none'; }, 3000);
   }
 }
+
+// Allow Enter key on password field
+document.addEventListener('DOMContentLoaded', () => {
+  const loginInput = document.getElementById('loginPassword');
+  if (loginInput) {
+    loginInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') doLogin();
+    });
+    loginInput.focus();
+  }
+});
 
 // Global error handling
 function safeFetch(url, options = {}) {
@@ -52,6 +66,7 @@ function initializeUI() {
   loadSchedules();
   loadGPIOSchedules();
   loadMaghribAlerts();
+  loadPlaylist();
 }
 
 // Clock Update
