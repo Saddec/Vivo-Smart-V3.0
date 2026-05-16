@@ -3,10 +3,10 @@
 
 #include <Arduino.h>
 
-static const uint8_t SD_CS_PIN = 38;
-static const uint8_t SD_SCK_PIN = 36;
-static const uint8_t SD_MISO_PIN = 37;
-static const uint8_t SD_MOSI_PIN = 35;
+static const uint8_t SD_CS_PIN = 10;
+static const uint8_t SD_SCK_PIN = 12;
+static const uint8_t SD_MISO_PIN = 13;
+static const uint8_t SD_MOSI_PIN = 11;
 
 bool initSDCard(bool force = false);
 bool isSDReady();

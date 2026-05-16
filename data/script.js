@@ -8,8 +8,25 @@ const appState = {
 
 const $ = (id) => document.getElementById(id);
 
+let currentDir = '/';
+
 function toast(message) {
-  alert(message);
+  let container = $('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;';
+    document.body.appendChild(container);
+    
+    const style = document.createElement('style');
+    style.innerHTML = `@keyframes fadein{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} @keyframes fadeout{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-20px)}}`;
+    document.head.appendChild(style);
+  }
+  const el = document.createElement('div');
+  el.style.cssText = 'background:#2c3e50;color:#fff;padding:12px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-size:15px;animation:fadein 0.3s, fadeout 0.3s 4.7s forwards; border-left: 4px solid #3498db; text-align:center; direction:rtl;';
+  el.innerHTML = message;
+  container.appendChild(el);
+  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 5000);
 }
 
 function formBody(data) {
@@ -81,6 +98,7 @@ function doLogin() {
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
         $('loginError').style.display = 'none';
+        localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
       } else {
         $('loginError').style.display = 'block';
@@ -90,11 +108,81 @@ function doLogin() {
       if (password === appState.password) {
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
+        localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
       } else {
         $('loginError').style.display = 'block';
       }
     });
+}
+
+function doLogout() {
+    localStorage.removeItem('vivoSessionTime');
+    location.reload();
+}
+
+function forgotPassword() {
+    const code = prompt('أدخل كود الاستعادة (Master Code):');
+    if (!code) return;
+    
+    const newPass = prompt('أدخل كلمة المرور الجديدة:');
+    if (!newPass || newPass.length < 4) return toast('كلمة المرور قصيرة جداً أو ملغاة');
+    
+    apiPost('/api/password/master_reset', { master: code, password: newPass })
+        .then((data) => {
+            if (data.ok) {
+                toast('تم استعادة وتغيير كلمة المرور بنجاح! يرجى تسجيل الدخول');
+                appState.password = newPass;
+                localStorage.setItem('vivoPassword', newPass);
+            } else {
+                toast('كود الاستعادة غير صحيح');
+            }
+        }).catch(err => toast(`فشل الاتصال: ${err.message}`));
+}
+
+function togglePasswordVisibility(inputId, iconId) {
+    const input = $(inputId);
+    const icon = $(iconId);
+    if (!input || !icon) return;
+    
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+        icon.style.color = '#3498db';
+    } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+        icon.style.color = '#7f8c8d';
+    }
+}
+
+function systemReboot() {
+    if (confirm('هل أنت متأكد من إعادة تشغيل النظام؟')) {
+        apiPost('/api/system/reboot').then(() => {
+            toast('جاري إعادة التشغيل...');
+            setTimeout(() => location.reload(), 5000);
+        });
+    }
+}
+
+function systemFactoryReset() {
+    if (confirm('تحذير خطير: سيتم مسح جميع الإعدادات والمواقيت والشبكات. هل أنت متأكد تماماً؟')) {
+        apiPost('/api/system/reset').then(() => {
+            toast('جاري ضبط المصنع ومسح الإعدادات...');
+            setTimeout(() => location.reload(), 8000);
+        });
+    }
+}
+
+function systemShutdown() {
+    if (confirm('تحذير: سيتم إغلاق النظام نهائياً ولن يعمل إلا بفصل الكهرباء وإعادتها. هل أنت متأكد؟')) {
+        apiPost('/api/system/shutdown').then(() => {
+            toast('تم إغلاق النظام بنجاح. افصل الكهرباء لإعادة التشغيل.');
+            setTimeout(() => $('mainContent').innerHTML = '<h1 style="text-align:center; margin-top:20vh;">تم إغلاق النظام</h1>', 2000);
+        });
+    }
 }
 
 function initDashboard() {
@@ -317,14 +405,82 @@ function loadFileList() {
   apiGet('/api/files/list', { files: [] }).then((data) => {
     renderSdStatus(data.sd || {});
     appState.files = data.files || [];
-    const fileHtml = appState.files.map((f) => {
-      const name = safeText(f.name);
-      const size = f.isDirectory ? 'مجلد' : `${((f.size || 0) / 1024 / 1024).toFixed(2)} MB`;
-      return `<div class="file-item"><span onclick="previewFile('${safeAttr(f.name)}')">${name}</span><span>${size}</span><button class="btn btn-danger" onclick="deleteFile('${safeAttr(f.name)}')">حذف</button></div>`;
-    }).join('');
-    if ($('fileList')) $('fileList').innerHTML = fileHtml || '<p>لا توجد ملفات على بطاقة SD</p>';
+    renderFileManager();
     populateFileSelects();
   });
+}
+
+function renderFileManager() {
+    const folderSelect = $('uploadFolderSelect');
+    if (folderSelect) {
+        folderSelect.innerHTML = '<option value="/">الرئيسي (Root)</option>' + 
+            appState.files.filter(f => f.isDirectory).map(f => `<option value="/${safeAttr(f.name)}">/${safeText(f.name)}</option>`).join('');
+        folderSelect.value = currentDir;
+    }
+
+    let fileHtml = '';
+    if (currentDir !== '/') {
+        let parentDir = currentDir.substring(0, currentDir.lastIndexOf('/'));
+        if (parentDir === '') parentDir = '/';
+        fileHtml += `<div class="file-item" style="background:rgba(255,255,255,0.1); cursor:pointer; justify-content:center;" onclick="currentDir='${parentDir}'; renderFileManager();">
+                        <span style="font-weight:bold; color:#f1c40f;"><i class="fas fa-arrow-up"></i> الرجوع للمجلد السابق (${parentDir})</span>
+                     </div>`;
+    }
+
+    const currentFiles = [];
+    appState.files.forEach(f => {
+        let path = '/' + f.name;
+        let dirPrefix = currentDir === '/' ? '/' : currentDir + '/';
+        if (path.startsWith(dirPrefix)) {
+            let remainder = path.substring(dirPrefix.length);
+            if (!remainder.includes('/')) {
+                currentFiles.push({ ...f, shortName: remainder, fullPath: f.name });
+            }
+        }
+    });
+
+    fileHtml += currentFiles.map((f) => {
+      const name = safeText(f.shortName);
+      if (f.isDirectory) {
+          return `<div class="file-item" style="background:rgba(46, 204, 113, 0.1);">
+                    <span style="flex-grow:1; cursor:pointer; font-weight:bold; color:#2ecc71;" onclick="currentDir='${currentDir === '/' ? '/' : currentDir + '/'}${name}'; renderFileManager();"><i class="fas fa-folder"></i> ${name}</span>
+                    <button class="btn" style="background:#f39c12; margin-left: 5px;" onclick="renameFile('${safeAttr(f.fullPath)}')">تسمية</button>
+                    <button class="btn btn-danger" onclick="deleteFile('${safeAttr(f.fullPath)}')">حذف</button>
+                  </div>`;
+      } else {
+          const size = `${((f.size || 0) / 1024 / 1024).toFixed(2)} MB`;
+          return `<div class="file-item">
+                    <span style="flex-grow:1; cursor:pointer;" onclick="previewFile('${safeAttr(f.fullPath)}')"><i class="fas fa-file-audio"></i> ${name}</span>
+                    <span style="margin-left: 10px;">${size}</span>
+                    <button class="btn" style="background:#f39c12; margin-left: 5px;" onclick="renameFile('${safeAttr(f.fullPath)}')">تسمية</button>
+                    <button class="btn btn-danger" onclick="deleteFile('${safeAttr(f.fullPath)}')">حذف</button>
+                  </div>`;
+      }
+    }).join('');
+
+    if ($('fileList')) $('fileList').innerHTML = fileHtml || '<p style="text-align:center; opacity:0.7;">المجلد فارغ</p>';
+}
+
+function toggleFileList() {
+    const container = $('fileListContainer');
+    const btn = $('btnToggleFiles');
+    if (!container || !btn) return;
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i> إخفاء الملفات';
+    } else {
+        container.style.display = 'none';
+        btn.innerHTML = '<i class="fas fa-eye"></i> عرض الملفات';
+    }
+}
+
+function renameFile(oldName) {
+    const newName = prompt(`تغيير اسم: ${oldName}\nأدخل الاسم الجديد:`, oldName);
+    if (!newName || newName === oldName) return;
+    
+    apiPost('/api/files/rename', { old: oldName, new: newName })
+        .then(() => loadFileList())
+        .catch(err => toast(`فشل إعادة التسمية: ${err.message}`));
 }
 
 function renderSdStatus(sd) {
@@ -337,8 +493,7 @@ function renderSdStatus(sd) {
   $('sdStatus').innerHTML = [
     `<div class="file-item"><span>الحالة</span><span>متصلة وتعمل</span></div>`,
     `<div class="file-item"><span>النوع</span><span>${safeText(sd.cardType || 'UNKNOWN')}</span></div>`,
-    `<div class="file-item"><span>الحجم</span><span>${sd.usedMB || 0} MB مستخدم / ${sd.totalMB || 0} MB</span></div>`,
-    `<div class="file-item"><span>SD GPIO</span><span>CS ${sd.cs}, SCK ${sd.sck}, MISO ${sd.miso}, MOSI ${sd.mosi}</span></div>`
+    `<div class="file-item"><span>الحجم</span><span>${sd.usedMB || 0} MB مستخدم / ${sd.totalMB || 0} MB</span></div>`
   ].join('');
 }
 
@@ -356,17 +511,63 @@ function populateFileSelects() {
 function uploadFile() {
   const input = $('fileInput');
   if (!input?.files?.length) return toast('اختر ملفاً أولاً');
-  const body = new FormData();
-  body.append('file', input.files[0]);
-  fetch('/api/files/upload', { method: 'POST', body })
-    .then((r) => {
-      if (!r.ok) throw new Error('upload failed');
-      if ($('uploadStatus')) $('uploadStatus').textContent = 'تم الرفع';
-      loadFileList();
-    })
-    .catch(() => {
-      if ($('uploadStatus')) $('uploadStatus').textContent = 'فشل الرفع. تحقق من اتصال بطاقة SD';
-    });
+  
+  const file = input.files[0];
+  const folder = $('uploadFolderSelect')?.value || '/';
+  
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+
+  const progressBar = $('uploadProgressBar');
+  const statusDiv = $('uploadStatus');
+  
+  if (progressBar) {
+      progressBar.style.display = 'block';
+      progressBar.value = 0;
+  }
+  if (statusDiv) {
+      statusDiv.style.color = 'inherit';
+      statusDiv.textContent = 'جاري الرفع... 0%';
+  }
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', `/api/files/upload`, true);
+  xhr.setRequestHeader('X-Folder', encodeURIComponent(folder));
+
+  xhr.upload.onprogress = function(e) {
+      if (e.lengthComputable) {
+          const percentComplete = Math.round((e.loaded / e.total) * 100);
+          if (progressBar) progressBar.value = percentComplete;
+          if (statusDiv) statusDiv.textContent = `جاري الرفع... ${percentComplete}%`;
+      }
+  };
+
+  xhr.onload = function() {
+      if (xhr.status === 200) {
+          if (statusDiv) {
+              statusDiv.style.color = '#2ecc71';
+              statusDiv.textContent = 'تم الرفع بنجاح!';
+          }
+          input.value = ''; // Clear input
+          loadFileList();
+      } else {
+          if (statusDiv) {
+              statusDiv.style.color = '#e74c3c';
+              statusDiv.textContent = 'فشل الرفع. الخادم أرجع خطأ: ' + xhr.status;
+          }
+      }
+      setTimeout(() => { if (progressBar) progressBar.style.display = 'none'; }, 5000);
+  };
+
+  xhr.onerror = function() {
+      if (statusDiv) {
+          statusDiv.style.color = '#e74c3c';
+          statusDiv.textContent = 'حدث خطأ في الاتصال أثناء الرفع.';
+      }
+      if (progressBar) progressBar.style.display = 'none';
+  };
+
+  xhr.send(formData);
 }
 
 function deleteFile(name) {
@@ -640,6 +841,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if ($('scheduleVolumeValue')) $('scheduleVolumeValue').textContent = $('scheduleVolume').value;
     });
   }
+  const sessionTime = parseInt(localStorage.getItem('vivoSessionTime') || '0');
+  const sessionValid = (Date.now() - sessionTime) < 86400000; // 24 hours
+
+  if (sessionValid && appState.password) {
+      $('loginPassword').value = appState.password;
+      doLogin();
+  }
+
   setInterval(() => {
     if ($('mainContent')?.style.display !== 'none') {
       updateClock();

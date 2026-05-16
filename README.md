@@ -18,9 +18,26 @@
 - `GPIOManager`: التحكم في المداخل والمخارج والأنظمة المرتبطة.
 
 ## 🛠️ التجهيزات (Hardware)
-- **Controller:** ESP32-S3-DevKitC-1 (8MB Flash).
+- **Controller:** ESP32-S3-DevKitC-1 (N16R8: 16MB Flash, 8MB PSRAM).
 - **Audio Interface:** I2S DAC (مثل MAX98357A).
 - **Network:** WiFi Connectivity for Web Server & NTP Sync.
+
+## 🔌 مخطط التوصيل (Pinout)
+
+### SD Card (SPI)
+- **CS**: GPIO 10
+- **SCK**: GPIO 12
+- **MISO**: GPIO 13
+- **MOSI**: GPIO 11
+- **VCC**: 5V (للموديول الأزرق) أو 3.3V (حسب نوع الموديول)
+- **GND**: GND
+
+### الصوت (I2S MAX98357A)
+- **BCLK**: GPIO 16
+- **LRCK**: GPIO 17
+- **DOUT**: GPIO 18
+- **VCC**: 5V
+- **GND**: GND
 
 ---
 *تم تطوير هذا المشروع بواسطة **Seddik Elzalaa**، فني كهربائي وتقني أنظمة تيار منخفض.*

@@ -2,8 +2,8 @@
 #include <SD.h>
 #include <SPI.h>
 
-static const uint32_t sdPrimaryFreq = 1000000;
-static const uint32_t sdFallbackFreq = 400000;
+static const uint32_t sdPrimaryFreq = 16000000;   // 16MHz لتسريع قراءة ومعاينة الملفات
+static const uint32_t sdFallbackFreq = 4000000;   // 4MHz احتياطي
 static const unsigned long sdRetryIntervalMs = 15000;
 
 struct SDPinSet {
@@ -14,8 +14,10 @@ struct SDPinSet {
     const char* name;
 };
 
+// أطراف الـ Hardware FSPI الافتراضية لأقصى استقرار
 static const SDPinSet sdPinSets[] = {
-    {SD_CS_PIN, SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, "configured"},
+    {10, 12, 13, 11, "HW_FSPI_10-12-13-11"},
+    {13, 14, 12, 11, "Safe_Pins_13-14-12-11"},
 };
 
 static bool sdInitialized = false;
@@ -26,8 +28,11 @@ static SDPinSet activePins = sdPinSets[0];
 static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
     pinMode(pins.cs, OUTPUT);
     digitalWrite(pins.cs, HIGH);
+    
     SPI.end();
+    delay(10);
     SPI.begin(pins.sck, pins.miso, pins.mosi, pins.cs);
+    delay(50);
 
     if (!SD.begin(pins.cs, SPI, frequency)) {
         lastSdError = String(pins.name) + "_begin_failed_" + String(frequency);
@@ -47,7 +52,7 @@ static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
     }
 
     activePins = pins;
-    lastSdError = "";
+    lastSdError = "OK";
     return true;
 }
 
@@ -60,18 +65,30 @@ bool initSDCard(bool force) {
     sdInitialized = false;
     SD.end();
 
+    Serial.println("[SD] 🔄 Trying to mount SD Card...");
+
     for (const SDPinSet& pins : sdPinSets) {
-        if (mountSD(pins, sdPrimaryFreq) || mountSD(pins, sdFallbackFreq)) {
+        // محاولة أولى بسرعة معتدلة
+        if (mountSD(pins, sdPrimaryFreq)) {
             sdInitialized = true;
-            Serial.printf("[SD] Card OK: %s, %lu MB, pins=%s (CS=%u SCK=%u MISO=%u MOSI=%u)\n",
-                          getSDCardTypeName(), (unsigned long)getSDTotalMB(), pins.name,
+            Serial.printf("[SD] ✅ Card Mounted Successfully!\n");
+            Serial.printf("[SD] Type: %s | Size: %lu MB | Pins: CS=%u SCK=%u MISO=%u MOSI=%u\n",
+                          getSDCardTypeName(), (unsigned long)getSDTotalMB(),
                           pins.cs, pins.sck, pins.miso, pins.mosi);
+            return true;
+        }
+        
+        // محاولة احتياطية بسرعة أقل
+        if (mountSD(pins, sdFallbackFreq)) {
+            sdInitialized = true;
+            Serial.printf("[SD] ✅ Card Mounted Successfully (Fallback)\n");
+            Serial.printf("[SD] Type: %s | Size: %lu MB\n", getSDCardTypeName(), (unsigned long)getSDTotalMB());
             return true;
         }
     }
 
-    Serial.printf("[SD] Card failed: %s. Tried configured (CS=%u SCK=%u MISO=%u MOSI=%u)\n",
-                  lastSdError.c_str(), SD_CS_PIN, SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN);
+    Serial.printf("[SD] ❌ SD Card failed: %s\n", lastSdError.c_str());
+    Serial.println("[SD] تحقق من: التوصيلات + صيغة الكارت (FAT32) + 3.3V");
     return false;
 }
 
@@ -105,18 +122,7 @@ const String& getLastSDError() {
     return lastSdError;
 }
 
-uint8_t getActiveSDCsPin() {
-    return activePins.cs;
-}
-
-uint8_t getActiveSDSckPin() {
-    return activePins.sck;
-}
-
-uint8_t getActiveSDMisoPin() {
-    return activePins.miso;
-}
-
-uint8_t getActiveSDMosiPin() {
-    return activePins.mosi;
-}
+uint8_t getActiveSDCsPin()   { return activePins.cs; }
+uint8_t getActiveSDSckPin()  { return activePins.sck; }
+uint8_t getActiveSDMisoPin() { return activePins.miso; }
+uint8_t getActiveSDMosiPin() { return activePins.mosi; }

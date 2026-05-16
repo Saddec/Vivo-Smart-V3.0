@@ -4,22 +4,30 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vivo Smart – لوحة التحكم</title>
-  <link rel="stylesheet" href="/all.min.css">   <!-- ضع ملف font-awesome محلي في LittleFS -->
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/all.min.css">   <!-- نسخة محلية كاحتياطي -->
+  <link rel="stylesheet" href="/style.css?v=3.2">
 </head>
 <body>
   <!-- طبقة تسجيل الدخول -->
   <div id="loginOverlay">
     <div class="glass-card" style="width:350px; text-align:center;">
       <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
-      <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center;">
-      <button class="btn" onclick="doLogin()" style="width:100%; margin-top:15px;">دخول</button>
+      <div style="position:relative; width:100%; margin: 15px auto;">
+        <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center; width:100%;">
+        <i class="fas fa-eye" id="toggleLoginPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('loginPassword', 'toggleLoginPwd')"></i>
+      </div>
+      <button class="btn" onclick="doLogin()" style="width:100%; margin-top:5px;">دخول</button>
+      <button class="btn" onclick="forgotPassword()" style="width:100%; margin-top:10px; background:transparent; border:1px solid #3498db; color:#3498db;">نسيت كلمة السر؟</button>
       <p id="loginError" style="color:#e74c3c; margin-top:10px; display:none;">كلمة المرور غير صحيحة</p>
     </div>
   </div>
 
   <nav class="sidebar" id="sidebar">
-    <div class="logo"><i class="fas fa-mosque"></i> Vivo Smart</div>
+    <div class="logo" style="text-align: center; line-height: 1.2;">
+      <i class="fas fa-mosque" style="font-size: 1.5em; display: block; margin-bottom: 5px;"></i>
+      Vivo Smart
+    </div>
     <a href="#dashboard" class="active" onclick="showTab('dashboard')"><i class="fas fa-home"></i> الرئيسية</a>
     <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
     <a href="#prayer" onclick="showTab('prayer')"><i class="fas fa-clock"></i> الصلاة</a>
@@ -34,6 +42,8 @@
     <a href="#csv" onclick="showTab('csv')"><i class="fas fa-file-csv"></i> CSV</a>
     <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
     <a href="#password" onclick="showTab('password')"><i class="fas fa-key"></i> كلمة المرور</a>
+    <a href="#system" onclick="showTab('system')"><i class="fas fa-server"></i> النظام</a>
+    <a href="#" onclick="doLogout()" style="color:#e74c3c;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
     <span class="version">v3.0 ESP32-S3</span>
   </nav>
 
@@ -117,25 +127,28 @@
       <div class="glass-card">
         <h3>حالة بطاقة SD</h3>
         <div id="sdStatus">جاري الفحص...</div>
-        <div style="margin-top:10px; line-height:1.9">
-          <strong>توصيل SD Card بنظام SPI:</strong><br>
-          CS = GPIO38 ، SCK = GPIO36 ، MISO = GPIO37 ، MOSI = GPIO35 ، VCC = 3.3V ، GND = GND
-          <br>
-          <strong>توصيل I2S للصوت:</strong><br>
-          BCLK = GPIO16 ، LRCK/LRC = GPIO17 ، DOUT/DIN = GPIO18 ، VCC = 3.3V ، GND = GND
-        </div>
       </div>
       <div class="glass-card">
         <h3>رفع ملف</h3>
-        <input type="file" id="fileInput" accept=".mp3,.wav">
+        <label>المجلد الوجهة</label>
+        <select id="uploadFolderSelect"><option value="/">الرئيسي (Root)</option></select>
+        <br><br>
+        <input type="file" id="fileInput" accept=".mp3,.wav,.bin,.csv">
         <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
-        <div id="uploadStatus"></div>
+        <div style="margin-top: 15px;">
+          <progress id="uploadProgressBar" value="0" max="100" style="display:none; width: 100%; height: 20px;"></progress>
+          <div id="uploadStatus" style="margin-top: 5px; font-weight: bold;"></div>
+        </div>
       </div>
       <div class="glass-card">
         <h3>مدير الملفات</h3>
         <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> إنشاء مجلد</button>
         <input type="text" id="newFolderName" placeholder="اسم المجلد الجديد">
-        <div class="file-list" id="fileList"></div>
+        <br><br>
+        <button class="btn" id="btnToggleFiles" onclick="toggleFileList()"><i class="fas fa-eye"></i> عرض الملفات</button>
+        <div id="fileListContainer" style="display:none; margin-top:15px; max-height: 400px; overflow-y: auto;">
+          <div class="file-list" id="fileList"></div>
+        </div>
       </div>
       <div class="glass-card" id="previewCard" style="display:none">
         <h3>معاينة: <span id="previewName"></span></h3>
@@ -291,10 +304,33 @@
     <div id="tab-password" class="tab">
       <h1><i class="fas fa-key"></i> كلمة المرور</h1>
       <div class="glass-card">
-        <label>القديمة</label><input type="password" id="oldPassword">
-        <label>الجديدة</label><input type="password" id="newPassword">
-        <label>تأكيد الجديدة</label><input type="password" id="confirmPassword">
-        <button class="btn" onclick="changePassword()">تغيير</button>
+        <label>القديمة</label>
+        <div style="position:relative; width:100%;">
+          <input type="password" id="oldPassword" style="width:100%;">
+          <i class="fas fa-eye" id="toggleOldPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('oldPassword', 'toggleOldPwd')"></i>
+        </div>
+        <label>الجديدة</label>
+        <div style="position:relative; width:100%;">
+          <input type="password" id="newPassword" style="width:100%;">
+          <i class="fas fa-eye" id="toggleNewPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('newPassword', 'toggleNewPwd')"></i>
+        </div>
+        <label>تأكيد الجديدة</label>
+        <div style="position:relative; width:100%;">
+          <input type="password" id="confirmPassword" style="width:100%;">
+          <i class="fas fa-eye" id="toggleConfPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('confirmPassword', 'toggleConfPwd')"></i>
+        </div>
+        <button class="btn" onclick="changePassword()" style="margin-top:15px;">تغيير</button>
+      </div>
+    </div>
+    <!-- System -->
+    <div id="tab-system" class="tab">
+      <h1><i class="fas fa-server"></i> النظام</h1>
+      <div class="glass-card" style="text-align:center;">
+        <h3>خيارات الطاقة وإعادة الضبط</h3>
+        <p style="margin-bottom:20px; color:#e74c3c; font-weight:bold;">احذر عند استخدام هذه الخيارات لأنها تؤثر على عمل النظام المتصل.</p>
+        <button class="btn" onclick="systemReboot()" style="background:#f39c12; margin:5px;"><i class="fas fa-sync-alt"></i> إعادة التشغيل</button>
+        <button class="btn" onclick="systemFactoryReset()" style="background:#c0392b; margin:5px;"><i class="fas fa-eraser"></i> إعادة ضبط المصنع</button>
+        <button class="btn" onclick="systemShutdown()" style="background:#2c3e50; margin:5px;"><i class="fas fa-power-off"></i> الإغلاق التام</button>
       </div>
     </div>
     <!-- Footer -->
@@ -303,6 +339,6 @@
       <span class="name">صديق عبد العظيم</span>
     </div>
   </main>
-  <script src="/script.js"></script>
+  <script src="/script.js?v=3.1"></script>
 </body>
 </html>
