@@ -15,7 +15,7 @@
       <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
       <div style="position:relative; width:100%; margin: 15px auto;">
         <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center; width:100%;">
-        <i class="fas fa-eye" id="toggleLoginPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('loginPassword', 'toggleLoginPwd')"></i>
+        <i class="fas fa-eye pwd-toggle-icon" id="toggleLoginPwd" onclick="togglePasswordVisibility('loginPassword', 'toggleLoginPwd')"></i>
       </div>
       <button class="btn" onclick="doLogin()" style="width:100%; margin-top:5px;">دخول</button>
       <button class="btn" onclick="forgotPassword()" style="width:100%; margin-top:10px; background:transparent; border:1px solid #3498db; color:#3498db;">نسيت كلمة السر؟</button>
@@ -28,21 +28,20 @@
       <i class="fas fa-mosque" style="font-size: 1.5em; display: block; margin-bottom: 5px;"></i>
       Vivo Smart
     </div>
+    <div class="section-label">العرض الرئيسي</div>
     <a href="#dashboard" class="active" onclick="showTab('dashboard')"><i class="fas fa-home"></i> الرئيسية</a>
-    <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
-    <a href="#prayer" onclick="showTab('prayer')"><i class="fas fa-clock"></i> الصلاة</a>
-    <a href="#files" onclick="showTab('files')"><i class="fas fa-folder-open"></i> الملفات</a>
-    <a href="#scheduler" onclick="showTab('scheduler')"><i class="fas fa-calendar-alt"></i> الجدولة</a>
-    <a href="#gpio" onclick="showTab('gpio')"><i class="fas fa-microchip"></i> GPIO</a>
-    <a href="#gpio_schedule" onclick="showTab('gpio_schedule')"><i class="fas fa-clock"></i> جدولة GPIO</a>
-    <a href="#eid" onclick="showTab('eid')"><i class="fas fa-star-and-crescent"></i> العيد</a>
-    <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> المشغل</a>
+    <div class="section-label">الصوت والملفات</div>
+    <a href="#files" onclick="showTab('files')"><i class="fas fa-folder-open"></i> الملفات والصوت</a>
+    <a href="#scheduler" onclick="showTab('scheduler')"><i class="fas fa-calendar-alt"></i> التنبيهات</a>
+    <div class="section-label">مواقيت الصلاة</div>
+    <a href="#prayer" onclick="showTab('prayer')"><i class="fas fa-clock"></i> إعدادات الصلاة</a>
     <a href="#maghrib" onclick="showTab('maghrib')"><i class="fas fa-sun"></i> المغرب</a>
-    <a href="#manual" onclick="showTab('manual')"><i class="fas fa-edit"></i> ضبط يدوي</a>
-    <a href="#csv" onclick="showTab('csv')"><i class="fas fa-file-csv"></i> CSV</a>
-    <a href="#startup" onclick="showTab('startup')"><i class="fas fa-power-off"></i> بدء التشغيل</a>
-    <a href="#password" onclick="showTab('password')"><i class="fas fa-key"></i> كلمة المرور</a>
-    <a href="#system" onclick="showTab('system')"><i class="fas fa-server"></i> النظام</a>
+    <div class="section-label">التحكم</div>
+    <a href="#gpio" onclick="showTab('gpio')"><i class="fas fa-microchip"></i> GPIO</a>
+    <a href="#eid" onclick="showTab('eid')"><i class="fas fa-star-and-crescent"></i> العيد</a>
+    <div class="section-label">الشبكة والإعدادات</div>
+    <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
+    <a href="#settings" onclick="showTab('settings')"><i class="fas fa-cog"></i> الإعدادات</a>
     <a href="#" onclick="doLogout()" style="color:#e74c3c;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
     <span class="version">v3.0 ESP32-S3</span>
   </nav>
@@ -52,10 +51,10 @@
     <div id="tab-dashboard" class="tab active">
       <h1><i class="fas fa-tachometer-alt"></i> لوحة التحكم</h1>
       <div class="row">
-        <div class="col glass-card">
-          <h3><i class="far fa-clock"></i> الوقت</h3>
-          <p style="font-size:28px; font-weight:700"><span id="timeDisplay">--:--</span></p>
-          <p><span id="hijriDate"></span> | <span id="gregDate"></span></p>
+        <div class="col glass-card dashboard-clock-card">
+          <h3><i class="far fa-clock"></i> الوقت والتاريخ</h3>
+          <div class="dashboard-clock" id="timeDisplay">--:--</div>
+          <div class="dashboard-date"><span id="hijriDate"></span> | <span id="gregDate"></span></div>
         </div>
         <div class="col glass-card">
           <h3><i class="fas fa-volume-up"></i> الحالة</h3>
@@ -64,21 +63,29 @@
           <button class="btn" onclick="stopAudio()"><i class="fas fa-stop"></i> إيقاف</button>
         </div>
       </div>
-      <div class="glass-card">
+      <div class="glass-card dashboard-prayer-card">
         <h3><i class="fas fa-mosque"></i> مواقيت الصلاة</h3>
-        <div class="row" style="justify-content:center">
-          <div style="padding:10px"><span>الفجر</span><br><span id="fajrTime">--:--</span></div>
-          <div style="padding:10px"><span>الظهر</span><br><span id="dhuhrTime">--:--</span></div>
-          <div style="padding:10px"><span>العصر</span><br><span id="asrTime">--:--</span></div>
-          <div style="padding:10px"><span>المغرب</span><br><span id="maghribTime">--:--</span></div>
-          <div style="padding:10px"><span>العشاء</span><br><span id="ishaTime">--:--</span></div>
+        <div class="dashboard-prayer-grid">
+          <div class="prayer-item" id="prayer-fajr"><span class="prayer-name">الفجر</span><span class="prayer-time" id="fajrTime">--:--</span></div>
+          <div class="prayer-item" id="prayer-dhuhr"><span class="prayer-name">الظهر</span><span class="prayer-time" id="dhuhrTime">--:--</span></div>
+          <div class="prayer-item" id="prayer-asr"><span class="prayer-name">العصر</span><span class="prayer-time" id="asrTime">--:--</span></div>
+          <div class="prayer-item" id="prayer-maghrib"><span class="prayer-name">المغرب</span><span class="prayer-time" id="maghribTime">--:--</span></div>
+          <div class="prayer-item" id="prayer-isha"><span class="prayer-name">العشاء</span><span class="prayer-time" id="ishaTime">--:--</span></div>
         </div>
-        <p id="nextPrayer" style="text-align:center; font-size:18px;"></p>
+        <div class="dashboard-next-prayer" id="nextPrayer">الصلاة القادمة: --:--</div>
       </div>
     </div>
     <!-- Network -->
     <div id="tab-network" class="tab">
       <h1><i class="fas fa-wifi"></i> إعدادات الشبكة</h1>
+      <div class="glass-card network-status-card" id="networkStatusCard">
+        <div class="network-icon connected" id="netIcon"><i class="fas fa-wifi"></i></div>
+        <div class="network-info">
+          <div class="network-title" id="netTitle">غير متصل</div>
+          <div class="network-detail" id="netDetail">--:--</div>
+          <div class="network-detail" id="netSsid"></div>
+        </div>
+      </div>
       <div class="glass-card">
         <h3>WiFi</h3>
         <label>اسم الشبكة</label><input type="text" id="ssid" placeholder="SSID">
@@ -94,14 +101,14 @@
         </div>
         <button class="btn" onclick="saveNetwork()"><i class="fas fa-save"></i> حفظ</button>
         <button class="btn" onclick="connectNetwork()"><i class="fas fa-wifi"></i> اتصال الآن</button>
-        <div id="wifiStatus" style="margin-top:10px"></div>
       </div>
     </div>
     <!-- Prayer -->
     <div id="tab-prayer" class="tab">
-      <h1><i class="fas fa-mosque"></i> مواقيت الصلاة</h1>
+      <h1><i class="fas fa-mosque"></i> إعدادات الصلاة</h1>
       <div class="row">
         <div class="col glass-card">
+          <h3>حساب المواقيت</h3>
           <label>الدولة</label>
           <select id="countrySelect" onchange="onCountryChange()"><option value="">اختر الدولة</option></select>
           <label>المدينة</label>
@@ -120,33 +127,53 @@
           <button class="btn" onclick="saveOffsets()">حفظ</button>
         </div>
       </div>
-    </div>
-    <!-- Files -->
-    <div id="tab-files" class="tab">
-      <h1><i class="fas fa-folder-open"></i> الملفات</h1>
       <div class="glass-card">
-        <h3>حالة بطاقة SD</h3>
-        <div id="sdStatus">جاري الفحص...</div>
+        <h3><i class="fas fa-edit"></i> الضبط اليدوي</h3>
+        <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> تفعيل الوضع اليدوي
+        <div class="row" style="margin-top:15px">
+          <div class="col"><label>الفجر</label><input type="time" id="manFajr" value="04:30"></div>
+          <div class="col"><label>الظهر</label><input type="time" id="manDhuhr" value="12:00"></div>
+          <div class="col"><label>العصر</label><input type="time" id="manAsr" value="15:30"></div>
+          <div class="col"><label>المغرب</label><input type="time" id="manMaghrib" value="18:00"></div>
+          <div class="col"><label>العشاء</label><input type="time" id="manIsha" value="19:30"></div>
+        </div>
+        <button class="btn" onclick="saveManualPrayerTimes()">حفظ المواقيت اليدوية</button>
       </div>
       <div class="glass-card">
-        <h3>رفع ملف</h3>
-        <label>المجلد الوجهة</label>
-        <select id="uploadFolderSelect"><option value="/">الرئيسي (Root)</option></select>
-        <br><br>
-        <input type="file" id="fileInput" accept=".mp3,.wav,.bin,.csv">
-        <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
-        <div style="margin-top: 15px;">
-          <progress id="uploadProgressBar" value="0" max="100" style="display:none; width: 100%; height: 20px;"></progress>
-          <div id="uploadStatus" style="margin-top: 5px; font-weight: bold;"></div>
+        <h3><i class="fas fa-file-csv"></i> رفع CSV</h3>
+        <label>الشهر</label>
+        <select id="csvMonthSelect">
+          <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option><option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option><option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
+        </select>
+        <input type="file" id="csvFileInput" accept=".csv">
+        <button class="btn" onclick="uploadCSV()"><i class="fas fa-upload"></i> رفع CSV</button>
+        <label class="switch" style="margin-top:15px"><input type="checkbox" id="csvModeToggle" onchange="toggleCSVMode()"><span class="slider"></span></label> تفعيل CSV
+      </div>
+    </div>
+    <!-- Files + Player merged -->
+    <div id="tab-files" class="tab">
+      <h1><i class="fas fa-folder-open"></i> الملفات والصوت</h1>
+      <div class="row">
+        <div class="col glass-card">
+          <h3>حالة بطاقة SD</h3>
+          <div id="sdStatus">جاري الفحص...</div>
+        </div>
+        <div class="col glass-card">
+          <h3>رفع ملف</h3>
+          <label>المجلد الوجهة</label>
+          <select id="uploadFolderSelect"><option value="/">الرئيسي (Root)</option></select>
+          <input type="file" id="fileInput" accept=".mp3,.wav,.bin,.csv">
+          <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
+          <progress id="uploadProgressBar" value="0" max="100" style="display:none; width:100%; height:20px;"></progress>
+          <div id="uploadStatus" style="margin-top:5px; font-weight:bold;"></div>
         </div>
       </div>
       <div class="glass-card">
         <h3>مدير الملفات</h3>
         <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> إنشاء مجلد</button>
         <input type="text" id="newFolderName" placeholder="اسم المجلد الجديد">
-        <br><br>
         <button class="btn" id="btnToggleFiles" onclick="toggleFileList()"><i class="fas fa-eye"></i> عرض الملفات</button>
-        <div id="fileListContainer" style="display:none; margin-top:15px; max-height: 400px; overflow-y: auto;">
+        <div id="fileListContainer" style="display:none; margin-top:15px; max-height:400px; overflow-y:auto;">
           <div class="file-list" id="fileList"></div>
         </div>
       </div>
@@ -162,11 +189,27 @@
         <label>الإقامة</label><select id="iqamaFileSelect"></select>
         <button class="btn" onclick="saveAdhanAssignments()">حفظ</button>
       </div>
-    </div>
-    <!-- Scheduler -->
-    <div id="tab-scheduler" class="tab">
-      <h1><i class="fas fa-calendar-alt"></i> الجدولة</h1>
       <div class="glass-card">
+        <h3><i class="fas fa-music"></i> المشغل</h3>
+        <div id="playlist"></div>
+        <div class="row">
+          <div class="col"><select id="playlistFileSelect"></select></div>
+          <div class="col"><button class="btn" onclick="addToPlaylist()">إضافة ملف</button></div>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn" onclick="playPlaylist()"><i class="fas fa-play"></i> تشغيل الكل</button>
+          <button class="btn" onclick="stopPlaylist()"><i class="fas fa-stop"></i> إيقاف</button>
+          <button class="btn" onclick="clearPlaylist()">مسح القائمة</button>
+          <label>مستوى الصوت</label><input type="range" id="playlistVolume" min="0" max="30" value="15">
+          <label class="switch"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> احترام الأذان
+        </div>
+      </div>
+    </div>
+    <!-- Scheduler + GPIO Schedule merged -->
+    <div id="tab-scheduler" class="tab">
+      <h1><i class="fas fa-calendar-alt"></i> التنبيهات والجدولة</h1>
+      <div class="glass-card">
+        <h3>تنبيه صوتي</h3>
         <label>ملف الصوت</label><select id="scheduleFile"></select>
         <label>النوع</label>
         <select id="scheduleType" onchange="toggleScheduleFields()">
@@ -189,7 +232,14 @@
         </div>
         <button class="btn" onclick="addSchedule()">حفظ</button>
       </div>
-      <div class="glass-card"><h3>التنبيهات</h3><ul id="scheduleList"></ul></div>
+      <div class="glass-card"><h3>التنبيهات الصوتية</h3><ul id="scheduleList"></ul></div>
+      <div class="glass-card">
+        <h3><i class="fas fa-clock"></i> جدولة المخارج (GPIO)</h3>
+        <label>الدبوس</label><select id="gpioSchedPin"></select>
+        <label>وقت البدء</label><input type="time" id="gpioSchedStart">
+        <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
+        <button class="btn" onclick="addGpioSchedule()">حفظ جدولة GPIO</button>
+      </div>
     </div>
     <!-- GPIO -->
     <div id="tab-gpio" class="tab">
@@ -207,43 +257,51 @@
         <button class="btn" onclick="saveOutputMapping()">حفظ</button>
       </div>
     </div>
-    <!-- GPIO Schedule -->
-    <div id="tab-gpio_schedule" class="tab">
-      <h1><i class="fas fa-clock"></i> جدولة المخارج</h1>
-      <div class="glass-card">
-        <label>الدبوس</label><select id="gpioSchedPin"></select>
-        <label>وقت البدء</label><input type="time" id="gpioSchedStart">
-        <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
-        <button class="btn" onclick="addGpioSchedule()">حفظ</button>
-      </div>
-    </div>
+    <!-- GPIO Schedule (merged into scheduler) -->
+    <div id="tab-gpio_schedule" class="tab" style="display:none"></div>
     <!-- Eid -->
     <div id="tab-eid" class="tab">
       <h1><i class="fas fa-star-and-crescent"></i> وضع العيد</h1>
       <div class="glass-card">
-        <label class="switch"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label> تفعيل
-        <br><br>
+        <label class="switch"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label> تفعيل وضع العيد
+      </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-volume-up"></i> التكبيرات - جدولة متقدمة</h3>
+        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد قبل/بعد كل صلاة بعدد الدقائق، أو اختر صلوات محددة</p>
         <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
-        <button class="btn" onclick="triggerTakbeer()">تشغيل التكبيرات</button>
-        <button class="btn" onclick="saveEidFile()">حفظ الملف</button>
-      </div>
-    </div>
-    <!-- Player -->
-    <div id="tab-player" class="tab">
-      <h1><i class="fas fa-music"></i> مشغل الموسيقى</h1>
-      <div class="glass-card">
-        <div id="playlist"></div>
-        <button class="btn" onclick="addToPlaylist()">إضافة ملف</button>
-        <select id="playlistFileSelect"></select>
+        <div id="eidPrayerConfig"></div>
+        <button class="btn" onclick="saveEidTakbeerConfig()"><i class="fas fa-save"></i> حفظ جدولة التكبيرات</button>
+        <button class="btn" onclick="triggerTakbeer()"><i class="fas fa-play"></i> تشغيل مرة واحدة</button>
       </div>
       <div class="glass-card">
-        <button class="btn" onclick="playPlaylist()"><i class="fas fa-play"></i> تشغيل الكل</button>
-        <button class="btn" onclick="stopPlaylist()"><i class="fas fa-stop"></i> إيقاف</button>
-        <button class="btn" onclick="clearPlaylist()">مسح القائمة</button>
-        <label>مستوى الصوت</label><input type="range" id="playlistVolume" min="0" max="30" value="15">
-        <label class="switch"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> احترام الأذان
+        <h3><i class="fas fa-bell"></i> تنبيهات العيد</h3>
+        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">تنبيهات مرنة تعمل فقط عند تفعيل وضع العيد</p>
+        <label>ملف الصوت</label><select id="eidScheduleFile"></select>
+        <label>النوع</label>
+        <select id="eidScheduleType" onchange="toggleEidScheduleFields()">
+          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+          <option value="prayer_relative">مرتبط بالصلاة</option>
+        </select>
+        <div id="eidScheduleExtraFields"></div>
+        <label>الوقت</label><input type="time" id="eidScheduleTime">
+        <label>مستوى الصوت (0-30)</label>
+        <input type="range" id="eidScheduleVolume" min="0" max="30" value="20">
+        <span id="eidScheduleVolumeValue">20</span>
+        <label>التكرار</label>
+        <select id="eidScheduleLoopToggle" onchange="toggleEidLoopFields()">
+          <option value="no">بدون تكرار</option>
+          <option value="yes">بتكرار</option>
+        </select>
+        <div id="eidLoopFields" style="display:none">
+          <label>مدة التكرار (دقائق)</label><input type="number" id="eidScheduleLoopDuration" value="0" min="0">
+        </div>
+        <button class="btn" onclick="addEidSchedule()"><i class="fas fa-save"></i> إضافة تنبيه عيد</button>
+        <div style="margin-top:20px"><h3>التنبيهات المضافة</h3><ul id="eidScheduleList"></ul></div>
       </div>
     </div>
+    <!-- Player (merged into files) -->
+    <div id="tab-player" class="tab" style="display:none"></div>
     <!-- Maghrib -->
     <div id="tab-maghrib" class="tab">
       <h1><i class="fas fa-sun"></i> تنبيهات المغرب</h1>
@@ -257,80 +315,70 @@
         <button class="btn" onclick="loadMaghribAlerts()">تحديث</button>
       </div>
     </div>
-    <!-- Manual -->
-    <div id="tab-manual" class="tab">
-      <h1><i class="fas fa-edit"></i> ضبط يدوي</h1>
+    <!-- OTA (merged into settings) -->
+    <div id="tab-ota" class="tab" style="display:none"></div>
+    <!-- CSV (merged into prayer) -->
+    <div id="tab-csv" class="tab" style="display:none"></div>
+    <!-- Manual (merged into prayer) -->
+    <div id="tab-manual" class="tab" style="display:none"></div>
+    <!-- Settings (merged startup + password + system) -->
+    <div id="tab-settings" class="tab">
+      <h1><i class="fas fa-cog"></i> الإعدادات</h1>
       <div class="glass-card">
-        <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> الوضع اليدوي
-        <br><br>
-        <label>الفجر</label><input type="time" id="manFajr" value="04:30">
-        <label>الظهر</label><input type="time" id="manDhuhr" value="12:00">
-        <label>العصر</label><input type="time" id="manAsr" value="15:30">
-        <label>المغرب</label><input type="time" id="manMaghrib" value="18:00">
-        <label>العشاء</label><input type="time" id="manIsha" value="19:30">
-        <button class="btn" onclick="saveManualPrayerTimes()">حفظ</button>
-      </div>
-      <div class="glass-card">
-        <h3>تحديث OTA</h3>
-        <input type="file" id="otaFile" accept=".bin">
-        <button class="btn" onclick="startOTA()">رفع التحديث</button>
-      </div>
-    </div>
-    <!-- CSV -->
-    <div id="tab-csv" class="tab">
-      <h1><i class="fas fa-file-csv"></i> CSV</h1>
-      <div class="glass-card">
-        <label>الشهر</label>
-        <select id="csvMonthSelect">
-          <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option><option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option><option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
-        </select>
-        <input type="file" id="csvFileInput" accept=".csv">
-        <button class="btn" onclick="uploadCSV()"><i class="fas fa-upload"></i> رفع</button>
-      </div>
-      <div class="glass-card">
-        <label class="switch"><input type="checkbox" id="csvModeToggle" onchange="toggleCSVMode()"><span class="slider"></span></label> تفعيل CSV
-      </div>
-    </div>
-    <!-- Startup -->
-    <div id="tab-startup" class="tab">
-      <h1><i class="fas fa-power-off"></i> بدء التشغيل</h1>
-      <div class="glass-card">
-        <label class="switch"><input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()"><span class="slider"></span></label>
+        <h3><i class="fas fa-power-off"></i> بدء التشغيل</h3>
+        <label class="switch"><input type="checkbox" id="startupAlertEnabled" onchange="toggleStartupAlert()"><span class="slider"></span></label> تفعيل التنبيه عند بدء التشغيل
         <label>الملف</label><select id="startupFileSelect"></select>
         <button class="btn" onclick="saveStartupSettings()">حفظ</button>
       </div>
-    </div>
-    <!-- Password -->
-    <div id="tab-password" class="tab">
-      <h1><i class="fas fa-key"></i> كلمة المرور</h1>
       <div class="glass-card">
+        <h3><i class="fas fa-clock"></i> مدة الجلسة</h3>
+        <label>مدة الجلسة (دقائق) - بعد انتهائها يطلب تسجيل الدخول مجدداً</label>
+        <input type="number" id="sessionTimeout" value="10" min="1" max="1440">
+        <button class="btn" onclick="saveSessionTimeout()"><i class="fas fa-save"></i> حفظ المدة</button>
+      </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-calendar-alt"></i> ضبط الوقت والتاريخ يدوياً</h3>
+        <label>عند عدم وجود اتصال بالإنترنت، فعّل الوضع اليدوي لضبط الوقت والتاريخ</label>
+        <label class="switch"><input type="checkbox" id="manualTimeToggle" onchange="toggleManualTime()"><span class="slider"></span></label> تفعيل الضبط اليدوي
+        <div id="manualTimeFields">
+          <label>السنة</label><input type="number" id="manualYear" value="2026">
+          <label>الشهر</label><input type="number" id="manualMonth" value="1" min="1" max="12">
+          <label>اليوم</label><input type="number" id="manualDay" value="1" min="1" max="31">
+          <label>الساعة</label><input type="number" id="manualHour" value="12" min="0" max="23">
+          <label>الدقيقة</label><input type="number" id="manualMinute" value="0" min="0" max="59">
+        </div>
+        <button class="btn" onclick="saveManualTime()"><i class="fas fa-save"></i> حفظ الوقت والتاريخ</button>
+      </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-key"></i> تغيير كلمة المرور</h3>
         <label>القديمة</label>
         <div style="position:relative; width:100%;">
           <input type="password" id="oldPassword" style="width:100%;">
-          <i class="fas fa-eye" id="toggleOldPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('oldPassword', 'toggleOldPwd')"></i>
+          <i class="fas fa-eye pwd-toggle-icon" id="toggleOldPwd" onclick="togglePasswordVisibility('oldPassword', 'toggleOldPwd')"></i>
         </div>
         <label>الجديدة</label>
         <div style="position:relative; width:100%;">
           <input type="password" id="newPassword" style="width:100%;">
-          <i class="fas fa-eye" id="toggleNewPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('newPassword', 'toggleNewPwd')"></i>
+          <i class="fas fa-eye pwd-toggle-icon" id="toggleNewPwd" onclick="togglePasswordVisibility('newPassword', 'toggleNewPwd')"></i>
         </div>
         <label>تأكيد الجديدة</label>
         <div style="position:relative; width:100%;">
           <input type="password" id="confirmPassword" style="width:100%;">
-          <i class="fas fa-eye" id="toggleConfPwd" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); cursor:pointer; color:#7f8c8d;" onclick="togglePasswordVisibility('confirmPassword', 'toggleConfPwd')"></i>
+          <i class="fas fa-eye pwd-toggle-icon" id="toggleConfPwd" onclick="togglePasswordVisibility('confirmPassword', 'toggleConfPwd')"></i>
         </div>
         <button class="btn" onclick="changePassword()" style="margin-top:15px;">تغيير</button>
       </div>
-    </div>
-    <!-- System -->
-    <div id="tab-system" class="tab">
-      <h1><i class="fas fa-server"></i> النظام</h1>
-      <div class="glass-card" style="text-align:center;">
-        <h3>خيارات الطاقة وإعادة الضبط</h3>
-        <p style="margin-bottom:20px; color:#e74c3c; font-weight:bold;">احذر عند استخدام هذه الخيارات لأنها تؤثر على عمل النظام المتصل.</p>
-        <button class="btn" onclick="systemReboot()" style="background:#f39c12; margin:5px;"><i class="fas fa-sync-alt"></i> إعادة التشغيل</button>
-        <button class="btn" onclick="systemFactoryReset()" style="background:#c0392b; margin:5px;"><i class="fas fa-eraser"></i> إعادة ضبط المصنع</button>
+      <div class="glass-card">
+        <h3><i class="fas fa-server"></i> النظام</h3>
+        <p style="margin-bottom:20px; color:var(--color-danger); font-weight:bold;">احذر عند استخدام هذه الخيارات لأنها تؤثر على عمل النظام المتصل.</p>
+        <button class="btn" onclick="systemReboot()" style="background:var(--color-warning); margin:5px;"><i class="fas fa-sync-alt"></i> إعادة التشغيل</button>
+        <button class="btn btn-danger" onclick="systemFactoryReset()" style="margin:5px;"><i class="fas fa-eraser"></i> إعادة ضبط المصنع</button>
         <button class="btn" onclick="systemShutdown()" style="background:#2c3e50; margin:5px;"><i class="fas fa-power-off"></i> الإغلاق التام</button>
+      </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-upload"></i> تحديث OTA</h3>
+        <input type="file" id="otaFile" accept=".bin">
+        <button class="btn" onclick="startOTA()"><i class="fas fa-upload"></i> رفع التحديث</button>
       </div>
     </div>
     <!-- Footer -->

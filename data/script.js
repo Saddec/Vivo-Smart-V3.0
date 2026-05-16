@@ -18,9 +18,7 @@ function toast(message) {
     container.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;';
     document.body.appendChild(container);
     
-    const style = document.createElement('style');
-    style.innerHTML = `@keyframes fadein{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} @keyframes fadeout{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-20px)}}`;
-    document.head.appendChild(style);
+    // Keyframes are in style.css
   }
   const el = document.createElement('div');
   el.style.cssText = 'background:#2c3e50;color:#fff;padding:12px 24px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);font-size:15px;animation:fadein 0.3s, fadeout 0.3s 4.7s forwards; border-left: 4px solid #3498db; text-align:center; direction:rtl;';
@@ -80,14 +78,14 @@ function showTab(tabName) {
   const nav = document.querySelector(`.sidebar a[href="#${tabName}"]`);
   if (nav) nav.classList.add('active');
 
-  if (tabName === 'files') loadFileList();
-  if (tabName === 'scheduler') loadSchedules();
-  if (tabName === 'gpio') loadGpioMappings();
-  if (tabName === 'gpio_schedule') loadGpioSchedules();
-  if (tabName === 'maghrib') loadMaghribAlerts();
-  if (tabName === 'startup') loadStartupSettings();
-  if (tabName === 'csv') loadCsvStatus();
-  if (tabName === 'network') loadWifiStatus();
+  if (tabName === 'files') { loadFileList(); }
+  if (tabName === 'scheduler') { loadSchedules(); }
+  if (tabName === 'gpio') { loadGpioMappings(); }
+  if (tabName === 'maghrib') { loadMaghribAlerts(); }
+  if (tabName === 'network') { loadWifiStatus(); }
+  if (tabName === 'prayer') { loadCountries(); loadManualSettings(); loadCsvStatus(); }
+  if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
+  if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
 }
 
 function doLogin() {
@@ -195,8 +193,11 @@ function initDashboard() {
   loadSchedules();
   loadMaghribAlerts();
   loadStartupSettings();
+  loadSessionTimeout();
   loadCsvStatus();
   loadWifiStatus();
+  loadEidSchedules();
+  loadEidTakbeerConfig();
   populateGpioPins();
 }
 
@@ -279,22 +280,22 @@ function saveNetwork() {
 function connectNetwork() {
   const data = getNetworkForm();
   if (!data.ssid) return toast('اختر أو اكتب اسم الشبكة أولاً');
-  if ($('wifiStatus')) $('wifiStatus').textContent = 'جاري الاتصال بالشبكة...';
+  toast('جاري الاتصال بالشبكة...');
 
   apiPost('/api/wifi/connect', data)
     .then((result) => {
       if (result.connected) {
         const ip = result.ip || '';
-        if ($('wifiStatus')) $('wifiStatus').textContent = `تم الاتصال بنجاح. IP: ${ip}`;
-        toast(`تم الاتصال بالشبكة. افتح اللوحة من: http://${ip}`);
+        toast(`تم الاتصال بنجاح. IP: ${ip}`);
+        loadWifiStatus();
       } else {
-        if ($('wifiStatus')) $('wifiStatus').textContent = 'فشل الاتصال. تحقق من كلمة المرور أو قرب الشبكة.';
         toast('فشل الاتصال. ستبقى نقطة VivoSmart-Setup متاحة.');
+        loadWifiStatus();
       }
     })
     .catch((err) => {
-      if ($('wifiStatus')) $('wifiStatus').textContent = 'فشل إرسال طلب الاتصال';
       toast(`فشل الاتصال: ${err.message}`);
+      loadWifiStatus();
     });
 }
 
@@ -308,11 +309,20 @@ function loadWifiStatus() {
     if ($('dns')) $('dns').value = data.dns || '8.8.8.8';
     toggleDHCP();
 
-    if (!$('wifiStatus')) return;
+    const icon = $('netIcon');
+    const title = $('netTitle');
+    const detail = $('netDetail');
+    const ssidEl = $('netSsid');
     if (data.connected) {
-      $('wifiStatus').textContent = `متصل: ${data.ssid || ''} - IP: ${data.ip || ''}`;
+      if (icon) { icon.className = 'network-icon connected'; icon.innerHTML = '<i class="fas fa-wifi"></i>'; }
+      if (title) { title.className = 'network-title connected'; title.textContent = 'متصل'; }
+      if (detail) detail.textContent = `IP: ${data.ip || ''}`;
+      if (ssidEl) ssidEl.textContent = `الشبكة: ${data.ssid || ''}`;
     } else {
-      $('wifiStatus').textContent = 'غير متصل بشبكة خارجية. نقطة الإعداد تعمل على 192.168.4.1';
+      if (icon) { icon.className = 'network-icon disconnected'; icon.innerHTML = '<i class="fas fa-wifi-slash"></i>'; }
+      if (title) { title.className = 'network-title disconnected'; title.textContent = 'غير متصل'; }
+      if (detail) detail.textContent = `نقطة الإعداد: ${data.apIp || '192.168.4.1'}`;
+      if (ssidEl) ssidEl.textContent = data.savedSsid ? `محفوظة: ${data.savedSsid}` : '';
     }
   });
 }
@@ -359,6 +369,21 @@ function fetchPrayerTimes() {
     if ($('maghribTime')) $('maghribTime').textContent = data.maghrib || '--:--';
     if ($('ishaTime')) $('ishaTime').textContent = data.isha || '--:--';
     if ($('nextPrayer')) $('nextPrayer').textContent = data.next ? `الصلاة القادمة: ${data.next}` : '';
+    // Highlight next prayer in dashboard
+    const nextText = data.next || '';
+    ['fajr','dhuhr','asr','maghrib','isha'].forEach(name => {
+      const el = $(`prayer-${name}`);
+      if (el) el.classList.remove('prayer-next');
+    });
+    if (nextText) {
+      const nextName = nextText.split(' ')[0] || '';
+      const map = {'الفجر':'fajr','الظهر':'dhuhr','العصر':'asr','المغرب':'maghrib','العشاء':'isha'};
+      const id = map[nextName];
+      if (id) {
+        const el = $(`prayer-${id}`);
+        if (el) el.classList.add('prayer-next');
+      }
+    }
   });
 }
 
@@ -605,7 +630,9 @@ function saveAdhanAssignments() {
 function toggleScheduleFields() {
   const type = $('scheduleType')?.value || 'daily';
   let html = '';
-  if (type === 'weekly') html = '<label>اليوم</label><select id="scheduleDay"><option value="0">الأحد</option><option value="1">الإثنين</option><option value="2">الثلاثاء</option><option value="3">الأربعاء</option><option value="4">الخميس</option><option value="5">الجمعة</option><option value="6">السبت</option></select>';
+  if (type === 'weekly') html = '<label>اختر الأيام</label><div id="weeklyDays">' +
+    dayNames.map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0;font-size:var(--fs-small)"><input type="checkbox" class="weekly-day-cb" value="${i}"> ${d}</label>`
+  ).join('') + '</div>';
   if (type === 'monthly') html = '<label>اليوم من الشهر</label><input type="number" id="scheduleDay" min="1" max="31" value="1">';
   if (type === 'specific') html = '<label>التاريخ</label><input type="date" id="scheduleDate">';
   if (type === 'prayer_relative') html = '<label>الصلاة</label><select id="schedulePrayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select><label>الإزاحة بالدقائق</label><input type="number" id="scheduleOffset" value="0">';
@@ -616,20 +643,43 @@ function toggleLoopFields() {
   if ($('loopFields')) $('loopFields').style.display = $('scheduleLoopToggle')?.value === 'yes' ? 'block' : 'none';
 }
 
-function addSchedule() {
+function getSelectedDaysBitmask() {
+  const cbs = document.querySelectorAll('.weekly-day-cb:checked');
+  if (cbs.length === 0) return -1;
+  let mask = 0;
+  cbs.forEach(cb => { mask |= (1 << parseInt(cb.value)); });
+  return mask;
+}
+
+function formatDays(mask) {
+  if (mask < 0) return '';
+  if (mask >= 0 && mask <= 6) return dayNames[mask];
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    if (mask & (1 << i)) days.push(dayNames[i]);
+  }
+  return days.join('، ');
+}
+
+function addSchedule(eidOnly) {
   const [hour = '0', minute = '0'] = ($('scheduleTime')?.value || '00:00').split(':');
+  const type = $('scheduleType')?.value || 'daily';
+  let dayOfWeek = -1, dayOfMonth = -1;
+  if (type === 'weekly') dayOfWeek = getSelectedDaysBitmask();
+  if (type === 'monthly') dayOfMonth = $('scheduleDay')?.value || '-1';
   apiPost('/api/scheduler/add', {
     file: $('scheduleFile')?.value || '',
-    type: $('scheduleType')?.value || 'daily',
+    type,
     hour,
     minute,
-    dayOfWeek: $('scheduleType')?.value === 'weekly' ? $('scheduleDay')?.value : '-1',
-    dayOfMonth: $('scheduleType')?.value === 'monthly' ? $('scheduleDay')?.value : '-1',
+    dayOfWeek,
+    dayOfMonth,
     specificDate: $('scheduleDate')?.value || '',
     volume: $('scheduleVolume')?.value || 20,
     loop: $('scheduleLoopToggle')?.value === 'yes' ? $('scheduleLoopDuration')?.value || 0 : 0,
     prayerIndex: $('schedulePrayer')?.value || 0,
-    offsetSeconds: Number($('scheduleOffset')?.value || 0) * 60
+    offsetSeconds: Number($('scheduleOffset')?.value || 0) * 60,
+    eidOnly: eidOnly ? '1' : '0'
   }).then(() => {
     toast('تم حفظ التنبيه');
     loadSchedules();
@@ -640,9 +690,13 @@ function loadSchedules() {
   apiGet('/api/scheduler/list', []).then((data) => {
     const alerts = Array.isArray(data) ? data : (data.alerts || []);
     if (!$('scheduleList')) return;
-    $('scheduleList').innerHTML = alerts.map((a, i) =>
-      `<li class="file-item"><span>${safeText(a.file)} - ${safeText(a.type)} ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}</span><button class="btn btn-danger" onclick="deleteSchedule(${i})">حذف</button></li>`
-    ).join('');
+    $('scheduleList').innerHTML = alerts.map((a, i) => {
+      let info = `${safeText(a.file)} - ${safeText(a.type)}`;
+      if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
+      info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
+      if (a.eidOnly) info += ' <span style="color:#f1c40f">🕌 العيد</span>';
+      return `<li class="file-item"><span>${info}</span><button class="btn btn-danger" onclick="deleteSchedule(${i})">حذف</button></li>`;
+    }).join('');
   });
 }
 
@@ -747,14 +801,28 @@ function loadMaghribAlerts() {
   apiGet('/api/maghrib/alerts', []).then((data) => {
     const alerts = Array.isArray(data) ? data : (data.alerts || []);
     if (!$('maghribAlerts')) return;
-    $('maghribAlerts').innerHTML = alerts.map((a) =>
-      `<div class="file-item"><span>اليوم ${a.day}: ${safeText(a.file || 'بدون ملف')}</span><span>${a.enabled ? 'مفعل' : 'متوقف'}</span></div>`
-    ).join('');
+    $('maghribAlerts').innerHTML = dayNames.map((d, i) => {
+      const a = alerts[i] || {file:'', enabled:false, volume:15, loop:0};
+      return `<div class="eid-alert-row">
+        <span class="day-label">${d}</span>
+        <select id="maghribFile_${i}" style="flex:2">${appState.files.filter(f => !f.isDirectory).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
+        <label style="flex:0;white-space:nowrap"><input type="checkbox" id="maghribEnabled_${i}" ${a.enabled?'checked':''}> الصوت مفعل</label>
+        <label style="flex:0">مستوى الصوت <input type="number" id="maghribVolume_${i}" value="${a.volume||15}" min="0" max="30" style="width:60px;margin:0"></label>
+      </div>`;
+    }).join('');
   });
 }
 
 function saveMaghribAlerts() {
-  toast('استخدم تعيين الملفات من بطاقة الملفات ثم احفظ الإعدادات المتقدمة لاحقاً');
+  const alerts = dayNames.map((_, i) => ({
+    day: i,
+    file: $(`maghribFile_${i}`)?.value || '',
+    enabled: $(`maghribEnabled_${i}`)?.checked || false,
+    volume: parseInt($(`maghribVolume_${i}`)?.value || '15')
+  }));
+  apiPost('/api/maghrib/alert/save', {json: JSON.stringify(alerts)})
+    .then(() => toast('تم حفظ تنبيهات المغرب'))
+    .catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
 function startOTA() {
@@ -796,6 +864,119 @@ function loadCsvStatus() {
   });
 }
 
+const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+const prayerNames = ['الفجر', 'الظهر', 'العصر', 'المغرب', 'العشاء'];
+
+function toggleEidScheduleFields() {
+  const type = $('eidScheduleType')?.value || 'daily';
+  let html = '';
+  if (type === 'weekly') html = '<label>اختر الأيام</label><div id="eidWeeklyDays">' +
+    dayNames.map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0;font-size:var(--fs-small)"><input type="checkbox" class="eid-weekly-day-cb" value="${i}"> ${d}</label>`
+  ).join('') + '</div>';
+  if (type === 'monthly') html = '<label>اليوم من الشهر</label><input type="number" id="eidScheduleDay" min="1" max="31" value="1">';
+  if (type === 'specific') html = '<label>التاريخ</label><input type="date" id="eidScheduleDate">';
+  if (type === 'prayer_relative') html = '<label>الصلاة</label><select id="eidSchedulePrayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select><label>الإزاحة بالدقائق</label><input type="number" id="eidScheduleOffset" value="0"><label>قبل/بعد</label><select id="eidScheduleBeforeAfter"><option value="before">قبل الصلاة</option><option value="after">بعد الصلاة</option></select>';
+  if ($('eidScheduleExtraFields')) $('eidScheduleExtraFields').innerHTML = html;
+}
+
+function toggleEidLoopFields() {
+  if ($('eidLoopFields')) $('eidLoopFields').style.display = $('eidScheduleLoopToggle')?.value === 'yes' ? 'block' : 'none';
+}
+
+function addEidSchedule() {
+  const [hour = '0', minute = '0'] = ($('eidScheduleTime')?.value || '00:00').split(':');
+  const type = $('eidScheduleType')?.value || 'daily';
+  let dayOfWeek = -1, dayOfMonth = -1;
+  if (type === 'weekly') {
+    const cbs = document.querySelectorAll('.eid-weekly-day-cb:checked');
+    if (cbs.length === 0) return toast('اختر يوماً واحداً على الأقل');
+    dayOfWeek = 0;
+    cbs.forEach(cb => { dayOfWeek |= (1 << parseInt(cb.value)); });
+  }
+  if (type === 'monthly') dayOfMonth = $('eidScheduleDay')?.value || '-1';
+  let offsetSeconds = Number($('eidScheduleOffset')?.value || 0) * 60;
+  if ($('eidScheduleBeforeAfter')?.value === 'before') offsetSeconds = -Math.abs(offsetSeconds);
+  apiPost('/api/scheduler/add', {
+    file: $('eidScheduleFile')?.value || '',
+    type,
+    hour,
+    minute,
+    dayOfWeek,
+    dayOfMonth,
+    specificDate: $('eidScheduleDate')?.value || '',
+    volume: $('eidScheduleVolume')?.value || 20,
+    loop: $('eidScheduleLoopToggle')?.value === 'yes' ? $('eidScheduleLoopDuration')?.value || 0 : 0,
+    prayerIndex: $('eidSchedulePrayer')?.value || 0,
+    offsetSeconds,
+    eidOnly: '1'
+  }).then(() => {
+    toast('تم إضافة تنبيه العيد');
+    loadEidSchedules();
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function loadEidSchedules() {
+  apiGet('/api/scheduler/list', []).then((data) => {
+    const alerts = Array.isArray(data) ? data : (data.alerts || []);
+    const eidAlerts = alerts.filter(a => a.eidOnly);
+    if (!$('eidScheduleList')) return;
+    $('eidScheduleList').innerHTML = eidAlerts.length
+      ? eidAlerts.map((a, i) => {
+          const realIndex = alerts.indexOf(a);
+          let info = `${safeText(a.file)} - ${safeText(a.type)}`;
+          if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
+          if (a.type === 'prayer_relative') {
+            const pn = prayerNames[a.prayerIndex] || '';
+            info += ` ${pn} ${a.offsetSeconds >= 0 ? 'بعد' : 'قبل'} (${Math.abs(a.offsetSeconds/60)}د)`;
+          } else {
+            info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
+          }
+          info += ` - صوت: ${a.volume || 20}`;
+          if (a.loop > 0) info += ` (تكرار ${a.loop}د)`;
+          return `<li class="file-item"><span>${info}</span><button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})">حذف</button></li>`;
+        }).join('')
+      : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات عيد. أضف تنبيهاً أعلاه.</p>';
+  });
+}
+
+function deleteEidSchedule(index) {
+  apiPost('/api/scheduler/delete', { index }).then(() => {
+    toast('تم حذف تنبيه العيد');
+    loadEidSchedules();
+  }).catch((err) => toast(`فشل الحذف: ${err.message}`));
+}
+
+function loadEidTakbeerConfig() {
+  apiGet('/api/eid/takbeer_config', {}).then((data) => {
+    if (!$('eidPrayerConfig')) return;
+    $('eidPrayerConfig').innerHTML = prayerNames.map((name, i) => {
+      const cfg = data.prayers ? data.prayers[i] : {enabled: i < 5, before: 15, after: 15};
+      return `<div class="eid-takbeer-row">
+        <label class="prayer-label"><input type="checkbox" class="eid-prayer-cb" value="${i}" ${cfg.enabled?'checked':''}> ${name}</label>
+        <label>قبل <input type="number" class="eid-prayer-before" value="${cfg.before||0}" min="0"> د</label>
+        <label>بعد <input type="number" class="eid-prayer-after" value="${cfg.after||0}" min="0"> د</label>
+      </div>`;
+    }).join('');
+  });
+}
+
+function saveEidTakbeerConfig() {
+  const prayers = [];
+  document.querySelectorAll('.eid-prayer-cb').forEach((cb, i) => {
+    const beforeInput = document.querySelectorAll('.eid-prayer-before')[i];
+    const afterInput = document.querySelectorAll('.eid-prayer-after')[i];
+    prayers.push({
+      enabled: cb.checked,
+      before: parseInt(beforeInput?.value || '0'),
+      after: parseInt(afterInput?.value || '0')
+    });
+  });
+  apiPost('/api/eid/takbeer_config/save', {json: JSON.stringify(prayers)})
+    .then(() => toast('تم حفظ جدولة التكبيرات'))
+    .catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
 function toggleStartupAlert() {
   saveStartupSettings();
 }
@@ -813,6 +994,64 @@ function loadStartupSettings() {
     if ($('startupAlertEnabled')) $('startupAlertEnabled').checked = !!data.enabled;
     if ($('startupFileSelect') && data.file) $('startupFileSelect').value = data.file;
   });
+}
+
+function loadSessionTimeout() {
+  apiGet('/api/session/timeout', {}).then((data) => {
+    const mins = data.timeout || 10;
+    if ($('sessionTimeout')) $('sessionTimeout').value = mins;
+    localStorage.setItem('vivoSessionTimeout', String(mins));
+  });
+}
+
+function saveSessionTimeout() {
+  const mins = parseInt($('sessionTimeout')?.value || '10');
+  if (mins < 1) return toast('المدة يجب أن تكون دقيقة واحدة على الأقل');
+  apiPost('/api/session/timeout/save', { timeout: mins })
+    .then(() => {
+      localStorage.setItem('vivoSessionTimeout', String(mins));
+      toast(`تم حفظ مدة الجلسة: ${mins} دقائق`);
+    })
+    .catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function loadManualTimeStatus() {
+  apiGet('/api/time/manual_status', {}).then((data) => {
+    if ($('manualTimeToggle')) $('manualTimeToggle').checked = !!data.enabled;
+    if ($('manualYear')) $('manualYear').value = data.year || 2026;
+    if ($('manualMonth')) $('manualMonth').value = data.month || 1;
+    if ($('manualDay')) $('manualDay').value = data.day || 1;
+    if ($('manualHour')) $('manualHour').value = data.hour || 12;
+    if ($('manualMinute')) $('manualMinute').value = data.minute || 0;
+    if ($('manualTimeFields')) $('manualTimeFields').style.display = data.enabled ? 'block' : 'none';
+  });
+}
+
+function saveManualTime() {
+  const enabled = $('manualTimeToggle')?.checked || false;
+  apiPost('/api/time/manual_save', {
+    enabled: enabled ? '1' : '0',
+    year: $('manualYear')?.value || '2026',
+    month: $('manualMonth')?.value || '1',
+    day: $('manualDay')?.value || '1',
+    hour: $('manualHour')?.value || '12',
+    minute: $('manualMinute')?.value || '0'
+  }).then(() => {
+    toast('تم حفظ الوقت والتاريخ');
+    if (enabled) toast('سيتم تطبيق الوقت اليدوي عند إعادة التشغيل');
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function toggleManualTime() {
+  if ($('manualTimeFields')) $('manualTimeFields').style.display = $('manualTimeToggle')?.checked ? 'block' : 'none';
+}
+
+function checkSessionTimeout() {
+  const sessionTime = parseInt(localStorage.getItem('vivoSessionTime') || '0');
+  const timeoutMinutes = parseInt(localStorage.getItem('vivoSessionTimeout') || '10');
+  if (sessionTime > 0 && (Date.now() - sessionTime) > (timeoutMinutes * 60000)) {
+    doLogout();
+  }
 }
 
 function changePassword() {
@@ -835,6 +1074,8 @@ document.addEventListener('DOMContentLoaded', () => {
   toggleDHCP();
   toggleScheduleFields();
   toggleLoopFields();
+  toggleEidScheduleFields();
+  toggleEidLoopFields();
   populateGpioPins();
   if ($('scheduleVolume')) {
     $('scheduleVolume').addEventListener('input', () => {
@@ -842,17 +1083,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   const sessionTime = parseInt(localStorage.getItem('vivoSessionTime') || '0');
-  const sessionValid = (Date.now() - sessionTime) < 86400000; // 24 hours
+  let timeoutMinutes = parseInt(localStorage.getItem('vivoSessionTimeout') || '10');
+  const sessionValid = (Date.now() - sessionTime) < (timeoutMinutes * 60000);
 
   if (sessionValid && appState.password) {
       $('loginPassword').value = appState.password;
       doLogin();
   }
 
+  if ($('eidScheduleVolume')) {
+    $('eidScheduleVolume').addEventListener('input', () => {
+      if ($('eidScheduleVolumeValue')) $('eidScheduleVolumeValue').textContent = $('eidScheduleVolume').value;
+    });
+  }
+
   setInterval(() => {
     if ($('mainContent')?.style.display !== 'none') {
       updateClock();
       fetchStatus();
+      checkSessionTimeout();
     }
-  }, 5000);
+  }, 10000);
 });

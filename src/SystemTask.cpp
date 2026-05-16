@@ -127,6 +127,30 @@ void maintainWiFi() {
 }
 
 void syncTimeFromNTP() {
+    Preferences prefs;
+    prefs.begin("time_manual", true);
+    bool manual = prefs.getBool("enabled", false);
+    if (manual) {
+        int year = prefs.getInt("year", 2026);
+        int month = prefs.getInt("month", 1);
+        int day = prefs.getInt("day", 1);
+        int hour = prefs.getInt("hour", 12);
+        int minute = prefs.getInt("minute", 0);
+        prefs.end();
+        struct tm t;
+        t.tm_year = year - 1900;
+        t.tm_mon = month - 1;
+        t.tm_mday = day;
+        t.tm_hour = hour;
+        t.tm_min = minute;
+        t.tm_sec = 0;
+        t.tm_isdst = 0;
+        time_t epoch = mktime(&t);
+        struct timeval tv = {epoch, 0};
+        settimeofday(&tv, NULL);
+        return;
+    }
+    prefs.end();
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     setenv("TZ", "EET-2", 1); tzset();
 }
@@ -290,8 +314,8 @@ void systemTask(void *pvParameters) {
         checkPrayerTimes();
         checkGpioSchedules();
         checkOutputTimers();
+        scheduler.checkAndTrigger();
         if (!isEidMode()) {
-            scheduler.checkAndTrigger();
             maghribManager.checkAndTrigger();
         }
         checkEidSchedule();

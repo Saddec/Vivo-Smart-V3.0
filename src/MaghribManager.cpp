@@ -141,6 +141,24 @@ String MaghribManager::getAlertsJson() {
     return json;
 }
 
+void MaghribManager::saveAlertsJson(const String& json) {
+    DynamicJsonDocument doc(2048);
+    DeserializationError err = deserializeJson(doc, json);
+    if (err || !doc.is<JsonArray>()) return;
+    JsonArray arr = doc.as<JsonArray>();
+    int i = 0;
+    for (JsonObject obj : arr) {
+        if (i >= 7) break;
+        alerts[i].fileName = obj["file"].as<String>();
+        alerts[i].enabled = obj["enabled"] | false;
+        alerts[i].volume = obj["volume"] | 15;
+        alerts[i].loopDuration = obj["loop"] | 0;
+        alerts[i].durationSec = alerts[i].fileName.length() > 0 ? getMP3Duration(alerts[i].fileName) : 0;
+        i++;
+    }
+    saveToNVS();
+}
+
 void MaghribManager::checkAndTrigger() {
     time_t now = time(nullptr);
     struct tm timeinfo;

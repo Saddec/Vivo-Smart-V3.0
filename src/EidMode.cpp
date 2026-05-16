@@ -9,10 +9,50 @@
 static bool eidModeEnabled = false;
 static time_t lastTakbeer = 0;
 static String takbeerFile = "takbeer.mp3";
-static String eidSchedType = "before_after";
-static int eidBefore = 15;   // minutes before
-static int eidAfter = 15;    // minutes after
-static String eidCustomTimes = ""; // comma separated HH:MM
+
+// ---- per-prayer takbeer config ----
+struct EidPrayerTakbeer {
+    bool enabled = true;
+    int beforeMin = 15;
+    int afterMin = 15;
+};
+static EidPrayerTakbeer prayerTakbeer[5];
+
+// ---- load/save takbeer config ----
+static void loadTakbeerConfig() {
+    Preferences pref;
+    pref.begin("eid_takbeer", true);
+    String json = pref.getString("config", "[]");
+    pref.end();
+    DynamicJsonDocument doc(1024);
+    DeserializationError err = deserializeJson(doc, json);
+    if (!err && doc.is<JsonArray>()) {
+        JsonArray arr = doc.as<JsonArray>();
+        for (int i = 0; i < 5 && i < (int)arr.size(); i++) {
+            JsonObject obj = arr[i];
+            prayerTakbeer[i].enabled = obj["enabled"] | true;
+            prayerTakbeer[i].beforeMin = obj["before"] | 15;
+            prayerTakbeer[i].afterMin = obj["after"] | 15;
+        }
+    }
+}
+
+static void saveTakbeerConfigNVS() {
+    DynamicJsonDocument doc(1024);
+    JsonArray arr = doc.to<JsonArray>();
+    for (int i = 0; i < 5; i++) {
+        JsonObject obj = arr.createNestedObject();
+        obj["enabled"] = prayerTakbeer[i].enabled;
+        obj["before"] = prayerTakbeer[i].beforeMin;
+        obj["after"] = prayerTakbeer[i].afterMin;
+    }
+    String json;
+    serializeJson(doc, json);
+    Preferences pref;
+    pref.begin("eid_takbeer", false);
+    pref.putString("config", json);
+    pref.end();
+}
 
 // ---- load settings from NVS ----
 static void loadEidSettings() {
@@ -21,43 +61,52 @@ static void loadEidSettings() {
     eidModeEnabled = pref.getBool("enabled", false);
     takbeerFile = pref.getString("takbeer_file", "takbeer.mp3");
     pref.end();
-
-    pref.begin("eid_sched", true);
-    eidSchedType = pref.getString("type", "before_after");
-    eidBefore = pref.getInt("before", 15);
-    eidAfter = pref.getInt("after", 15);
-    eidCustomTimes = pref.getString("custom", "");
-    pref.end();
+    loadTakbeerConfig();
 }
 
-// ---- helper: check if a given HH:MM matches current time ----
-static bool timeMatches(int targetHour, int targetMin, int curHour, int curMin) {
-    return (curHour == targetHour && curMin == targetMin);
-}
-
-// ---- check before/after a prayer ----
-static bool checkPrayerWindow(int pHour, int pMin, int beforeMin, int afterMin,
-                              int curHour, int curMin, time_t now, time_t &lastPlayed) {
-    // before: from (prayer - beforeMin) to prayer
+// ---- helper: check if current time falls in a window around a prayer ----
+static bool inPrayerWindow(int pHour, int pMin, int beforeMin, int afterMin,
+                           int curHour, int curMin) {
     int prayerTotal = pHour * 60 + pMin;
     int beforeStart = prayerTotal - beforeMin;
     if (beforeStart < 0) beforeStart += 1440;
     int curTotal = curHour * 60 + curMin;
-
-    // check before
-    if (beforeMin > 0 && curTotal >= beforeStart && curTotal < prayerTotal) {
-        return true;
-    }
-    // check after: from prayer to (prayer + afterMin)
-    if (afterMin > 0 && curTotal >= prayerTotal && curTotal < prayerTotal + afterMin) {
-        return true;
-    }
+    if (beforeMin > 0 && curTotal >= beforeStart && curTotal < prayerTotal) return true;
+    if (afterMin > 0 && curTotal >= prayerTotal && curTotal < prayerTotal + afterMin) return true;
     return false;
 }
 
 // ---- public functions ----
 bool isEidMode() {
     return eidModeEnabled;
+}
+
+String getEidTakbeerConfigJson() {
+    DynamicJsonDocument doc(1024);
+    JsonArray arr = doc.createNestedArray("prayers");
+    for (int i = 0; i < 5; i++) {
+        JsonObject obj = arr.createNestedObject();
+        obj["enabled"] = prayerTakbeer[i].enabled;
+        obj["before"] = prayerTakbeer[i].beforeMin;
+        obj["after"] = prayerTakbeer[i].afterMin;
+    }
+    String json;
+    serializeJson(doc, json);
+    return json;
+}
+
+void saveEidTakbeerConfigJson(const String& json) {
+    DynamicJsonDocument doc(1024);
+    DeserializationError err = deserializeJson(doc, json);
+    if (err || !doc.is<JsonArray>()) return;
+    JsonArray arr = doc.as<JsonArray>();
+    for (int i = 0; i < 5 && i < (int)arr.size(); i++) {
+        JsonObject obj = arr[i];
+        prayerTakbeer[i].enabled = obj["enabled"] | true;
+        prayerTakbeer[i].beforeMin = obj["before"] | 15;
+        prayerTakbeer[i].afterMin = obj["after"] | 15;
+    }
+    saveTakbeerConfigNVS();
 }
 
 void setEidMode(bool enable) {
@@ -69,62 +118,31 @@ void setEidMode(bool enable) {
 }
 
 void checkEidSchedule() {
-    loadEidSettings(); // refresh settings (could be cached)
+    loadEidSettings();
     if (!eidModeEnabled) return;
 
     time_t now = time(nullptr);
     struct tm t;
     localtime_r(&now, &t);
-
     int curHour = t.tm_hour;
     int curMin = t.tm_min;
-    int curSec = t.tm_sec;
 
-    // avoid multiple triggers within the same minute
     if (now - lastTakbeer < 60) return;
 
-    bool shouldPlay = false;
+    extern PrayerTimesResult todayPrayer;
+    if (!todayPrayer.valid) return;
 
-    if (eidSchedType == "before_after" || eidSchedType == "both") {
-        // get today's prayer times (extern from SystemTask)
-        extern PrayerTimesResult todayPrayer;
-        if (todayPrayer.valid) {
-            const String prayers[] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
-            for (int i = 0; i < 5; i++) {
-                int pHour = 0, pMin = 0;
-                sscanf(prayers[i].c_str(), "%d:%d", &pHour, &pMin);
-                if (checkPrayerWindow(pHour, pMin, eidBefore, eidAfter, curHour, curMin, now, lastTakbeer)) {
-                    shouldPlay = true;
-                    break;
-                }
-            }
+    const String prayers[] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
+
+    for (int i = 0; i < 5; i++) {
+        if (!prayerTakbeer[i].enabled) continue;
+        if (prayerTakbeer[i].beforeMin == 0 && prayerTakbeer[i].afterMin == 0) continue;
+        int pHour = 0, pMin = 0;
+        sscanf(prayers[i].c_str(), "%d:%d", &pHour, &pMin);
+        if (inPrayerWindow(pHour, pMin, prayerTakbeer[i].beforeMin, prayerTakbeer[i].afterMin, curHour, curMin)) {
+            sendPlayCommand(takbeerFile.c_str(), 1, 60, 0);
+            lastTakbeer = now;
+            break;
         }
-    }
-
-    if (!shouldPlay && (eidSchedType == "custom" || eidSchedType == "both")) {
-        // parse custom times like "06:00,12:00,18:00"
-        String times = eidCustomTimes;
-        times.trim();
-        int idx = 0;
-        while (idx < times.length()) {
-            int comma = times.indexOf(',', idx);
-            String entry = (comma == -1) ? times.substring(idx) : times.substring(idx, comma);
-            entry.trim();
-            if (entry.length() >= 5) {
-                int hh = entry.substring(0,2).toInt();
-                int mm = entry.substring(3,5).toInt();
-                if (timeMatches(hh, mm, curHour, curMin)) {
-                    shouldPlay = true;
-                    break;
-                }
-            }
-            if (comma == -1) break;
-            idx = comma + 1;
-        }
-    }
-
-    if (shouldPlay) {
-        sendPlayCommand(takbeerFile.c_str(), 1, 60, 0); // priority 1, 60 sec, no loop
-        lastTakbeer = now;
     }
 }

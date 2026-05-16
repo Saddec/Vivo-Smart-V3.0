@@ -20,6 +20,7 @@ public:
     void setVolumeForDay(int dayOfWeek, uint8_t vol);
     void setLoopForDay(int dayOfWeek, uint32_t loopSec); // new
     String getAlertsJson();
+    void saveAlertsJson(const String& json);
     void checkAndTrigger();
     static int getMP3Duration(const String& path);
 private:

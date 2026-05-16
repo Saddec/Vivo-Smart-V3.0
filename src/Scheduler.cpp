@@ -1,6 +1,7 @@
 #include "Scheduler.h"
 #include "SystemTask.h"
 #include "PrayerTimesEngine.h"
+#include "EidMode.h"
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -20,6 +21,7 @@ String Scheduler::getAlertsJson() {
         obj["loop"]=a.loopDuration;
         obj["isPrayerRelative"]=a.isPrayerRelative; obj["prayerIndex"]=a.prayerIndex;
         obj["offsetSeconds"]=a.offsetSeconds; obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
+        obj["eidOnly"]=a.eidOnly;
     }
     String json; serializeJson(doc, json); return json;
 }
@@ -32,12 +34,21 @@ void Scheduler::checkAndTrigger() {
     int curHour=timeinfo.tm_hour, curMin=timeinfo.tm_min, curWday=timeinfo.tm_wday,
         curMday=timeinfo.tm_mday, curMon=timeinfo.tm_mon+1, curYear=timeinfo.tm_year+1900;
     extern PrayerTimesResult todayPrayer;
+    bool eidActive = isEidMode();
 
     for(auto& alert : alerts) {
         if(!alert.enabled) continue;
+        if(alert.eidOnly && !eidActive) continue;
+        if(!alert.eidOnly && eidActive) continue;
         bool match=false;
         if(alert.type=="daily") match=(curHour==alert.hour && curMin==alert.minute);
-        else if(alert.type=="weekly") match=(curWday==alert.dayOfWeek && curHour==alert.hour && curMin==alert.minute);
+        else if(alert.type=="weekly") {
+            if (alert.dayOfWeek >= 0 && alert.dayOfWeek <= 6) {
+                match=(curWday==alert.dayOfWeek && curHour==alert.hour && curMin==alert.minute);
+            } else if (alert.dayOfWeek > 0) {
+                match=((alert.dayOfWeek & (1 << curWday)) != 0 && curHour==alert.hour && curMin==alert.minute);
+            }
+        }
         else if(alert.type=="monthly") match=(curMday==alert.dayOfMonth && curHour==alert.hour && curMin==alert.minute);
         else if(alert.type=="specific" && alert.specificDate.length()==10) {
             int y=alert.specificDate.substring(0,4).toInt(), m=alert.specificDate.substring(5,7).toInt(), d=alert.specificDate.substring(8,10).toInt();
@@ -79,6 +90,7 @@ void Scheduler::loadFromNVS() {
             a.volume=obj["volume"]|20; a.loopDuration=obj["loop"]|0;
             a.isPrayerRelative=obj["isPrayerRelative"]|false; a.prayerIndex=obj["prayerIndex"]|0; a.offsetSeconds=obj["offsetSeconds"]|0;
             a.validFrom=obj["validFrom"]|""; a.validTo=obj["validTo"]|"";
+            a.eidOnly=obj["eidOnly"]|false;
             a.lastTriggered = 0;
             alerts.push_back(a);
         }
@@ -94,6 +106,7 @@ void Scheduler::saveToNVS() {
         obj["duration"]=a.durationSec; obj["enabled"]=a.enabled; obj["volume"]=a.volume; obj["loop"]=a.loopDuration;
         obj["isPrayerRelative"]=a.isPrayerRelative; obj["prayerIndex"]=a.prayerIndex; obj["offsetSeconds"]=a.offsetSeconds;
         obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
+        obj["eidOnly"]=a.eidOnly;
     }
     String json; serializeJson(doc,json);
     Preferences prefs; prefs.begin("scheduler",false); prefs.putString("alerts",json); prefs.end();

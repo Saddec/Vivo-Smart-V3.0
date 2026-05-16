@@ -6,5 +6,7 @@
 bool isEidMode();
 void setEidMode(bool enable);
 void checkEidSchedule();
+String getEidTakbeerConfigJson();
+void saveEidTakbeerConfigJson(const String& json);
 
 #endif

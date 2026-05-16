@@ -574,6 +574,7 @@ void startWebServer() {
         alert.isPrayerRelative = alert.type == "prayer_relative";
         alert.prayerIndex = postValue(request, "prayerIndex", "0").toInt();
         alert.offsetSeconds = postValue(request, "offsetSeconds", "0").toInt();
+        alert.eidOnly = postBool(request, "eidOnly");
         scheduler.addAlert(alert);
         sendOk(request);
     });
@@ -623,9 +624,22 @@ void startWebServer() {
         prefs.end();
         sendOk(request);
     });
+    server.on("/api/eid/takbeer_config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", getEidTakbeerConfigJson());
+    });
+    server.on("/api/eid/takbeer_config/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String json = postValue(request, "json", "[]");
+        saveEidTakbeerConfigJson(json);
+        sendOk(request);
+    });
 
     server.on("/api/maghrib/alerts", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "application/json", maghribManager.getAlertsJson());
+    });
+    server.on("/api/maghrib/alert/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String json = postValue(request, "json", "[]");
+        maghribManager.saveAlertsJson(json);
+        sendOk(request);
     });
     server.on("/api/maghrib/offset", HTTP_POST, [](AsyncWebServerRequest *request) {
         prefs.begin("maghrib", false);
@@ -662,6 +676,44 @@ void startWebServer() {
         prefs.begin("startup", false);
         prefs.putBool("enabled", postBool(request, "enabled"));
         prefs.putString("file", postValue(request, "file", ""));
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/session/timeout", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(128);
+        prefs.begin("session", true);
+        doc["timeout"] = prefs.getInt("timeout", 10);
+        prefs.end();
+        sendJson(request, doc);
+    });
+    server.on("/api/session/timeout/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("session", false);
+        prefs.putInt("timeout", postValue(request, "timeout", "10").toInt());
+        prefs.end();
+        sendOk(request);
+    });
+
+    server.on("/api/time/manual_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        prefs.begin("time_manual", true);
+        doc["enabled"] = prefs.getBool("enabled", false);
+        doc["year"] = prefs.getInt("year", 2026);
+        doc["month"] = prefs.getInt("month", 1);
+        doc["day"] = prefs.getInt("day", 1);
+        doc["hour"] = prefs.getInt("hour", 12);
+        doc["minute"] = prefs.getInt("minute", 0);
+        prefs.end();
+        sendJson(request, doc);
+    });
+    server.on("/api/time/manual_save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("time_manual", false);
+        prefs.putBool("enabled", postBool(request, "enabled"));
+        prefs.putInt("year", postValue(request, "year", "2026").toInt());
+        prefs.putInt("month", postValue(request, "month", "1").toInt());
+        prefs.putInt("day", postValue(request, "day", "1").toInt());
+        prefs.putInt("hour", postValue(request, "hour", "12").toInt());
+        prefs.putInt("minute", postValue(request, "minute", "0").toInt());
         prefs.end();
         sendOk(request);
     });

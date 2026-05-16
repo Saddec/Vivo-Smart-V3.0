@@ -18,6 +18,7 @@ struct ScheduledAlert {
     int prayerIndex = 0;
     int offsetSeconds = 0;
     String validFrom, validTo;
+    bool eidOnly = false;
     time_t lastTriggered = 0;
 };
 
