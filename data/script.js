@@ -199,6 +199,7 @@ function initDashboard() {
   loadEidSchedules();
   loadEidTakbeerConfig();
   populateGpioPins();
+  loadDDNS();
 }
 
 function updateClock() {
@@ -218,7 +219,10 @@ function fetchStatus() {
     if ($('playingStatus')) {
       $('playingStatus').textContent = data.playing ? `يعمل: ${data.file || ''}` : 'متوقف';
     }
-    if ($('volumeSlider') && data.volume !== undefined) $('volumeSlider').value = data.volume;
+    if ($('volumeSlider') && data.volume !== undefined) {
+      $('volumeSlider').value = data.volume;
+      if ($('mainVolVal')) $('mainVolVal').textContent = data.volume;
+    }
   });
 }
 
@@ -335,6 +339,30 @@ function toggleDHCP() {
   if ($('staticIPFields')) $('staticIPFields').style.display = $('dhcpToggle')?.checked ? 'none' : 'block';
 }
 
+function loadDDNS() {
+  apiGet('/api/ddns/config', {}).then((data) => {
+    if ($('ddnsToggle')) {
+      $('ddnsToggle').checked = data.enabled || false;
+      toggleDDNS();
+    }
+    if ($('ddnsDomain')) $('ddnsDomain').value = data.domain || '';
+    if ($('ddnsUser')) $('ddnsUser').value = data.user || '';
+    if ($('ddnsPass')) $('ddnsPass').value = data.hasPass ? '********' : '';
+  });
+}
+
+function toggleDDNS() {
+  if ($('ddnsFields')) $('ddnsFields').style.display = $('ddnsToggle')?.checked ? 'block' : 'none';
+}
+
+function saveDDNS() {
+  const enabled = $('ddnsToggle')?.checked || false;
+  const domain = $('ddnsDomain')?.value || '';
+  const user = $('ddnsUser')?.value || '';
+  const pass = $('ddnsPass')?.value || '';
+  apiPost('/api/ddns/save', { enabled, domain, user, pass }).then(() => toast('تم حفظ إعدادات DDNS'));
+}
+
 function loadCountries() {
   apiGet('/api/location/countries', { countries: [] }).then((data) => {
     appState.countries = data.countries || data || [];
@@ -342,6 +370,27 @@ function loadCountries() {
     if (!select) return;
     select.innerHTML = '<option value="">اختر الدولة</option>' +
       appState.countries.map((country) => `<option value="${safeAttr(country)}">${safeText(country)}</option>`).join('');
+    
+    // Load config after countries are populated
+    apiGet('/api/prayer/config', {}).then((cfg) => {
+      if (cfg.country) {
+        select.value = cfg.country;
+        if ($('methodSelect') && cfg.method !== undefined) {
+          $('methodSelect').value = cfg.method;
+        }
+        // Fetch cities for this country and set the selected city
+        apiGet(`/api/location/cities?country=${encodeURIComponent(cfg.country)}`, { cities: [] }).then((cData) => {
+          appState.cities = cData.cities || cData || [];
+          const cSelect = $('citySelect');
+          if (cSelect) {
+            cSelect.innerHTML = '<option value="">اختر المدينة</option>' +
+              appState.cities.map((city) => `<option value="${safeAttr(city)}">${safeText(city)}</option>`).join('');
+            if (cfg.city) cSelect.value = cfg.city;
+          }
+          fetchPrayerTimes(); // Automatically calculate and display
+        });
+      }
+    });
   });
 }
 
@@ -429,6 +478,7 @@ function saveManualPrayerTimes() {
 function loadFileList() {
   apiGet('/api/files/list', { files: [] }).then((data) => {
     renderSdStatus(data.sd || {});
+    renderI2SStatus(data.i2s || {});
     appState.files = data.files || [];
     renderFileManager();
     populateFileSelects();
@@ -522,6 +572,15 @@ function renderSdStatus(sd) {
   ].join('');
 }
 
+function renderI2SStatus(i2s) {
+  if (!$('i2sStatus')) return;
+  if (i2s.ready) {
+    $('i2sStatus').innerHTML = '<div class="file-item" style="border-left: 4px solid #2ecc71;"><span>الحالة</span><span style="color:#2ecc71; font-weight:bold;">متصل ويعمل <i class="fas fa-check-circle"></i></span></div>';
+  } else {
+    $('i2sStatus').innerHTML = '<div class="file-item" style="border-left: 4px solid #e74c3c;"><span>الحالة</span><span style="color:#e74c3c; font-weight:bold;">خطأ في التهيئة <i class="fas fa-times-circle"></i></span></div>';
+  }
+}
+
 function populateFileSelects() {
   const options = appState.files
     .filter((f) => !f.isDirectory)
@@ -529,7 +588,8 @@ function populateFileSelects() {
     .join('');
   [
     'fajrAdhanFileSelect', 'adhanFileSelect', 'iqamaFileSelect', 'scheduleFile',
-    'inputFile', 'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect'
+    'inputFile', 'eidTakbeerFile', 'eidScheduleFile', 'playlistFileSelect', 'startupFileSelect',
+    'playlistFiles'
   ].forEach((id) => { if ($(id)) $(id).innerHTML = options; });
 }
 
@@ -661,6 +721,37 @@ function formatDays(mask) {
   return days.join('، ');
 }
 
+function addPlaylistSchedule() {
+  const select = $('playlistFiles');
+  if (!select || select.selectedOptions.length === 0) {
+    return toast('يجب اختيار ملف واحد على الأقل للقائمة');
+  }
+  const files = Array.from(select.selectedOptions).map(opt => opt.value).join(',');
+  
+  const [hour = '0', minute = '0'] = ($('scheduleTime')?.value || '00:00').split(':');
+  const type = $('scheduleType')?.value || 'daily';
+  let dayOfWeek = -1, dayOfMonth = -1;
+  if (type === 'weekly') dayOfWeek = getSelectedDaysBitmask();
+  if (type === 'monthly') dayOfMonth = $('scheduleDay')?.value || '-1';
+  apiPost('/api/scheduler/add', {
+    file: files,
+    type,
+    hour,
+    minute,
+    dayOfWeek,
+    dayOfMonth,
+    specificDate: $('scheduleDate')?.value || '',
+    volume: $('scheduleVolume')?.value || 20,
+    loop: $('scheduleLoopToggle')?.value === 'yes' ? $('scheduleLoopDuration')?.value || 0 : 0,
+    prayerIndex: $('schedulePrayer')?.value || 0,
+    offsetSeconds: Number($('scheduleOffset')?.value || 0) * 60,
+    eidOnly: '0'
+  }).then(() => {
+    toast('تم إضافة القائمة للجدولة بنجاح');
+    loadSchedules();
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
 function addSchedule(eidOnly) {
   const [hour = '0', minute = '0'] = ($('scheduleTime')?.value || '00:00').split(':');
   const type = $('scheduleType')?.value || 'daily';
@@ -756,6 +847,14 @@ function saveEidFile() {
     .then(() => toast('تم حفظ ملف التكبيرات')).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
+function playSingleFile() {
+  const file = $('playlistFileSelect')?.value || '';
+  if (!file) return toast('اختر ملفاً أولاً');
+  const volume = $('playlistVolume')?.value || 15;
+  apiPost('/api/audio/play', { file: file, priority: 1, volume: volume })
+    .catch((err) => toast(`فشل التشغيل: ${err.message}`));
+}
+
 function addToPlaylist() {
   const file = $('playlistFileSelect')?.value || '';
   if (!file) return;
@@ -803,11 +902,20 @@ function loadMaghribAlerts() {
     if (!$('maghribAlerts')) return;
     $('maghribAlerts').innerHTML = dayNames.map((d, i) => {
       const a = alerts[i] || {file:'', enabled:false, volume:15, loop:0};
-      return `<div class="eid-alert-row">
-        <span class="day-label">${d}</span>
-        <select id="maghribFile_${i}" style="flex:2">${appState.files.filter(f => !f.isDirectory).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
-        <label style="flex:0;white-space:nowrap"><input type="checkbox" id="maghribEnabled_${i}" ${a.enabled?'checked':''}> الصوت مفعل</label>
-        <label style="flex:0">مستوى الصوت <input type="number" id="maghribVolume_${i}" value="${a.volume||15}" min="0" max="30" style="width:60px;margin:0"></label>
+      return `<div class="eid-alert-row" style="background:rgba(255,255,255,0.06); padding:15px; border-radius:12px; margin-bottom:15px; display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+          <span class="day-label" style="font-size:1.2em; font-weight:bold; color:#f1c40f;"><i class="fas fa-calendar-day"></i> ${d}</span>
+          <label class="switch" style="margin:0;"><input type="checkbox" id="maghribEnabled_${i}" ${a.enabled?'checked':''}><span class="slider"></span></label>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          <label style="font-size:0.9em; opacity:0.8;">الملف الصوتي</label>
+          <select id="maghribFile_${i}" style="width:100%;">${appState.files.filter(f => !f.isDirectory).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <label style="font-size:0.9em; opacity:0.8; white-space:nowrap;">مستوى الصوت</label>
+          <input type="range" id="maghribVolume_${i}" value="${a.volume||15}" min="0" max="30" oninput="$('magVolVal_${i}').textContent=this.value" style="width:100%">
+          <span id="magVolVal_${i}" style="font-weight:bold; width:30px; text-align:center;">${a.volume||15}</span>
+        </div>
       </div>`;
     }).join('');
   });
@@ -952,10 +1060,12 @@ function loadEidTakbeerConfig() {
     if (!$('eidPrayerConfig')) return;
     $('eidPrayerConfig').innerHTML = prayerNames.map((name, i) => {
       const cfg = data.prayers ? data.prayers[i] : {enabled: i < 5, before: 15, after: 15};
+      const enableBefore = cfg.before > 0 ? 'checked' : '';
+      const enableAfter = cfg.after > 0 ? 'checked' : '';
       return `<div class="eid-takbeer-row">
         <label class="prayer-label"><input type="checkbox" class="eid-prayer-cb" value="${i}" ${cfg.enabled?'checked':''}> ${name}</label>
-        <label>قبل <input type="number" class="eid-prayer-before" value="${cfg.before||0}" min="0"> د</label>
-        <label>بعد <input type="number" class="eid-prayer-after" value="${cfg.after||0}" min="0"> د</label>
+        <label><input type="checkbox" class="eid-prayer-cb-before" ${enableBefore}> قبل <input type="number" class="eid-prayer-before" value="${cfg.before>0?cfg.before:15}" min="0" style="width:50px;margin:0 5px"> د</label>
+        <label><input type="checkbox" class="eid-prayer-cb-after" ${enableAfter}> بعد <input type="number" class="eid-prayer-after" value="${cfg.after>0?cfg.after:15}" min="0" style="width:50px;margin:0 5px"> د</label>
       </div>`;
     }).join('');
   });
@@ -964,12 +1074,14 @@ function loadEidTakbeerConfig() {
 function saveEidTakbeerConfig() {
   const prayers = [];
   document.querySelectorAll('.eid-prayer-cb').forEach((cb, i) => {
+    const cbBefore = document.querySelectorAll('.eid-prayer-cb-before')[i];
     const beforeInput = document.querySelectorAll('.eid-prayer-before')[i];
+    const cbAfter = document.querySelectorAll('.eid-prayer-cb-after')[i];
     const afterInput = document.querySelectorAll('.eid-prayer-after')[i];
     prayers.push({
       enabled: cb.checked,
-      before: parseInt(beforeInput?.value || '0'),
-      after: parseInt(afterInput?.value || '0')
+      before: cbBefore?.checked ? parseInt(beforeInput?.value || '0') : 0,
+      after: cbAfter?.checked ? parseInt(afterInput?.value || '0') : 0
     });
   });
   apiPost('/api/eid/takbeer_config/save', {json: JSON.stringify(prayers)})
@@ -1105,3 +1217,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, 10000);
 });
+
+function togglePasswordVisibility(inputId, iconId) {
+  const input = $(inputId);
+  const icon = $(iconId);
+  if (!input || !icon) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.classList.remove('fa-eye');
+    icon.classList.add('fa-eye-slash');
+  } else {
+    input.type = 'password';
+    icon.classList.remove('fa-eye-slash');
+    icon.classList.add('fa-eye');
+  }
+}

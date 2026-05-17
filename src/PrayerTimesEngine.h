@@ -21,6 +21,7 @@ struct PrayerConfig {
     int offsetAsr;
     int offsetMaghrib;
     int offsetIsha;
+    int hijriOffset;
 };
 
 struct CityInfo {

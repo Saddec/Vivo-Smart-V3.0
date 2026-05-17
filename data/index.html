@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vivo Smart – لوحة التحكم</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="/all.min.css">   <!-- نسخة محلية كاحتياطي -->
   <link rel="stylesheet" href="/style.css?v=3.2">
@@ -36,6 +39,7 @@
     <div class="section-label">مواقيت الصلاة</div>
     <a href="#prayer" onclick="showTab('prayer')"><i class="fas fa-clock"></i> إعدادات الصلاة</a>
     <a href="#maghrib" onclick="showTab('maghrib')"><i class="fas fa-sun"></i> المغرب</a>
+    <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> مشغل الموسيقى</a>
     <div class="section-label">التحكم</div>
     <a href="#gpio" onclick="showTab('gpio')"><i class="fas fa-microchip"></i> GPIO</a>
     <a href="#eid" onclick="showTab('eid')"><i class="fas fa-star-and-crescent"></i> العيد</a>
@@ -57,10 +61,11 @@
           <div class="dashboard-date"><span id="hijriDate"></span> | <span id="gregDate"></span></div>
         </div>
         <div class="col glass-card">
-          <h3><i class="fas fa-volume-up"></i> الحالة</h3>
+          <h3><i class="fas fa-volume-up"></i> حالة المشغل</h3>
           <p id="playingStatus">متوقف</p>
-          <input type="range" id="volumeSlider" min="0" max="30" value="15" onchange="setVolume(this.value)" style="width:100%">
-          <button class="btn" onclick="stopAudio()"><i class="fas fa-stop"></i> إيقاف</button>
+          <input type="range" id="volumeSlider" min="0" max="30" value="15" oninput="if($('mainVolVal')) $('mainVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
+          <span id="mainVolVal" style="display:block; text-align:center; font-weight:bold; margin-bottom:10px;">15</span>
+          <button class="btn" onclick="stopAudio()"><i class="fas fa-stop"></i> إيقاف الصوت</button>
         </div>
       </div>
       <div class="glass-card dashboard-prayer-card">
@@ -102,6 +107,16 @@
         <button class="btn" onclick="saveNetwork()"><i class="fas fa-save"></i> حفظ</button>
         <button class="btn" onclick="connectNetwork()"><i class="fas fa-wifi"></i> اتصال الآن</button>
       </div>
+      <div class="glass-card">
+        <h3><i class="fas fa-globe"></i> إعدادات DDNS (NO-IP)</h3>
+        <label class="switch"><input type="checkbox" id="ddnsToggle" onchange="toggleDDNS()"><span class="slider"></span></label> تفعيل الخدمة
+        <div id="ddnsFields" style="display:none; margin-top:15px;">
+          <label>النطاق (Domain)</label><input type="text" id="ddnsDomain" placeholder="example.ddns.net">
+          <label>اسم المستخدم</label><input type="text" id="ddnsUser" placeholder="username">
+          <label>كلمة المرور</label><input type="password" id="ddnsPass" placeholder="password">
+          <button class="btn" onclick="saveDDNS()"><i class="fas fa-save"></i> حفظ الإعدادات</button>
+        </div>
+      </div>
     </div>
     <!-- Prayer -->
     <div id="tab-prayer" class="tab">
@@ -124,7 +139,8 @@
           <label>العصر</label><input type="number" id="offsetAsr" value="0">
           <label>المغرب</label><input type="number" id="offsetMaghrib" value="0">
           <label>العشاء</label><input type="number" id="offsetIsha" value="0">
-          <button class="btn" onclick="saveOffsets()">حفظ</button>
+          <label style="color:#f1c40f; margin-top:10px;">تعديل التاريخ الهجري (أيام)</label><input type="number" id="offsetHijri" value="0" min="-5" max="5">
+          <button class="btn" onclick="saveOffsets()">حفظ الإزاحات والتاريخ</button>
         </div>
       </div>
       <div class="glass-card">
@@ -157,6 +173,8 @@
         <div class="col glass-card">
           <h3>حالة بطاقة SD</h3>
           <div id="sdStatus">جاري الفحص...</div>
+          <h3 style="margin-top: 20px;"><i class="fas fa-volume-up"></i> حالة وحدة الصوت (I2S)</h3>
+          <div id="i2sStatus">جاري الفحص...</div>
         </div>
         <div class="col glass-card">
           <h3>رفع ملف</h3>
@@ -189,27 +207,12 @@
         <label>الإقامة</label><select id="iqamaFileSelect"></select>
         <button class="btn" onclick="saveAdhanAssignments()">حفظ</button>
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-music"></i> المشغل</h3>
-        <div id="playlist"></div>
-        <div class="row">
-          <div class="col"><select id="playlistFileSelect"></select></div>
-          <div class="col"><button class="btn" onclick="addToPlaylist()">إضافة ملف</button></div>
-        </div>
-        <div style="margin-top:10px">
-          <button class="btn" onclick="playPlaylist()"><i class="fas fa-play"></i> تشغيل الكل</button>
-          <button class="btn" onclick="stopPlaylist()"><i class="fas fa-stop"></i> إيقاف</button>
-          <button class="btn" onclick="clearPlaylist()">مسح القائمة</button>
-          <label>مستوى الصوت</label><input type="range" id="playlistVolume" min="0" max="30" value="15">
-          <label class="switch"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> احترام الأذان
-        </div>
-      </div>
     </div>
     <!-- Scheduler + GPIO Schedule merged -->
     <div id="tab-scheduler" class="tab">
       <h1><i class="fas fa-calendar-alt"></i> التنبيهات والجدولة</h1>
       <div class="glass-card">
-        <h3>تنبيه صوتي</h3>
+        <h3><i class="fas fa-music"></i> تنبيه صوتي (لملف واحد)</h3>
         <label>ملف الصوت</label><select id="scheduleFile"></select>
         <label>النوع</label>
         <select id="scheduleType" onchange="toggleScheduleFields()">
@@ -220,8 +223,8 @@
         <div id="scheduleExtraFields"></div>
         <label>الوقت</label><input type="time" id="scheduleTime">
         <label>مستوى الصوت (0-30)</label>
-        <input type="range" id="scheduleVolume" min="0" max="30" value="20">
-        <span id="scheduleVolumeValue">20</span>
+        <input type="range" id="scheduleVolume" min="0" max="30" value="20" oninput="$('scheduleVolumeValue').textContent=this.value">
+        <span id="scheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
         <label>التكرار</label>
         <select id="scheduleLoopToggle" onchange="toggleLoopFields()">
           <option value="no">بدون تكرار</option>
@@ -230,15 +233,18 @@
         <div id="loopFields" style="display:none">
           <label>مدة التكرار (دقائق)</label><input type="number" id="scheduleLoopDuration" value="0" min="0">
         </div>
-        <button class="btn" onclick="addSchedule()">حفظ</button>
+        <button class="btn" onclick="addSchedule()"><i class="fas fa-save"></i> حفظ التنبيه</button>
       </div>
-      <div class="glass-card"><h3>التنبيهات الصوتية</h3><ul id="scheduleList"></ul></div>
       <div class="glass-card">
         <h3><i class="fas fa-clock"></i> جدولة المخارج (GPIO)</h3>
         <label>الدبوس</label><select id="gpioSchedPin"></select>
         <label>وقت البدء</label><input type="time" id="gpioSchedStart">
         <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
         <button class="btn" onclick="addGpioSchedule()">حفظ جدولة GPIO</button>
+      </div>
+      <div class="glass-card" style="margin-top: 20px;">
+        <h3><i class="fas fa-list"></i> قائمة التنبيهات (الصوتية و GPIO)</h3>
+        <ul id="scheduleList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
       </div>
     </div>
     <!-- GPIO -->
@@ -300,8 +306,68 @@
         <div style="margin-top:20px"><h3>التنبيهات المضافة</h3><ul id="eidScheduleList"></ul></div>
       </div>
     </div>
-    <!-- Player (merged into files) -->
-    <div id="tab-player" class="tab" style="display:none"></div>
+    <!-- Player -->
+    <div id="tab-player" class="tab">
+      <h1><i class="fas fa-music"></i> مشغل الموسيقى والجدولة</h1>
+      
+      <div class="glass-card">
+        <h3><i class="fas fa-play-circle"></i> المشغل السريع</h3>
+        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">اختر ملف للتشغيل فوراً أو أضفه إلى القائمة للتشغيل المتتالي.</p>
+        <div class="row">
+          <div class="col"><select id="playlistFileSelect"></select></div>
+          <div class="col">
+            <button class="btn" onclick="playSingleFile()"><i class="fas fa-play"></i> تشغيل</button>
+            <button class="btn" onclick="addToPlaylist()"><i class="fas fa-plus"></i> إضافة للقائمة</button>
+          </div>
+        </div>
+        <div style="margin-top:15px; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
+          <h4 style="margin-top:0;">قائمة التشغيل المؤقتة:</h4>
+          <div id="playlist" style="margin-bottom:10px;"></div>
+          <button class="btn" onclick="playPlaylist()"><i class="fas fa-play-circle"></i> تشغيل القائمة</button>
+          <button class="btn" onclick="clearPlaylist()"><i class="fas fa-trash"></i> مسح القائمة</button>
+          <label style="display:block; margin-top:10px;">مستوى الصوت <span id="playlistVolVal">15</span></label>
+          <input type="range" id="playlistVolume" min="0" max="30" value="15" oninput="if($('playlistVolVal')) $('playlistVolVal').textContent=this.value" style="width:100%">
+          <label class="switch" style="margin-top:10px;"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> إيقاف عند الأذان
+        </div>
+      </div>
+      <div class="glass-card" style="margin-top: 20px;">
+        <h3><i class="fas fa-list-alt"></i> جدولة قوائم التشغيل (Playlists)</h3>
+        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد عدة ملفات لإنشاء قائمة تشغيل وإضافتها للجدولة.</p>
+        
+        <label>الملفات (اختر ملف أو أكثر)</label>
+        <select id="playlistFiles" multiple style="height: 120px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; width: 100%; color: #fff; padding: 10px; margin-bottom: 15px; font-family: 'Tajawal', sans-serif;"></select>
+        <p style="font-size:12px; color:#f1c40f; margin-top:-10px;">استخدم Ctrl أو Shift (في الكمبيوتر) لتحديد أكثر من ملف.</p>
+        
+        <label>النوع</label>
+        <select id="scheduleType" onchange="toggleScheduleFields()">
+          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+          <option value="prayer_relative">مرتبط بالصلاة</option>
+        </select>
+        
+        <div id="scheduleExtraFields"></div>
+        <label>الوقت</label><input type="time" id="scheduleTime">
+        
+        <label>مستوى الصوت (0-30)</label>
+        <input type="range" id="scheduleVolume" min="0" max="30" value="20" oninput="$('scheduleVolumeValue').textContent=this.value">
+        <span id="scheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
+        
+        <label>التكرار</label>
+        <select id="scheduleLoopToggle" onchange="toggleLoopFields()">
+          <option value="no">بدون تكرار</option>
+          <option value="yes">تكرار لمدة معينة</option>
+        </select>
+        <div id="loopFields" style="display:none">
+          <label>مدة التكرار (دقائق)</label><input type="number" id="scheduleLoopDuration" value="0" min="0">
+        </div>
+        
+        <button class="btn" onclick="addPlaylistSchedule()"><i class="fas fa-plus-circle"></i> إضافة القائمة للجدولة</button>
+      </div>
+      <div class="glass-card" style="margin-top: 20px;">
+        <h3><i class="fas fa-tasks"></i> قوائم التشغيل والتنبيهات المجدولة</h3>
+        <ul id="scheduleList" style="list-style:none; padding:0;"></ul>
+      </div>
+    </div>
     <!-- Maghrib -->
     <div id="tab-maghrib" class="tab">
       <h1><i class="fas fa-sun"></i> تنبيهات المغرب</h1>
@@ -344,7 +410,10 @@
           <label>السنة</label><input type="number" id="manualYear" value="2026">
           <label>الشهر</label><input type="number" id="manualMonth" value="1" min="1" max="12">
           <label>اليوم</label><input type="number" id="manualDay" value="1" min="1" max="31">
-          <label>الساعة</label><input type="number" id="manualHour" value="12" min="0" max="23">
+          <div class="row">
+            <div class="col"><label>الساعة</label><input type="number" id="manualHour" value="12" min="1" max="12"></div>
+            <div class="col"><label>الفترة</label><select id="manualAmPm"><option value="am">صباحاً (AM)</option><option value="pm">مساءً (PM)</option></select></div>
+          </div>
           <label>الدقيقة</label><input type="number" id="manualMinute" value="0" min="0" max="59">
         </div>
         <button class="btn" onclick="saveManualTime()"><i class="fas fa-save"></i> حفظ الوقت والتاريخ</button>

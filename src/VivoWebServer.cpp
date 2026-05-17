@@ -8,6 +8,7 @@
 #include "SystemTask.h"
 #include "CSVManager.h"
 #include "SDManager.h"
+#include "DDNSManager.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
@@ -212,6 +213,7 @@ void handleFileList(AsyncWebServerRequest *request) {
     doc["sd"]["totalMB"] = mounted ? getSDTotalMB() : 0;
     doc["sd"]["usedMB"] = mounted ? getSDUsedMB() : 0;
     doc["sd"]["error"] = getLastSDError();
+    doc["i2s"]["ready"] = audioManager.isI2SReady();
 
     if (mounted) {
         listFilesRecursively("/", arr, 0);
@@ -442,10 +444,12 @@ void startWebServer() {
 
     server.on("/api/prayer/times", HTTP_GET, [](AsyncWebServerRequest *request) {
         PrayerConfig config = currentPrayerConfig;
-        if (request->hasParam("country") && request->hasParam("city")) {
+        String reqCountry = request->hasParam("country") ? request->getParam("country")->value() : "";
+        String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
+        if (reqCountry.length() > 0 && reqCity.length() > 0) {
             float lat, lng;
             int tz;
-            if (PrayerTimesEngine::getCoordinates(request->getParam("country")->value(), request->getParam("city")->value(), lat, lng, tz)) {
+            if (PrayerTimesEngine::getCoordinates(reqCountry, reqCity, lat, lng, tz)) {
                 config.latitude = lat;
                 config.longitude = lng;
                 config.timezone = tz;
@@ -458,9 +462,30 @@ void startWebServer() {
             config.method = request->getParam("method")->value().toInt();
             currentPrayerConfig.method = config.method;
         }
+        
+        prefs.begin("prayer_cfg", false);
+        prefs.putFloat("lat", currentPrayerConfig.latitude);
+        prefs.putFloat("lng", currentPrayerConfig.longitude);
+        prefs.putInt("tz", currentPrayerConfig.timezone);
+        prefs.putInt("method", currentPrayerConfig.method);
+        if (reqCountry.length() > 0) prefs.putString("country", reqCountry);
+        if (reqCity.length() > 0) prefs.putString("city", reqCity);
+        prefs.end();
+
         PrayerTimesResult result = PrayerTimesEngine::calculate(time(nullptr), config);
         if (result.valid) todayPrayer = result;
         writePrayerJson(request, result);
+    });
+
+    server.on("/api/prayer/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        prefs.begin("prayer_cfg", true);
+        doc["country"] = prefs.getString("country", "مصر");
+        doc["city"] = prefs.getString("city", "القاهرة");
+        doc["method"] = prefs.getInt("method", 0);
+        doc["hijriOffset"] = currentPrayerConfig.hijriOffset;
+        prefs.end();
+        sendJson(request, doc);
     });
 
     server.on("/api/prayer/offsets", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -469,12 +494,16 @@ void startWebServer() {
         currentPrayerConfig.offsetAsr = postValue(request, "asr", "0").toInt();
         currentPrayerConfig.offsetMaghrib = postValue(request, "maghrib", "0").toInt();
         currentPrayerConfig.offsetIsha = postValue(request, "isha", "0").toInt();
+        if (request->hasParam("hijriOffset", true)) {
+            currentPrayerConfig.hijriOffset = postValue(request, "hijriOffset", "0").toInt();
+        }
         prefs.begin("prayer_cfg", false);
         prefs.putInt("fajr", currentPrayerConfig.offsetFajr);
         prefs.putInt("dhuhr", currentPrayerConfig.offsetDhuhr);
         prefs.putInt("asr", currentPrayerConfig.offsetAsr);
         prefs.putInt("maghrib", currentPrayerConfig.offsetMaghrib);
         prefs.putInt("isha", currentPrayerConfig.offsetIsha);
+        prefs.putInt("hijriOffset", currentPrayerConfig.hijriOffset);
         prefs.end();
         sendOk(request);
     });
@@ -715,6 +744,7 @@ void startWebServer() {
         prefs.putInt("hour", postValue(request, "hour", "12").toInt());
         prefs.putInt("minute", postValue(request, "minute", "0").toInt());
         prefs.end();
+        syncTimeFromNTP();
         sendOk(request);
     });
 
@@ -737,6 +767,32 @@ void startWebServer() {
         prefs.putString("password", postValue(request, "password", "admin"));
         prefs.end();
         request->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    server.on("/api/ddns/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        prefs.begin("ddns", true);
+        doc["enabled"] = prefs.getBool("enabled", false);
+        doc["domain"] = prefs.getString("domain", "");
+        doc["user"] = prefs.getString("user", "");
+        // Don't send the password back to the client for security, or send a masked one
+        doc["hasPass"] = prefs.getString("pass", "").length() > 0;
+        prefs.end();
+        sendJson(request, doc);
+    });
+    
+    server.on("/api/ddns/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        prefs.begin("ddns", false);
+        prefs.putBool("enabled", postBool(request, "enabled"));
+        prefs.putString("domain", postValue(request, "domain", ""));
+        prefs.putString("user", postValue(request, "user", ""));
+        String newPass = postValue(request, "pass", "");
+        if (newPass.length() > 0 && newPass != "********") {
+            prefs.putString("pass", newPass);
+        }
+        prefs.end();
+        ddnsManager.forceUpdate();
+        sendOk(request);
     });
 
     server.on("/api/password/master_reset", HTTP_POST, [](AsyncWebServerRequest *request) {

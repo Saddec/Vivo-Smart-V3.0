@@ -5,14 +5,10 @@
 #include <esp_sntp.h>
 #include <algorithm>
 
-// ============================================================
-//  Astronomical helpers
-// ============================================================
+#include "PrayTimes.h"
 
-struct SunAngles {
-    double declination;   // degrees
-    double noon;          // hours (UTC)
-};
+// The astronomical helpers are now handled by PrayTimes.h / PrayTimes.cpp
+// but we keep julianDate for gregorianToHijri.
 
 static double julianDate(time_t t) {
     struct tm *utc = gmtime(&t);
@@ -24,53 +20,6 @@ static double julianDate(time_t t) {
     int B = 2 - A + A / 4;
     return floor(365.25 * (Y + 4716)) + floor(30.6001 * (M + 1)) + D + B - 1524.5
            + utc->tm_hour / 24.0 + utc->tm_min / 1440.0 + utc->tm_sec / 86400.0;
-}
-
-static SunAngles sunPosition(double jd, double lat, double lng) {
-    SunAngles sa;
-    double T = (jd - 2451545.0) / 36525.0;
-
-    double L0 = fmod(280.46646 + 36000.76983 * T + 0.0003032 * T * T, 360.0);
-    double M = fmod(357.52911 + 35999.05029 * T - 0.0001537 * T * T, 360.0);
-    double Mrad = M * (PI / 180.0);       // use Arduino's PI
-    double C = (1.914602 - 0.004817 * T - 0.000014 * T * T) * sin(Mrad)
-             + (0.019993 - 0.000101 * T) * sin(2 * Mrad)
-             + 0.000289 * sin(3 * Mrad);
-    double lambda = L0 + C;
-    double epsilon = 23.439291 - 0.0130042 * T;
-    sa.declination = asin(sin(epsilon * (PI/180.0)) * sin(lambda * (PI/180.0))) * (180.0/PI);
-
-    double B = 360.0 * (jd - 2451545.0) / 365.2422;
-    double EoT = 229.18 * (0.000075 + 0.001868 * cos(B * (PI/180.0)) - 0.032077 * sin(B * (PI/180.0))
-                          - 0.014615 * cos(2 * B * (PI/180.0)) - 0.040849 * sin(2 * B * (PI/180.0)));
-
-    sa.noon = 12.0 - lng / 15.0 - EoT / 60.0;
-    return sa;
-}
-
-static int computePrayerTime(SunAngles sa, double lat, double angle, bool isFajr, bool isIsha, bool isAsr, double asrFactor) {
-    double latRad = lat * (PI/180.0);
-    double decRad = sa.declination * (PI/180.0);
-    double angleRad = angle * (PI/180.0);
-
-    double numerator = sin(angleRad) - sin(latRad) * sin(decRad);
-    double denominator = cos(latRad) * cos(decRad);
-    if (denominator == 0.0) return -1;
-
-    double t;
-    if (isAsr) {
-        double shadowLength = asrFactor;
-        double altitude = atan(1.0 / (shadowLength + tan(fabs(latRad - decRad))));
-        double t_acos = acos((sin(altitude) - sin(latRad) * sin(decRad)) / denominator);
-        t = t_acos * (180.0/PI) / 15.0;
-    } else {
-        t = acos(numerator / denominator) * (180.0/PI) / 15.0;
-    }
-
-    double noonHours = sa.noon;
-    if (isFajr) return (int)round((noonHours - t) * 60.0);
-    else if (isIsha) return (int)round((noonHours + t) * 60.0);
-    else return (int)round((noonHours + t) * 60.0);
 }
 
 // ============================================================
@@ -238,55 +187,32 @@ PrayerTimesResult PrayerTimesEngine::calculate(time_t date, const PrayerConfig& 
     PrayerTimesResult res;
     if (config.latitude == 0.0 && config.longitude == 0.0) return res;
 
-    double jd = julianDate(date);
-    SunAngles sa = sunPosition(jd, config.latitude, config.longitude);
-
-    double fajrAngle, ishaAngle, asrFactor = 1.0;
-    switch (config.method) {
-        case 0: fajrAngle = -19.5; ishaAngle = -17.5; break;
-        case 1: fajrAngle = -18.0; ishaAngle = -17.0; break;
-        case 2: fajrAngle = -18.5; ishaAngle = -90.0; break;
-        default: fajrAngle = -19.5; ishaAngle = -17.5;
-    }
-
-    int fajrMins    = computePrayerTime(sa, config.latitude, fajrAngle, true, false, false, 0);
-    int dhuhrMins   = (int)round(sa.noon * 60.0);
-    int asrMins     = computePrayerTime(sa, config.latitude, 0, false, false, true, asrFactor);
-    int maghribMins = computePrayerTime(sa, config.latitude, -0.833, false, false, false, 0);
-    int ishaMins    = (config.method == 2) ? maghribMins + 90 : computePrayerTime(sa, config.latitude, ishaAngle, false, true, false, 0);
-
-    auto toLocal = [](int utcMin, int tz) -> int {
-        int local = utcMin + tz * 60;
-        if (local < 0) local += 1440;
-        if (local >= 1440) local -= 1440;
-        return local;
+    PrayTimes pt;
+    pt.setCalcMethod(config.method); // 0=Egypt, 1=MWL, 2=Makkah
+    
+    struct tm *utc = gmtime(&date);
+    int year = utc->tm_year + 1900;
+    int month = utc->tm_mon + 1;
+    int day = utc->tm_mday;
+    
+    double times[6];
+    pt.getPrayerTimes(year, month, day, config.latitude, config.longitude, config.timezone, times);
+    
+    auto formatTime = [](double t, int offset) -> String {
+        int minutes = (int)round(t * 60.0) + offset;
+        minutes = (minutes + 1440) % 1440;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%02d:%02d", minutes / 60, minutes % 60);
+        return String(buf);
     };
 
-    fajrMins    = toLocal(fajrMins, config.timezone);
-    dhuhrMins   = toLocal(dhuhrMins, config.timezone);
-    asrMins     = toLocal(asrMins, config.timezone);
-    maghribMins = toLocal(maghribMins, config.timezone);
-    ishaMins    = toLocal(ishaMins, config.timezone);
-
-    fajrMins    += config.offsetFajr;
-    dhuhrMins   += config.offsetDhuhr;
-    asrMins     += config.offsetAsr;
-    maghribMins += config.offsetMaghrib;
-    ishaMins    += config.offsetIsha;
-
-    fajrMins    = (fajrMins + 1440) % 1440;
-    dhuhrMins   = (dhuhrMins + 1440) % 1440;
-    asrMins     = (asrMins + 1440) % 1440;
-    maghribMins = (maghribMins + 1440) % 1440;
-    ishaMins    = (ishaMins + 1440) % 1440;
-
-    res.fajr    = minutesToTimeStr(fajrMins);
-    res.dhuhr   = minutesToTimeStr(dhuhrMins);
-    res.asr     = minutesToTimeStr(asrMins);
-    res.maghrib = minutesToTimeStr(maghribMins);
-    res.isha    = minutesToTimeStr(ishaMins);
-    res.sunrise = "";  // optional, can be computed if desired
-    res.valid   = true;
+    res.fajr = formatTime(times[0], config.offsetFajr);
+    res.sunrise = formatTime(times[1], 0);
+    res.dhuhr = formatTime(times[2], config.offsetDhuhr);
+    res.asr = formatTime(times[3], config.offsetAsr);
+    res.maghrib = formatTime(times[4], config.offsetMaghrib);
+    res.isha = formatTime(times[5], config.offsetIsha);
+    res.valid = true;
     return res;
 }
 
@@ -297,7 +223,7 @@ String PrayerTimesEngine::minutesToTimeStr(int minutes) {
 }
 
 String PrayerTimesEngine::gregorianToHijri(time_t date) {
-    double jd = julianDate(date);
+    double jd = julianDate(date) + currentPrayerConfig.hijriOffset;
     int l = (int)(jd + 0.5) - 1948440 + 10632;
     int n = (l - 1) / 10631;
     l = l - 10631 * n + 354;
@@ -316,4 +242,4 @@ void PrayerTimesEngine::syncTime(const char* ntpServer) {
 }
 
 // Global configuration instance
-PrayerConfig currentPrayerConfig = {30.0444, 31.2357, 2, 0, 0,0,0,0,0};
+PrayerConfig currentPrayerConfig = {30.0444, 31.2357, 2, 0, 0,0,0,0,0, 0};

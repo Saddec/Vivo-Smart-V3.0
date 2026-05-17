@@ -70,7 +70,16 @@ void Scheduler::checkAndTrigger() {
         if(match) {
             time_t triggerMinute = now - timeinfo.tm_sec;
             if (alert.lastTriggered != triggerMinute) {
-                sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
+                if (alert.fileName.indexOf(',') != -1) {
+                    extern QueueHandle_t audioQueue;
+                    extern char fileBuffer[128];
+                    strlcpy(fileBuffer, alert.fileName.c_str(), sizeof(fileBuffer));
+                    // format: CMD_PLAY_PLAYLIST, priority=0, duration=0, param3=0, param4(volume)=alert.volume, param5(packed respectAdhan)=0
+                    AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, alert.volume, 0};
+                    xQueueSend(audioQueue, &msg, 0);
+                } else {
+                    sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
+                }
                 alert.lastTriggered = triggerMinute;
             }
         }

@@ -172,6 +172,10 @@ const char* AudioManager::getCurrentFile() {
     return _currentFile.c_str();
 }
 
+bool AudioManager::isI2SReady() const {
+    return _audio != nullptr;
+}
+
 void AudioManager::audioOnStop(void *userData) {
     AudioManager* self = static_cast<AudioManager*>(userData);
     if (!self) return;
@@ -196,11 +200,17 @@ void AudioManager::audioOnStop(void *userData) {
     self->_lastPlayedFile = "";
 }
 
+void AudioManager::loop() {
+    if (_audio) {
+        _audio->loop();
+    }
+}
+
 void audioTask(void *pvParameters) {
     audioManager.begin();
     AudioMessage msg;
     for (;;) {
-        if (xQueueReceive(audioQueue, &msg, portMAX_DELAY) == pdTRUE) {
+        if (xQueueReceive(audioQueue, &msg, 0) == pdTRUE) {
             switch (msg.cmd) {
                 case CMD_PLAY_FILE: {
                     const char* path;
@@ -234,6 +244,7 @@ void audioTask(void *pvParameters) {
                     break;
             }
         }
-        vTaskDelay(5 / portTICK_PERIOD_MS);
+        audioManager.loop();
+        vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }

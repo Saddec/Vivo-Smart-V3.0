@@ -44,6 +44,8 @@ public:
     void resume();
     AudioState getState();
     const char* getCurrentFile();
+    bool isI2SReady() const;
+    void loop();
     static void audioOnStop(void *userData);
 private:
     Audio* _audio;

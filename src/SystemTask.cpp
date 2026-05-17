@@ -9,6 +9,7 @@
 #include "LEDManager.h"
 #include "CSVManager.h"
 #include "SDManager.h"
+#include "DDNSManager.h"
 #include <WiFi.h>
 #include <time.h>
 #include <Preferences.h>
@@ -191,31 +192,22 @@ bool loadManualPrayerTimes(PrayerTimesResult &result) {
 }
 
 static String getAdhanFile(int prayerIndex) {
-    static String fajrFile, adhanFile, iqamaFile;
-    static bool loaded = false;
-    if (!loaded) {
-        Preferences prefs;
-        prefs.begin("adhan_files", true);
-        fajrFile = prefs.getString("fajr", "fajr_adhan.mp3");
-        adhanFile = prefs.getString("adhan", "adhan.mp3");
-        iqamaFile = prefs.getString("iqama", "iqama.mp3");
-        prefs.end();
-        loaded = true;
-    }
+    String fajrFile, adhanFile;
+    Preferences prefs;
+    prefs.begin("adhan_files", true);
+    fajrFile = prefs.getString("fajr", "fajr_adhan.mp3");
+    adhanFile = prefs.getString("adhan", "adhan.mp3");
+    prefs.end();
     if (prayerIndex == 0) return fajrFile;
     else return adhanFile;
 }
 
 static String getIqamaFile() {
-    static String iqamaFile = "iqama.mp3";
-    static bool loaded = false;
-    if (!loaded) {
-        Preferences prefs;
-        prefs.begin("adhan_files", true);
-        iqamaFile = prefs.getString("iqama", "iqama.mp3");
-        prefs.end();
-        loaded = true;
-    }
+    String iqamaFile;
+    Preferences prefs;
+    prefs.begin("adhan_files", true);
+    iqamaFile = prefs.getString("iqama", "iqama.mp3");
+    prefs.end();
     return iqamaFile;
 }
 
@@ -283,17 +275,17 @@ void playStartupAlert() {
 }
 
 void systemTask(void *pvParameters) {
-    currentPrayerConfig.latitude = 30.0444;
-    currentPrayerConfig.longitude = 31.2357;
-    currentPrayerConfig.timezone = 2;
-    currentPrayerConfig.method = 0;
-
     prefs.begin("prayer_cfg", true);
+    currentPrayerConfig.latitude = prefs.getFloat("lat", 30.0444);
+    currentPrayerConfig.longitude = prefs.getFloat("lng", 31.2357);
+    currentPrayerConfig.timezone = prefs.getInt("tz", 2);
+    currentPrayerConfig.method = prefs.getInt("method", 0);
     currentPrayerConfig.offsetFajr = prefs.getInt("fajr", 0);
     currentPrayerConfig.offsetDhuhr = prefs.getInt("dhuhr", 0);
     currentPrayerConfig.offsetAsr = prefs.getInt("asr", 0);
     currentPrayerConfig.offsetMaghrib = prefs.getInt("maghrib", 0);
     currentPrayerConfig.offsetIsha = prefs.getInt("isha", 0);
+    currentPrayerConfig.hijriOffset = prefs.getInt("hijriOffset", 0);
     prefs.end();
 
     initLED(); setLedState(LED_BOOTING);
@@ -302,6 +294,7 @@ void systemTask(void *pvParameters) {
     startWebServer();
     maghribManager.begin();
     scheduler.begin();
+    ddnsManager.begin();
     initGPIO();
     loadGpioSchedules();
 
@@ -320,6 +313,7 @@ void systemTask(void *pvParameters) {
         }
         checkEidSchedule();
         checkGPIOInputs();
+        ddnsManager.loop();
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
