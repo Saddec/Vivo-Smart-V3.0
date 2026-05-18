@@ -13,6 +13,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include <Preferences.h>
+#include <math.h>
 
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
@@ -131,7 +132,47 @@ void maintainWiFi() {
     }
 }
 
+void applyConfiguredTimezone() {
+    int tzOffset = currentPrayerConfig.timezone;
+    char tzBuf[32];
+    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
+    setenv("TZ", tzBuf, 1);
+    tzset();
+    Serial.printf("[Time] Timezone applied: offset=%d, TZ=%s\n", tzOffset, tzBuf);
+}
+
+static bool isSystemTimeValid() {
+    time_t now = time(nullptr);
+    struct tm tinfo;
+    localtime_r(&now, &tinfo);
+    return (tinfo.tm_year + 1900) >= 2024;
+}
+
+static bool setSystemEpoch(time_t epoch, const char *source) {
+    if (epoch < 1704067200) {
+        Serial.printf("[Time] Ignored invalid %s epoch: %ld\n", source, (long)epoch);
+        return false;
+    }
+    struct timeval tv = {epoch, 0};
+    settimeofday(&tv, NULL);
+    forcePrayerRecalc();
+    Serial.printf("[Time] System time set from %s: epoch=%ld\n", source, (long)epoch);
+    return true;
+}
+
+bool syncTimeFromBrowser(time_t browserEpoch) {
+    applyConfiguredTimezone();
+    time_t current = time(nullptr);
+    double delta = fabs(difftime(current, browserEpoch));
+    if (!isSystemTimeValid() || delta > 120.0) {
+        return setSystemEpoch(browserEpoch, "browser");
+    }
+    Serial.printf("[Time] Browser sync skipped: delta=%.0f seconds\n", delta);
+    return false;
+}
+
 void syncTimeFromNTP() {
+    applyConfiguredTimezone();
     Preferences prefs;
     prefs.begin("time_manual", true);
     bool manual = prefs.getBool("enabled", false);
@@ -151,18 +192,25 @@ void syncTimeFromNTP() {
         t.tm_sec = 0;
         t.tm_isdst = -1;
         time_t epoch = mktime(&t);
-        struct timeval tv = {epoch, 0};
-        settimeofday(&tv, NULL);
-        forcePrayerRecalc();
+        setSystemEpoch(epoch, "manual");
+        Serial.printf("[Time] Manual time applied: %04d-%02d-%02d %02d:%02d\n", year, month, day, hour, minute);
         return;
     }
     prefs.end();
     
     int tzOffset = currentPrayerConfig.timezone;
     char tzBuf[32];
-    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset); 
-    
+    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
     configTzTime(tzBuf, "pool.ntp.org", "time.nist.gov");
+    Serial.println("[Time] NTP sync requested");
+    struct tm tinfo;
+    if (getLocalTime(&tinfo, 6000)) {
+        Serial.printf("[Time] NTP time valid: %04d-%02d-%02d %02d:%02d\n",
+                      tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
+                      tinfo.tm_hour, tinfo.tm_min);
+    } else {
+        Serial.println("[Time] NTP sync failed or timed out");
+    }
     forcePrayerRecalc();
 }
 

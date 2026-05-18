@@ -128,7 +128,7 @@
           <label>الدولة</label>
           <select id="countrySelect" onchange="onCountryChange()"><option value="">اختر الدولة</option></select>
           <label>المدينة</label>
-          <select id="citySelect"><option value="">اختر المدينة</option></select>
+          <select id="citySelect" onchange="fetchPrayerTimes()"><option value="">اختر المدينة</option></select>
           <label>طريقة الحساب</label>
           <select id="methodSelect"><option value="0">الهيئة المصرية</option><option value="1">رابطة العالم الإسلامي</option><option value="2">أم القرى</option></select>
           <button class="btn" onclick="fetchPrayerTimes()">حساب المواقيت</button>
@@ -461,6 +461,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.1"></script>
+  <script src="/script.js?v=3.4"></script>
 </body>
 </html>

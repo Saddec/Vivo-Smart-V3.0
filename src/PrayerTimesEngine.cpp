@@ -4,6 +4,9 @@
 #include <sys/time.h>
 #include <esp_sntp.h>
 #include <algorithm>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <ArduinoJson.h>
 
 #include "PrayTimes.h"
 
@@ -20,6 +23,49 @@ static double julianDate(time_t t) {
     int B = 2 - A + A / 4;
     return floor(365.25 * (Y + 4716)) + floor(30.6001 * (M + 1)) + D + B - 1524.5
            + utc->tm_hour / 24.0 + utc->tm_min / 1440.0 + utc->tm_sec / 86400.0;
+}
+
+static String urlEncode(const String& value) {
+    String encoded;
+    const char *hex = "0123456789ABCDEF";
+    for (size_t i = 0; i < value.length(); i++) {
+        char c = value[i];
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else if (c == ' ') {
+            encoded += '+';
+        } else {
+            encoded += '%';
+            encoded += hex[(c >> 4) & 0x0F];
+            encoded += hex[c & 0x0F];
+        }
+    }
+    return encoded;
+}
+
+static int toAladhanMethod(int method) {
+    if (method == 0) return 5; // Egyptian General Authority of Survey
+    if (method == 2) return 4; // Umm Al-Qura University, Makkah
+    return 3;                  // Muslim World League
+}
+
+static String cleanApiTime(const char *value) {
+    String time = value ? String(value) : "";
+    int space = time.indexOf(' ');
+    if (space > 0) time = time.substring(0, space);
+    if (time.length() >= 5) time = time.substring(0, 5);
+    return time;
+}
+
+static String addMinutesToTime(const String& value, int offset) {
+    if (value.length() < 5) return value;
+    int hour = value.substring(0, 2).toInt();
+    int minute = value.substring(3, 5).toInt();
+    int total = hour * 60 + minute + offset;
+    total = (total + 1440) % 1440;
+    char buf[6];
+    snprintf(buf, sizeof(buf), "%02d:%02d", total / 60, total % 60);
+    return String(buf);
 }
 
 // ============================================================
@@ -45,7 +91,7 @@ static const CityInfo allCities[] = {
     // ---------- Saudi Arabia ----------
     {"Saudi Arabia", "Riyadh", 24.7136, 46.6753, 3},
     {"Saudi Arabia", "Jeddah", 21.3891, 39.8579, 3},
-    {"Saudi Arabia", "Mecca", 21.3891, 39.8579, 3},
+    {"Saudi Arabia", "Mecca", 21.4225, 39.8262, 3},
     {"Saudi Arabia", "Medina", 24.5247, 39.5692, 3},
     {"Saudi Arabia", "Dammam", 26.4344, 50.1033, 3},
     {"Saudi Arabia", "Taif", 21.2708, 40.4155, 3},
@@ -149,8 +195,12 @@ static const CityInfo allCities[] = {
 // ============================================================
 
 bool PrayerTimesEngine::getCoordinates(const String& country, const String& city, float& lat, float& lng, int& tz) {
+    String normalizedCountry = country;
+    String normalizedCity = city;
+    if (normalizedCountry == "مصر") normalizedCountry = "Egypt";
+    if (normalizedCity == "القاهرة") normalizedCity = "Cairo";
     for (int i = 0; allCities[i].country.length() > 0; i++) {
-        if (country.equalsIgnoreCase(allCities[i].country) && city.equalsIgnoreCase(allCities[i].city)) {
+        if (normalizedCountry.equalsIgnoreCase(allCities[i].country) && normalizedCity.equalsIgnoreCase(allCities[i].city)) {
             lat = allCities[i].lat;
             lng = allCities[i].lng;
             tz = allCities[i].tz;
@@ -174,13 +224,88 @@ std::vector<String> PrayerTimesEngine::getCountries() {
 
 std::vector<String> PrayerTimesEngine::getCities(const String& country) {
     std::vector<String> cities;
+    String normalizedCountry = country;
+    if (normalizedCountry == "مصر") normalizedCountry = "Egypt";
     for (int i = 0; allCities[i].country.length() > 0; i++) {
-        if (country.equalsIgnoreCase(allCities[i].country)) {
+        if (normalizedCountry.equalsIgnoreCase(allCities[i].country)) {
             cities.push_back(allCities[i].city);
         }
     }
     std::sort(cities.begin(), cities.end());
     return cities;
+}
+
+int PrayerTimesEngine::getDefaultMethod(const String& country) {
+    String normalizedCountry = country;
+    if (normalizedCountry == "مصر") normalizedCountry = "Egypt";
+    if (normalizedCountry.equalsIgnoreCase("Egypt")) return 0;
+    if (normalizedCountry.equalsIgnoreCase("Saudi Arabia")) return 2;
+    return 1;
+}
+
+bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, time_t date, const PrayerConfig& config, PrayerTimesResult& result) {
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    static String cachedKey;
+    static PrayerTimesResult cachedResult;
+
+    struct tm tinfo;
+    localtime_r(&date, &tinfo);
+    char dateBuf[11];
+    snprintf(dateBuf, sizeof(dateBuf), "%02d-%02d-%04d", tinfo.tm_mday, tinfo.tm_mon + 1, tinfo.tm_year + 1900);
+
+    String key = country + "|" + city + "|" + String(dateBuf) + "|" + String(config.method);
+    if (cachedKey == key && cachedResult.valid) {
+        result = cachedResult;
+        return true;
+    }
+
+    String url = "http://api.aladhan.com/v1/timingsByCity/" + String(dateBuf) +
+                 "?city=" + urlEncode(city) +
+                 "&country=" + urlEncode(country) +
+                 "&method=" + String(toAladhanMethod(config.method));
+
+    HTTPClient http;
+    http.setTimeout(6000);
+    http.begin(url);
+    int code = http.GET();
+    if (code != 200) {
+        Serial.printf("[Prayer] Online fetch failed: http=%d\n", code);
+        http.end();
+        return false;
+    }
+
+    DynamicJsonDocument doc(4096);
+    DeserializationError err = deserializeJson(doc, http.getString());
+    http.end();
+    if (err) {
+        Serial.printf("[Prayer] Online JSON parse failed: %s\n", err.c_str());
+        return false;
+    }
+
+    JsonObject timings = doc["data"]["timings"];
+    if (timings.isNull()) return false;
+
+    result.fajr = cleanApiTime(timings["Fajr"]);
+    result.sunrise = cleanApiTime(timings["Sunrise"]);
+    result.dhuhr = cleanApiTime(timings["Dhuhr"]);
+    result.asr = cleanApiTime(timings["Asr"]);
+    result.maghrib = cleanApiTime(timings["Maghrib"]);
+    result.isha = cleanApiTime(timings["Isha"]);
+    result.valid = result.fajr.length() == 5 && result.dhuhr.length() == 5 && result.asr.length() == 5 &&
+                   result.maghrib.length() == 5 && result.isha.length() == 5;
+    if (!result.valid) return false;
+
+    if (config.method == 2) {
+        result.dhuhr = addMinutesToTime(result.dhuhr, 1);
+        result.asr = addMinutesToTime(result.asr, 1);
+        Serial.println("[Prayer] Umm Al-Qura calibration applied: dhuhr=+1 asr=+1");
+    }
+
+    cachedKey = key;
+    cachedResult = result;
+    Serial.printf("[Prayer] Online timings loaded: %s %s %s\n", country.c_str(), city.c_str(), dateBuf);
+    return true;
 }
 
 PrayerTimesResult PrayerTimesEngine::calculate(time_t date, const PrayerConfig& config) {

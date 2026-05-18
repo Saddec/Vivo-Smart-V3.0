@@ -10,7 +10,7 @@ PrayTimes::PrayTimes() {
     dhuhrMinutes = 0;
     adjustHighLats = 1;
     timeFormat = 0;
-    numIterations = 1;
+    numIterations = 2;
 
     methodParams[0][0] = 19.5; methodParams[0][1] = 17.5; // Egypt
     methodParams[1][0] = 18.0; methodParams[1][1] = 17.0; // MWL
@@ -69,20 +69,22 @@ double PrayTimes::computeTime(double angle, double _time) {
 
 double PrayTimes::computeAsr(int step, double _time) {
     double d = sunDeclination(JDate + _time);
-    double g = -dtr(lat - d);
-    double angle = rtd(atan(1.0 / (step + tan(dtr(fabs(lat - d))))));
-    double v = (1.0/15.0) * rtd(acos((-sin(dtr(angle)) - sin(dtr(d)) * sin(dtr(lat))) / (cos(dtr(d)) * cos(dtr(lat)))));
-    return computeMidDay(_time) + v;
+    double angle = -rtd(atan(1.0 / (step + tan(dtr(fabs(lat - d))))));
+    return computeTime(angle, _time);
+}
+
+double PrayTimes::dayPortion(double time) {
+    return time / 24.0;
 }
 
 void PrayTimes::computeTimes(double times[]) {
-    double t[] = {5.0, 6.0, 12.0, 13.0, 18.0, 18.0};
-    times[0] = computeTime(180.0 - methodParams[calcMethod][0], t[0]);
-    times[1] = computeTime(180.0 - 0.833, t[1]);
-    times[2] = computeMidDay(t[2]);
-    times[3] = computeAsr(1 + asrJuristic, t[3]);
-    times[4] = computeTime(0.833, t[4]);
-    times[5] = computeTime(methodParams[calcMethod][1], t[5]);
+    for (int i = 0; i < 6; i++) times[i] = dayPortion(times[i]);
+    times[0] = computeTime(180.0 - methodParams[calcMethod][0], times[0]);
+    times[1] = computeTime(180.0 - 0.833, times[1]);
+    times[2] = computeMidDay(times[2]);
+    times[3] = computeAsr(1 + asrJuristic, times[3]);
+    times[4] = computeTime(0.833, times[4]);
+    times[5] = computeTime(methodParams[calcMethod][1], times[5]);
 }
 
 void PrayTimes::getPrayerTimes(int year, int month, int day, double _latitude, double _longitude, double _timeZone, double times[]) {
@@ -91,8 +93,8 @@ void PrayTimes::getPrayerTimes(int year, int month, int day, double _latitude, d
     timeZone = _timeZone;
     JDate = 367 * year - (7 * (year + 5001 + (month - 9) / 7)) / 4 + (275 * month) / 9 + day + 1729777.0;
     
-    double t[6];
-    computeTimes(t);
+    double t[] = {5.0, 6.0, 12.0, 13.0, 18.0, 18.0};
+    for (int i = 0; i < numIterations; i++) computeTimes(t);
     
     for (int i = 0; i < 6; i++) {
         times[i] = t[i] + timeZone - lng / 15.0;

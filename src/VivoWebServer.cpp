@@ -292,25 +292,29 @@ void startWebServer() {
 
     server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
+    server.on("/api/clock", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        doc["time"] = getCurrentTimeStr();
+        doc["greg"] = getCurrentDateStr();
+        doc["hijri"] = PrayerTimesEngine::gregorianToHijri(time(nullptr));
+        sendJson(request, doc);
+    });
+
     server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "text/plain", getCurrentTimeStr());
     });
 
     server.on("/api/time/sync_browser", HTTP_POST, [](AsyncWebServerRequest *request) {
+        bool applied = false;
         if (request->hasParam("timestamp", true)) {
-            time_t current = time(nullptr);
-            struct tm tinfo;
-            localtime_r(&current, &tinfo);
-            // If year is before 2024 (meaning NTP failed and it's around 1970)
-            if (tinfo.tm_year + 1900 < 2024) {
-                String tsStr = request->getParam("timestamp", true)->value();
-                time_t epoch = (time_t) tsStr.toDouble();
-                struct timeval tv = {epoch, 0};
-                settimeofday(&tv, NULL);
-                forcePrayerRecalc();
-            }
+            String tsStr = request->getParam("timestamp", true)->value();
+            time_t epoch = (time_t) tsStr.toDouble();
+            applied = syncTimeFromBrowser(epoch);
         }
-        sendOk(request);
+        DynamicJsonDocument doc(128);
+        doc["ok"] = true;
+        doc["applied"] = applied;
+        sendJson(request, doc);
     });
 
     server.on("/api/date", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -463,6 +467,7 @@ void startWebServer() {
         PrayerConfig config = currentPrayerConfig;
         String reqCountry = request->hasParam("country") ? request->getParam("country")->value() : "";
         String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
+        bool changed = false;
         if (reqCountry.length() > 0 && reqCity.length() > 0) {
             float lat, lng;
             int tz;
@@ -473,24 +478,64 @@ void startWebServer() {
                 currentPrayerConfig.latitude = lat;
                 currentPrayerConfig.longitude = lng;
                 currentPrayerConfig.timezone = tz;
-                syncTimeFromNTP();
+                changed = true;
+            } else {
+                Serial.printf("[Prayer] Unknown location: country=%s city=%s\n", reqCountry.c_str(), reqCity.c_str());
+                request->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown_location\"}");
+                return;
             }
         }
         if (request->hasParam("method")) {
             config.method = request->getParam("method")->value().toInt();
             currentPrayerConfig.method = config.method;
+            changed = true;
         }
         
-        prefs.begin("prayer_cfg", false);
-        prefs.putFloat("lat", currentPrayerConfig.latitude);
-        prefs.putFloat("lng", currentPrayerConfig.longitude);
-        prefs.putInt("tz", currentPrayerConfig.timezone);
-        prefs.putInt("method", currentPrayerConfig.method);
-        if (reqCountry.length() > 0) prefs.putString("country", reqCountry);
-        if (reqCity.length() > 0) prefs.putString("city", reqCity);
+        if (changed) {
+            applyConfiguredTimezone();
+
+            prefs.begin("prayer_cfg", false);
+            prefs.putFloat("lat", currentPrayerConfig.latitude);
+            prefs.putFloat("lng", currentPrayerConfig.longitude);
+            prefs.putInt("tz", currentPrayerConfig.timezone);
+            prefs.putInt("method", currentPrayerConfig.method);
+            if (reqCountry.length() > 0) prefs.putString("country", reqCountry);
+            if (reqCity.length() > 0) prefs.putString("city", reqCity);
+            prefs.end();
+
+            prefs.begin("prayer_manual", true);
+            if (prefs.getBool("enabled", false)) syncTimeFromNTP();
+            prefs.end();
+
+            forcePrayerRecalc();
+            Serial.printf("[Prayer] Location/config updated: country=%s city=%s lat=%.4f lng=%.4f tz=%d method=%d\n",
+                          reqCountry.c_str(), reqCity.c_str(), currentPrayerConfig.latitude,
+                          currentPrayerConfig.longitude, currentPrayerConfig.timezone, currentPrayerConfig.method);
+        }
+
+        PrayerTimesResult result;
+        prefs.begin("prayer_manual", true);
+        if (prefs.getBool("enabled", false)) {
+            result.fajr = prefs.getString("fajr", "04:30");
+            result.dhuhr = prefs.getString("dhuhr", "12:00");
+            result.asr = prefs.getString("asr", "15:30");
+            result.maghrib = prefs.getString("maghrib", "18:00");
+            result.isha = prefs.getString("isha", "19:30");
+            result.valid = true;
+            prefs.end();
+            if (!changed) todayPrayer = result;
+            writePrayerJson(request, result);
+            return;
+        }
         prefs.end();
 
-        PrayerTimesResult result = PrayerTimesEngine::calculate(time(nullptr), config);
+        if (reqCountry.length() > 0 && reqCity.length() > 0 &&
+            PrayerTimesEngine::fetchOnline(reqCountry, reqCity, time(nullptr), config, result)) {
+            Serial.println("[Prayer] Using online prayer timings");
+        } else {
+            result = PrayerTimesEngine::calculate(time(nullptr), config);
+            Serial.println("[Prayer] Using local calculated prayer timings");
+        }
         if (result.valid) todayPrayer = result;
         writePrayerJson(request, result);
     });
@@ -498,9 +543,16 @@ void startWebServer() {
     server.on("/api/prayer/config", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(512);
         prefs.begin("prayer_cfg", true);
-        doc["country"] = prefs.getString("country", "مصر");
-        doc["city"] = prefs.getString("city", "القاهرة");
-        doc["method"] = prefs.getInt("method", 0);
+        String savedCountry = prefs.getString("country", "Egypt");
+        String savedCity = prefs.getString("city", "Cairo");
+        if (savedCountry == "مصر") savedCountry = "Egypt";
+        if (savedCity == "القاهرة") savedCity = "Cairo";
+        doc["country"] = savedCountry;
+        doc["city"] = savedCity;
+        int method = prefs.getInt("method", PrayerTimesEngine::getDefaultMethod(savedCountry));
+        if (savedCountry == "Saudi Arabia" && method == 0) method = PrayerTimesEngine::getDefaultMethod(savedCountry);
+        doc["method"] = method;
+        doc["defaultMethod"] = PrayerTimesEngine::getDefaultMethod(savedCountry);
         doc["hijriOffset"] = currentPrayerConfig.hijriOffset;
         prefs.end();
         sendJson(request, doc);
@@ -523,6 +575,11 @@ void startWebServer() {
         prefs.putInt("isha", currentPrayerConfig.offsetIsha);
         prefs.putInt("hijriOffset", currentPrayerConfig.hijriOffset);
         prefs.end();
+        forcePrayerRecalc();
+        Serial.printf("[Prayer] Offsets saved: fajr=%d dhuhr=%d asr=%d maghrib=%d isha=%d hijri=%d\n",
+                      currentPrayerConfig.offsetFajr, currentPrayerConfig.offsetDhuhr,
+                      currentPrayerConfig.offsetAsr, currentPrayerConfig.offsetMaghrib,
+                      currentPrayerConfig.offsetIsha, currentPrayerConfig.hijriOffset);
         sendOk(request);
     });
 
@@ -548,6 +605,8 @@ void startWebServer() {
         prefs.putString("maghrib", postValue(request, "maghrib", "18:00"));
         prefs.putString("isha", postValue(request, "isha", "19:30"));
         prefs.end();
+        forcePrayerRecalc();
+        Serial.println("[Prayer] Manual prayer times saved");
         sendOk(request);
     });
 

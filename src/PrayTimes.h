@@ -23,7 +23,7 @@ private:
     double computeAsr(int step, double time);
     void computeTimes(double times[]);
     void computePrayerTimes(double times[]);
-    double dayPortion(double times[]);
+    double dayPortion(double time);
     
     double sunPosition(double jd, double* eqt);
     double equationOfTime(double jd);

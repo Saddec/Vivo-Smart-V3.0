@@ -45,7 +45,7 @@ function safeAttr(value) {
   return safeText(value).replace(/`/g, '&#96;');
 }
 
-function apiGet(url, fallback = {}) {
+function apiGet(url, fallback = {}, retries = 3) {
   return fetch(url)
     .then((response) => {
       if (!response.ok) throw new Error(`${response.status} ${url}`);
@@ -53,6 +53,9 @@ function apiGet(url, fallback = {}) {
     })
     .catch((err) => {
       console.warn('GET failed:', url, err);
+      if (retries > 0) {
+        return new Promise((r) => setTimeout(r, 2000)).then(() => apiGet(url, fallback, retries - 1));
+      }
       return fallback;
     });
 }
@@ -217,12 +220,8 @@ function format12Hour(time24) {
 }
 
 function updateClock() {
-  fetch('/api/time')
-    .then((r) => r.ok ? r.text() : '--:--')
-    .then((time) => { if ($('timeDisplay')) $('timeDisplay').textContent = format12Hour(time); })
-    .catch(() => {});
-
-  apiGet('/api/date', {}).then((data) => {
+  apiGet('/api/clock', {}).then((data) => {
+    if ($('timeDisplay') && data.time) $('timeDisplay').textContent = format12Hour(data.time);
     if ($('gregDate')) $('gregDate').textContent = data.greg || '';
     if ($('hijriDate')) $('hijriDate').textContent = data.hijri || '';
   });
@@ -377,6 +376,12 @@ function saveDDNS() {
   apiPost('/api/ddns/save', { enabled, domain, user, pass }).then(() => toast('تم حفظ إعدادات DDNS'));
 }
 
+function defaultPrayerMethod(country) {
+  if (country === 'Egypt') return '0';
+  if (country === 'Saudi Arabia') return '2';
+  return '1';
+}
+
 function loadCountries() {
   apiGet('/api/location/countries', { countries: [] }).then((data) => {
     appState.countries = data.countries || data || [];
@@ -413,6 +418,9 @@ function loadCountries() {
 
 function onCountryChange() {
   const country = $('countrySelect')?.value || '';
+  if ($('citySelect')) $('citySelect').innerHTML = '<option value="">اختر المدينة</option>';
+  if ($('methodSelect') && country) $('methodSelect').value = defaultPrayerMethod(country);
+  if (!country) return;
   apiGet(`/api/location/cities?country=${encodeURIComponent(country)}`, { cities: [] }).then((data) => {
     appState.cities = data.cities || data || [];
     const select = $('citySelect');
@@ -428,7 +436,7 @@ function fetchPrayerTimes() {
   const country = countrySelect?.value || '';
   const city = citySelect?.value || '';
   const method = $('methodSelect')?.value || '0';
-  const query = country && city ? `?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}` : '';
+  const query = country && city ? `?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}` : `?method=${method}`;
 
   if (country && city && $('locationDisplay')) {
     const cName = countrySelect.options[countrySelect.selectedIndex]?.text || country;
@@ -436,7 +444,11 @@ function fetchPrayerTimes() {
     $('locationDisplay').innerHTML = `<i class="fas fa-map-marker-alt"></i> ${safeText(cName)} - ${safeText(ciName)}`;
   }
 
-  apiGet(`/api/prayer/times${query}`, {}).then((data) => {
+  apiGet(`/api/prayer/times${query}`, { ok: false }).then((data) => {
+    if (data.ok === false) {
+      toast('تعذر حساب المواقيت: اختر دولة ومدينة صحيحتين');
+      return;
+    }
     if ($('fajrTime')) $('fajrTime').textContent = format12Hour(data.fajr);
     if ($('dhuhrTime')) $('dhuhrTime').textContent = format12Hour(data.dhuhr);
     if ($('asrTime')) $('asrTime').textContent = format12Hour(data.asr);
@@ -468,6 +480,7 @@ function fetchPrayerTimes() {
         if (el) el.classList.add('prayer-next');
       }
     }
+    updateClock();
   });
 }
 
@@ -482,6 +495,7 @@ function saveOffsets() {
   }).then(() => {
     toast('تم حفظ الإزاحات');
     fetchPrayerTimes();
+    updateClock();
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
@@ -507,8 +521,11 @@ function saveManualPrayerTimes() {
     asr: $('manAsr')?.value || '',
     maghrib: $('manMaghrib')?.value || '',
     isha: $('manIsha')?.value || ''
-  }).then(() => toast('تم حفظ المواقيت اليدوية'))
-    .catch((err) => toast(`فشل الحفظ: ${err.message}`));
+  }).then(() => {
+    toast('تم حفظ المواقيت اليدوية');
+    fetchPrayerTimes();
+    updateClock();
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
 function loadFileList() {
@@ -1203,7 +1220,9 @@ function saveManualTime() {
     minute: $('manualMinute')?.value || '0'
   }).then(() => {
     toast('تم حفظ الوقت والتاريخ');
-    if (enabled) toast('سيتم تطبيق الوقت اليدوي عند إعادة التشغيل');
+    if (enabled) toast('تم تطبيق الوقت اليدوي الآن');
+    updateClock();
+    fetchPrayerTimes();
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
@@ -1262,11 +1281,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  let prayerFetchCounter = 0;
   setInterval(() => {
     if ($('mainContent')?.style.display !== 'none') {
       updateClock();
       fetchStatus();
       checkSessionTimeout();
+      prayerFetchCounter++;
+      if (prayerFetchCounter % 6 === 0) fetchPrayerTimes();
     }
   }, 10000);
 });
