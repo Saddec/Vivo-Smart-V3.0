@@ -1037,9 +1037,65 @@ function toggleCSVMode() {
     .then(loadCsvStatus).catch((err) => toast(`فشل التحديث: ${err.message}`));
 }
 
+function toggleCalendarOnly() {
+  apiPost('/api/calendar/only', { enabled: $('calendarOnlyToggle')?.checked ? '1' : '0' })
+    .then(loadCsvStatus).catch((err) => toast(`فشل التحديث: ${err.message}`));
+}
+
+function toggleCalendarFallback() {
+  apiPost('/api/calendar/fallback', { enabled: $('calendarFallbackToggle')?.checked ? '1' : '0' })
+    .then(loadCsvStatus).catch((err) => toast(`فشل التحديث: ${err.message}`));
+}
+
+function downloadYearCalendar() {
+  const year = $('calendarYearInput')?.value || new Date().getFullYear();
+  const country = $('countrySelect')?.value || '';
+  const city = $('citySelect')?.value || '';
+  const method = $('methodSelect')?.value || defaultPrayerMethod(country);
+  if (!country || !city) return toast('اختر الدولة والمدينة أولاً');
+  let saved = 0;
+  const failed = [];
+  if ($('calendarStatus')) $('calendarStatus').textContent = 'جاري تحميل رزنامة السنة إلى SD... 0/12';
+
+  const downloadMonth = (month) => apiPost('/api/calendar/download_month', { year, month, country, city, method })
+    .then((data) => {
+      if (data.ok) saved++;
+      else failed.push(month);
+      if ($('calendarStatus')) $('calendarStatus').textContent = `جاري التحميل... ${month}/12 (تم ${saved})`;
+    })
+    .catch((err) => {
+      failed.push(month);
+      if ($('calendarStatus')) $('calendarStatus').textContent = `فشل شهر ${month}: ${err.message}`;
+    });
+
+  let chain = Promise.resolve();
+  for (let month = 1; month <= 12; month++) {
+    chain = chain.then(() => downloadMonth(month));
+  }
+  chain.then(() => {
+    if (saved === 12) {
+      toast('تم تحميل رزنامة السنة كاملة');
+      if ($('calendarStatus')) $('calendarStatus').textContent = 'الرزنامة جاهزة: 12/12 شهر';
+    } else {
+      toast(`اكتمل التحميل جزئياً: ${saved}/12 شهر`);
+      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل جزئياً: ${saved}/12. فشل: ${failed.join(', ')}`;
+    }
+    loadCsvStatus();
+  });
+}
+
 function loadCsvStatus() {
   apiGet('/api/csv/status', {}).then((data) => {
     if ($('csvModeToggle')) $('csvModeToggle').checked = !!data.enabled;
+    if ($('calendarOnlyToggle')) $('calendarOnlyToggle').checked = !!data.calendarOnly;
+    if ($('calendarFallbackToggle')) $('calendarFallbackToggle').checked = data.calendarFallback !== false;
+    if ($('calendarYearInput') && data.calendarYear) $('calendarYearInput').value = data.calendarYear;
+    if ($('calendarStatus')) {
+      const months = data.calendarMonths || [];
+      $('calendarStatus').textContent = months.length
+        ? `رزنامة ${data.calendarYear}: ${months.length}/12 شهر على SD`
+        : 'لا توجد رزنامة سنوية محفوظة للسنة الحالية';
+    }
   });
 }
 

@@ -249,6 +249,17 @@ bool loadManualPrayerTimes(PrayerTimesResult &result) {
     return true;
 }
 
+static void applyDailyData(const DailyData& data) {
+    todayPrayer.fajr = data.fajr;
+    todayPrayer.sunrise = data.shuruk;
+    todayPrayer.dhuhr = data.dhuhr;
+    todayPrayer.asr = data.asr;
+    todayPrayer.maghrib = data.maghrib;
+    todayPrayer.isha = data.isha;
+    todayPrayer.valid = true;
+    todayHijri = data.hijri;
+}
+
 static String getAdhanFile(int prayerIndex) {
     String fajrFile, adhanFile;
     Preferences prefs;
@@ -272,29 +283,59 @@ static String getIqamaFile() {
 void checkPrayerTimes() {
     time_t now = time(nullptr);
 
-    if (CSVManager::isEnabled() && CSVManager::isAvailable()) {
+    if (loadManualPrayerTimes(todayPrayer)) {
+        // already filled
+    }
+    else if (CSVManager::isCalendarOnly()) {
+        static time_t lastCalendarLoad = 0;
+        if (now - lastCalendarLoad > 60) {
+            DailyData csv;
+            if (CSVManager::getCalendarData(csv)) {
+                applyDailyData(csv);
+                Serial.println("[Prayer] Using SD calendar only");
+            } else {
+                Serial.println("[Prayer] SD calendar only enabled but today's row is missing");
+                todayPrayer.valid = false;
+            }
+            lastCalendarLoad = now;
+        }
+    }
+    else if (CSVManager::isEnabled() && CSVManager::isAvailable()) {
         static time_t lastCSVLoad = 0;
         if (now - lastCSVLoad > 60) {
             DailyData csv = CSVManager::getTodayData();
-            todayPrayer.fajr = csv.fajr;
-            todayPrayer.dhuhr = csv.dhuhr;
-            todayPrayer.asr = csv.asr;
-            todayPrayer.maghrib = csv.maghrib;
-            todayPrayer.isha = csv.isha;
-            todayPrayer.valid = true;
-            todayHijri = "";
+            applyDailyData(csv);
             lastCSVLoad = now;
         }
     }
-    else if (loadManualPrayerTimes(todayPrayer)) {
-        // already filled
-    }
     else {
         if (now - lastPrayerCalc > 3600) {
-            todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
+            String country, city;
+            Preferences prefs;
+            prefs.begin("prayer_cfg", true);
+            country = prefs.getString("country", "Egypt");
+            city = prefs.getString("city", "Cairo");
+            prefs.end();
+
+            PrayerTimesResult online;
+            if (PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
+                todayPrayer = online;
+                todayHijri = "";
+                Serial.println("[Prayer] System task using online timings");
+            } else {
+                DailyData csv;
+                if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
+                    applyDailyData(csv);
+                    Serial.println("[Prayer] System task using SD calendar fallback");
+                } else {
+                    todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
+                    todayHijri = "";
+                    Serial.println("[Prayer] System task using local calculated timings");
+                }
+            }
             lastPrayerCalc = now;
             for (int i=0; i<5; i++) { adhanPlayed[i]=false; iqamaPlayed[i]=false; }
-            todayHijri = PrayerTimesEngine::gregorianToHijri(now);
+            if (todayHijri.length() == 0) todayHijri = PrayerTimesEngine::gregorianToHijri(now);
         }
     }
 

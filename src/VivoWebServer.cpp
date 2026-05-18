@@ -11,6 +11,7 @@
 #include "DDNSManager.h"
 #include <SD.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <LittleFS.h>
@@ -112,6 +113,18 @@ static void writePrayerJson(AsyncWebServerRequest *request, const PrayerTimesRes
     sendJson(request, doc);
 }
 
+static PrayerTimesResult prayerFromDailyData(const DailyData& data) {
+    PrayerTimesResult result;
+    result.valid = true;
+    result.fajr = data.fajr;
+    result.sunrise = data.shuruk;
+    result.dhuhr = data.dhuhr;
+    result.asr = data.asr;
+    result.maghrib = data.maghrib;
+    result.isha = data.isha;
+    return result;
+}
+
 static String urlDecode(String str) {
     String ret;
     char temp[3];
@@ -203,6 +216,92 @@ static bool deleteRecursively(String path) {
     } else {
         return SD.remove(path);
     }
+}
+
+static String httpUrlEncode(const String& value) {
+    String encoded;
+    const char *hex = "0123456789ABCDEF";
+    for (size_t i = 0; i < value.length(); i++) {
+        char c = value[i];
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else if (c == ' ') {
+            encoded += '+';
+        } else {
+            encoded += '%';
+            encoded += hex[(c >> 4) & 0x0F];
+            encoded += hex[c & 0x0F];
+        }
+    }
+    return encoded;
+}
+
+static String apiTime(const char *value) {
+    String time = value ? String(value) : "";
+    int space = time.indexOf(' ');
+    if (space > 0) time = time.substring(0, space);
+    if (time.length() >= 5) time = time.substring(0, 5);
+    return time;
+}
+
+static int toAladhanMethodWeb(int method) {
+    if (method == 0) return 5;
+    if (method == 2) return 4;
+    return 3;
+}
+
+static bool downloadCalendarMonth(int year, int month, const String& country, const String& city, int method) {
+    String url = "http://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
+                 "?city=" + httpUrlEncode(city) +
+                 "&country=" + httpUrlEncode(country) +
+                 "&method=" + String(toAladhanMethodWeb(method));
+
+    HTTPClient http;
+    http.setTimeout(12000);
+    http.begin(url);
+    int code = http.GET();
+    if (code != 200) {
+        Serial.printf("[Calendar] Month download failed: year=%d month=%d http=%d\n", year, month, code);
+        http.end();
+        return false;
+    }
+
+    DynamicJsonDocument doc(32768);
+    DeserializationError err = deserializeJson(doc, http.getString());
+    http.end();
+    if (err) {
+        Serial.printf("[Calendar] JSON parse failed: %s\n", err.c_str());
+        return false;
+    }
+
+    JsonArray days = doc["data"].as<JsonArray>();
+    if (days.isNull() || days.size() == 0) return false;
+
+    String path = "/prayer_csv/" + String(year) + "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    ensureDirExists(path);
+    if (SD.exists(path)) SD.remove(path);
+    File f = SD.open(path, FILE_WRITE);
+    if (!f) return false;
+
+    f.println("GregorianDay,Fajr,Shuruk,Dhuhr,Asr,Maghrib,Isha,HijriDay,HijriMonth,HijriYear");
+    for (JsonObject day : days) {
+        JsonObject timings = day["timings"];
+        JsonObject greg = day["date"]["gregorian"];
+        JsonObject hijri = day["date"]["hijri"];
+        f.print(String((const char*)greg["day"]).toInt()); f.print(",");
+        f.print(apiTime(timings["Fajr"])); f.print(",");
+        f.print(apiTime(timings["Sunrise"])); f.print(",");
+        f.print(apiTime(timings["Dhuhr"])); f.print(",");
+        f.print(apiTime(timings["Asr"])); f.print(",");
+        f.print(apiTime(timings["Maghrib"])); f.print(",");
+        f.print(apiTime(timings["Isha"])); f.print(",");
+        f.print(String((const char*)hijri["day"]).toInt()); f.print(",");
+        f.print((int)hijri["month"]["number"]); f.print(",");
+        f.println(String((const char*)hijri["year"]).toInt());
+    }
+    f.close();
+    Serial.printf("[Calendar] Saved %s\n", path.c_str());
+    return true;
 }
 
 
@@ -363,7 +462,7 @@ void startWebServer() {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(512);
+        DynamicJsonDocument doc(768);
         doc["playing"] = (audioManager.getState() != AUDIO_IDLE);
         doc["file"] = audioManager.getCurrentFile();
         doc["volume"] = 15;
@@ -567,12 +666,31 @@ void startWebServer() {
         }
         prefs.end();
 
+        if (CSVManager::isCalendarOnly()) {
+            DailyData csv;
+            if (CSVManager::getCalendarData(csv)) {
+                result = prayerFromDailyData(csv);
+                todayPrayer = result;
+                Serial.println("[Prayer] Web API using SD calendar only");
+                writePrayerJson(request, result);
+                return;
+            }
+            request->send(404, "application/json", "{\"ok\":false,\"error\":\"calendar_day_missing\"}");
+            return;
+        }
+
         if (reqCountry.length() > 0 && reqCity.length() > 0 &&
             PrayerTimesEngine::fetchOnline(reqCountry, reqCity, time(nullptr), config, result)) {
             Serial.println("[Prayer] Using online prayer timings");
         } else {
-            result = PrayerTimesEngine::calculate(time(nullptr), config);
-            Serial.println("[Prayer] Using local calculated prayer timings");
+            DailyData csv;
+            if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
+                result = prayerFromDailyData(csv);
+                Serial.println("[Prayer] Using SD calendar fallback");
+            } else {
+                result = PrayerTimesEngine::calculate(time(nullptr), config);
+                Serial.println("[Prayer] Using local calculated prayer timings");
+            }
         }
         if (result.valid) todayPrayer = result;
         writePrayerJson(request, result);
@@ -821,13 +939,54 @@ void startWebServer() {
         DynamicJsonDocument doc(512);
         doc["enabled"] = CSVManager::isEnabled();
         doc["available"] = CSVManager::isAvailable();
+        doc["calendarOnly"] = CSVManager::isCalendarOnly();
+        doc["calendarFallback"] = CSVManager::isCalendarFallback();
+        time_t now = time(nullptr);
+        struct tm tinfo;
+        localtime_r(&now, &tinfo);
+        int year = tinfo.tm_year + 1900;
+        doc["calendarYear"] = year;
         JsonArray months = doc.createNestedArray("months");
         for (int month : CSVManager::getLoadedMonths()) months.add(month);
+        JsonArray calendarMonths = doc.createNestedArray("calendarMonths");
+        for (int month : CSVManager::getCalendarMonths(year)) calendarMonths.add(month);
         sendJson(request, doc);
     });
     server.on("/api/csv/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
         CSVManager::setEnabled(postBool(request, "enabled"));
         sendOk(request);
+    });
+    server.on("/api/calendar/only", HTTP_POST, [](AsyncWebServerRequest *request) {
+        CSVManager::setCalendarOnly(postBool(request, "enabled"));
+        forcePrayerRecalc();
+        sendOk(request);
+    });
+    server.on("/api/calendar/fallback", HTTP_POST, [](AsyncWebServerRequest *request) {
+        CSVManager::setCalendarFallback(postBool(request, "enabled", true));
+        forcePrayerRecalc();
+        sendOk(request);
+    });
+    server.on("/api/calendar/download_month", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        int year = postValue(request, "year", "0").toInt();
+        int month = postValue(request, "month", "0").toInt();
+        String country = postValue(request, "country", "");
+        String city = postValue(request, "city", "");
+        int method = postValue(request, "method", "1").toInt();
+        if (year < 2024 || month < 1 || month > 12 || country.length() == 0 || city.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
+            return;
+        }
+
+        bool ok = downloadCalendarMonth(year, month, country, city, method);
+        forcePrayerRecalc();
+        DynamicJsonDocument doc(192);
+        doc["ok"] = ok;
+        doc["month"] = month;
+        sendJson(request, doc);
     });
     server.on("/api/csv/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
         request->send(sdReady() ? 200 : 503, "application/json", sdReady() ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"sd_not_connected\"}");

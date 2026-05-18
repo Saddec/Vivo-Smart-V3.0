@@ -8,6 +8,9 @@ struct DailyData {
     int day;            // 1-31
     String fajr, shuruk, dhuhr, asr, maghrib, isha;
     String hijri;   // <-- أضف هذا السطر
+    int hijriDay = 0;
+    int hijriMonth = 0;
+    int hijriYear = 0;
 };
 
 class CSVManager {
@@ -16,6 +19,13 @@ public:
     static void clearMonth(int month);
     static DailyData getTodayData();
     static bool isAvailable();
+    static bool getCalendarData(DailyData& result);
+    static bool isCalendarAvailable();
+    static bool isCalendarOnly();
+    static void setCalendarOnly(bool enable);
+    static bool isCalendarFallback();
+    static void setCalendarFallback(bool enable);
+    static std::vector<int> getCalendarMonths(int year);
     static void setEnabled(bool enable);
     static bool isEnabled();
     static bool saveUploadedCSV(int month, File file);
