@@ -21,6 +21,9 @@ extern AudioManager audioManager;
 extern char fileBuffer[128];
 
 static File uploadFile;
+static File chunkUploadFile;
+static bool chunkUploadOk = false;
+static String chunkUploadPath;
 static const uint8_t I2S_BCLK_PIN = 16;
 static const uint8_t I2S_LRCK_PIN = 17;
 static const uint8_t I2S_DOUT_PIN = 18;
@@ -254,6 +257,41 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
     }
     if (uploadFile && len) uploadFile.write(data, len);
     if (final && uploadFile) uploadFile.close();
+}
+
+static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (!sdReady()) {
+        chunkUploadOk = false;
+        return;
+    }
+
+    if (index == 0) {
+        String name = request->hasParam("name") ? request->getParam("name")->value() : "";
+        String folder = request->hasParam("folder") ? request->getParam("folder")->value() : "/";
+        size_t offset = request->hasParam("offset") ? (size_t)request->getParam("offset")->value().toInt() : 0;
+
+        chunkUploadPath = cleanPath(folder + "/" + name);
+        ensureDirExists(chunkUploadPath);
+        if (offset == 0 && SD.exists(chunkUploadPath)) SD.remove(chunkUploadPath);
+
+        chunkUploadFile = SD.open(chunkUploadPath, FILE_WRITE);
+        chunkUploadOk = chunkUploadFile;
+        if (chunkUploadOk && offset > 0) chunkUploadFile.seek(offset);
+        Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
+    }
+
+    if (chunkUploadOk && chunkUploadFile && len) {
+        size_t written = chunkUploadFile.write(data, len);
+        if (written != len) {
+            chunkUploadOk = false;
+            Serial.printf("[Files] Chunk write failed: wrote=%u expected=%u\n", (unsigned)written, (unsigned)len);
+        }
+    }
+
+    if (index + len == total && chunkUploadFile) {
+        chunkUploadFile.flush();
+        chunkUploadFile.close();
+    }
 }
 
 static void handleCsvUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -623,6 +661,31 @@ void startWebServer() {
     server.on("/api/files/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
         request->send(sdReady() ? 200 : 503, "application/json", sdReady() ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"sd_not_connected\"}");
     }, handleSdUpload);
+    server.on("/api/files/upload_chunk", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        size_t totalSize = request->hasParam("total") ? (size_t)request->getParam("total")->value().toInt() : 0;
+        bool finalChunk = postBool(request, "final", false);
+        size_t actualSize = 0;
+        if (SD.exists(chunkUploadPath)) {
+            File f = SD.open(chunkUploadPath);
+            if (f) {
+                actualSize = f.size();
+                f.close();
+            }
+        }
+        if (!chunkUploadOk || (finalChunk && totalSize > 0 && actualSize != totalSize)) {
+            Serial.printf("[Files] Chunk upload failed: path=%s size=%u expected=%u\n", chunkUploadPath.c_str(), (unsigned)actualSize, (unsigned)totalSize);
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"write_failed\"}");
+            return;
+        }
+        DynamicJsonDocument doc(192);
+        doc["ok"] = true;
+        doc["size"] = actualSize;
+        sendJson(request, doc);
+    }, NULL, handleChunkUploadBody);
     server.on("/api/files/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!sdReady()) {
             request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");

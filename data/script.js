@@ -652,9 +652,6 @@ function uploadFile() {
   
   const file = input.files[0];
   const folder = $('uploadFolderSelect')?.value || '/';
-  
-  const formData = new FormData();
-  formData.append('file', file, file.name);
 
   const progressBar = $('uploadProgressBar');
   const statusDiv = $('uploadStatus');
@@ -668,44 +665,65 @@ function uploadFile() {
       statusDiv.textContent = 'جاري الرفع... 0%';
   }
 
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', `/api/files/upload`, true);
-  xhr.setRequestHeader('X-Folder', encodeURIComponent(folder));
+  const chunkSize = 32 * 1024;
+  let offset = 0;
 
-  xhr.upload.onprogress = function(e) {
-      if (e.lengthComputable) {
-          const percentComplete = Math.round((e.loaded / e.total) * 100);
+  const sendChunk = () => {
+      const end = Math.min(offset + chunkSize, file.size);
+      const chunk = file.slice(offset, end);
+      const finalChunk = end >= file.size ? '1' : '0';
+      const url = `/api/files/upload_chunk?name=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(folder)}&offset=${offset}&total=${file.size}&final=${finalChunk}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      xhr.upload.onprogress = function(e) {
+          const loaded = offset + (e.lengthComputable ? e.loaded : 0);
+          const percentComplete = Math.min(100, Math.round((loaded / file.size) * 100));
           if (progressBar) progressBar.value = percentComplete;
           if (statusDiv) statusDiv.textContent = `جاري الرفع... ${percentComplete}%`;
-      }
-  };
+      };
 
-  xhr.onload = function() {
-      if (xhr.status === 200) {
-          if (statusDiv) {
-              statusDiv.style.color = '#2ecc71';
-              statusDiv.textContent = 'تم الرفع بنجاح!';
+      xhr.onload = function() {
+          if (xhr.status !== 200) {
+              if (statusDiv) {
+                  statusDiv.style.color = '#e74c3c';
+                  statusDiv.textContent = 'فشل الرفع. الخادم أرجع خطأ: ' + xhr.status;
+              }
+              if (progressBar) progressBar.style.display = 'none';
+              return;
           }
-          input.value = ''; // Clear input
-          loadFileList();
-      } else {
+
+          offset = end;
+          const percentComplete = Math.min(100, Math.round((offset / file.size) * 100));
+          if (progressBar) progressBar.value = percentComplete;
+          if (statusDiv) statusDiv.textContent = `جاري الرفع... ${percentComplete}%`;
+
+          if (offset < file.size) {
+              sendChunk();
+          } else {
+              if (statusDiv) {
+                  statusDiv.style.color = '#2ecc71';
+                  statusDiv.textContent = `تم الرفع كاملاً (${(file.size / 1024).toFixed(1)} KB)`;
+              }
+              input.value = '';
+              loadFileList();
+              setTimeout(() => { if (progressBar) progressBar.style.display = 'none'; }, 5000);
+          }
+      };
+
+      xhr.onerror = function() {
           if (statusDiv) {
               statusDiv.style.color = '#e74c3c';
-              statusDiv.textContent = 'فشل الرفع. الخادم أرجع خطأ: ' + xhr.status;
+              statusDiv.textContent = 'حدث خطأ في الاتصال أثناء الرفع.';
           }
-      }
-      setTimeout(() => { if (progressBar) progressBar.style.display = 'none'; }, 5000);
+          if (progressBar) progressBar.style.display = 'none';
+      };
+
+      xhr.send(chunk);
   };
 
-  xhr.onerror = function() {
-      if (statusDiv) {
-          statusDiv.style.color = '#e74c3c';
-          statusDiv.textContent = 'حدث خطأ في الاتصال أثناء الرفع.';
-      }
-      if (progressBar) progressBar.style.display = 'none';
-  };
-
-  xhr.send(formData);
+  sendChunk();
 }
 
 function deleteFile(name) {
