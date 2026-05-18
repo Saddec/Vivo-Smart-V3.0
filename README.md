@@ -34,8 +34,8 @@
 
 ### الصوت (I2S MAX98357A)
 - **BCLK**: GPIO 16
-- **LRCK**: GPIO 17
-- **DOUT**: GPIO 18
+- **LRCK*LRC*: GPIO 17
+- **DOUT*DIN*: GPIO 18
 - **VCC**: 5V
 - **GND**: GND
 

@@ -190,10 +190,11 @@ PrayerTimesResult PrayerTimesEngine::calculate(time_t date, const PrayerConfig& 
     PrayTimes pt;
     pt.setCalcMethod(config.method); // 0=Egypt, 1=MWL, 2=Makkah
     
-    struct tm *utc = gmtime(&date);
-    int year = utc->tm_year + 1900;
-    int month = utc->tm_mon + 1;
-    int day = utc->tm_mday;
+    struct tm tinfo;
+    localtime_r(&date, &tinfo);
+    int year = tinfo.tm_year + 1900;
+    int month = tinfo.tm_mon + 1;
+    int day = tinfo.tm_mday;
     
     double times[6];
     pt.getPrayerTimes(year, month, day, config.latitude, config.longitude, config.timezone, times);

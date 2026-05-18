@@ -12,6 +12,7 @@ void maintainWiFi();
 void syncTimeFromNTP();
 String getCurrentTimeStr();
 String getCurrentDateStr();
+void forcePrayerRecalc();
 
 extern PrayerTimesResult todayPrayer;
 extern PrayerConfig currentPrayerConfig;

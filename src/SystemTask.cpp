@@ -38,6 +38,10 @@ static unsigned long wifiDisconnectedAt = 0;
 static unsigned long wifiConnectedAt = 0;
 static unsigned long lastReconnectAttempt = 0;
 
+void forcePrayerRecalc() {
+    lastPrayerCalc = 0;
+}
+
 static bool isApModeActive() {
     wifi_mode_t mode = WiFi.getMode();
     return mode == WIFI_AP || mode == WIFI_AP_STA;
@@ -145,15 +149,21 @@ void syncTimeFromNTP() {
         t.tm_hour = hour;
         t.tm_min = minute;
         t.tm_sec = 0;
-        t.tm_isdst = 0;
+        t.tm_isdst = -1;
         time_t epoch = mktime(&t);
         struct timeval tv = {epoch, 0};
         settimeofday(&tv, NULL);
+        forcePrayerRecalc();
         return;
     }
     prefs.end();
-    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    setenv("TZ", "EET-2", 1); tzset();
+    
+    int tzOffset = currentPrayerConfig.timezone;
+    char tzBuf[32];
+    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset); 
+    
+    configTzTime(tzBuf, "pool.ntp.org", "time.nist.gov");
+    forcePrayerRecalc();
 }
 
 String getCurrentTimeStr() {

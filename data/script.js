@@ -184,9 +184,13 @@ function systemShutdown() {
 }
 
 function initDashboard() {
-  updateClock();
+  const epochSecs = Math.floor(Date.now() / 1000);
+  apiPost('/api/time/sync_browser', { timestamp: epochSecs }).then(() => {
+    updateClock();
+    fetchPrayerTimes();
+  });
+  
   fetchStatus();
-  fetchPrayerTimes();
   loadCountries();
   loadManualSettings();
   loadFileList();
@@ -202,10 +206,20 @@ function initDashboard() {
   loadDDNS();
 }
 
+function format12Hour(time24) {
+  if (!time24 || time24 === '--:--' || time24.indexOf(':') === -1) return time24;
+  let [h, m] = time24.split(':');
+  let hi = parseInt(h, 10);
+  const ampm = hi >= 12 ? 'م' : 'ص';
+  hi = hi % 12;
+  hi = hi ? hi : 12;
+  return `${String(hi).padStart(2, '0')}:${m} ${ampm}`;
+}
+
 function updateClock() {
   fetch('/api/time')
     .then((r) => r.ok ? r.text() : '--:--')
-    .then((time) => { if ($('timeDisplay')) $('timeDisplay').textContent = time; })
+    .then((time) => { if ($('timeDisplay')) $('timeDisplay').textContent = format12Hour(time); })
     .catch(() => {});
 
   apiGet('/api/date', {}).then((data) => {
@@ -378,6 +392,9 @@ function loadCountries() {
         if ($('methodSelect') && cfg.method !== undefined) {
           $('methodSelect').value = cfg.method;
         }
+        if ($('offsetHijri') && cfg.hijriOffset !== undefined) {
+          $('offsetHijri').value = cfg.hijriOffset;
+        }
         // Fetch cities for this country and set the selected city
         apiGet(`/api/location/cities?country=${encodeURIComponent(cfg.country)}`, { cities: [] }).then((cData) => {
           appState.cities = cData.cities || cData || [];
@@ -406,18 +423,36 @@ function onCountryChange() {
 }
 
 function fetchPrayerTimes() {
-  const country = $('countrySelect')?.value || '';
-  const city = $('citySelect')?.value || '';
+  const countrySelect = $('countrySelect');
+  const citySelect = $('citySelect');
+  const country = countrySelect?.value || '';
+  const city = citySelect?.value || '';
   const method = $('methodSelect')?.value || '0';
   const query = country && city ? `?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}` : '';
 
+  if (country && city && $('locationDisplay')) {
+    const cName = countrySelect.options[countrySelect.selectedIndex]?.text || country;
+    const ciName = citySelect.options[citySelect.selectedIndex]?.text || city;
+    $('locationDisplay').innerHTML = `<i class="fas fa-map-marker-alt"></i> ${safeText(cName)} - ${safeText(ciName)}`;
+  }
+
   apiGet(`/api/prayer/times${query}`, {}).then((data) => {
-    if ($('fajrTime')) $('fajrTime').textContent = data.fajr || '--:--';
-    if ($('dhuhrTime')) $('dhuhrTime').textContent = data.dhuhr || '--:--';
-    if ($('asrTime')) $('asrTime').textContent = data.asr || '--:--';
-    if ($('maghribTime')) $('maghribTime').textContent = data.maghrib || '--:--';
-    if ($('ishaTime')) $('ishaTime').textContent = data.isha || '--:--';
-    if ($('nextPrayer')) $('nextPrayer').textContent = data.next ? `الصلاة القادمة: ${data.next}` : '';
+    if ($('fajrTime')) $('fajrTime').textContent = format12Hour(data.fajr);
+    if ($('dhuhrTime')) $('dhuhrTime').textContent = format12Hour(data.dhuhr);
+    if ($('asrTime')) $('asrTime').textContent = format12Hour(data.asr);
+    if ($('maghribTime')) $('maghribTime').textContent = format12Hour(data.maghrib);
+    if ($('ishaTime')) $('ishaTime').textContent = format12Hour(data.isha);
+    
+    if ($('nextPrayer') && data.next) {
+       const parts = data.next.split(' ');
+       if(parts.length >= 2) {
+           $('nextPrayer').textContent = `الصلاة القادمة: ${parts[0]} ${format12Hour(parts[1])}`;
+       } else {
+           $('nextPrayer').textContent = `الصلاة القادمة: ${data.next}`;
+       }
+    } else if ($('nextPrayer')) {
+       $('nextPrayer').textContent = '';
+    }
     // Highlight next prayer in dashboard
     const nextText = data.next || '';
     ['fajr','dhuhr','asr','maghrib','isha'].forEach(name => {
@@ -442,7 +477,8 @@ function saveOffsets() {
     dhuhr: $('offsetDhuhr')?.value || 0,
     asr: $('offsetAsr')?.value || 0,
     maghrib: $('offsetMaghrib')?.value || 0,
-    isha: $('offsetIsha')?.value || 0
+    isha: $('offsetIsha')?.value || 0,
+    hijriOffset: $('offsetHijri')?.value || 0
   }).then(() => {
     toast('تم حفظ الإزاحات');
     fetchPrayerTimes();
@@ -1133,7 +1169,18 @@ function loadManualTimeStatus() {
     if ($('manualYear')) $('manualYear').value = data.year || 2026;
     if ($('manualMonth')) $('manualMonth').value = data.month || 1;
     if ($('manualDay')) $('manualDay').value = data.day || 1;
-    if ($('manualHour')) $('manualHour').value = data.hour || 12;
+    
+    let h = data.hour || 0;
+    let ampm = 'am';
+    if (h >= 12) {
+      ampm = 'pm';
+      if (h > 12) h -= 12;
+    } else if (h === 0) {
+      h = 12;
+    }
+    if ($('manualHour')) $('manualHour').value = h;
+    if ($('manualAmPm')) $('manualAmPm').value = ampm;
+    
     if ($('manualMinute')) $('manualMinute').value = data.minute || 0;
     if ($('manualTimeFields')) $('manualTimeFields').style.display = data.enabled ? 'block' : 'none';
   });
@@ -1141,12 +1188,18 @@ function loadManualTimeStatus() {
 
 function saveManualTime() {
   const enabled = $('manualTimeToggle')?.checked || false;
+  
+  let hour = parseInt($('manualHour')?.value || '12');
+  const ampm = $('manualAmPm')?.value || 'am';
+  if (ampm === 'pm' && hour < 12) hour += 12;
+  if (ampm === 'am' && hour === 12) hour = 0;
+  
   apiPost('/api/time/manual_save', {
     enabled: enabled ? '1' : '0',
     year: $('manualYear')?.value || '2026',
     month: $('manualMonth')?.value || '1',
     day: $('manualDay')?.value || '1',
-    hour: $('manualHour')?.value || '12',
+    hour: hour.toString(),
     minute: $('manualMinute')?.value || '0'
   }).then(() => {
     toast('تم حفظ الوقت والتاريخ');

@@ -296,6 +296,23 @@ void startWebServer() {
         request->send(200, "text/plain", getCurrentTimeStr());
     });
 
+    server.on("/api/time/sync_browser", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("timestamp", true)) {
+            time_t current = time(nullptr);
+            struct tm tinfo;
+            localtime_r(&current, &tinfo);
+            // If year is before 2024 (meaning NTP failed and it's around 1970)
+            if (tinfo.tm_year + 1900 < 2024) {
+                String tsStr = request->getParam("timestamp", true)->value();
+                time_t epoch = (time_t) tsStr.toDouble();
+                struct timeval tv = {epoch, 0};
+                settimeofday(&tv, NULL);
+                forcePrayerRecalc();
+            }
+        }
+        sendOk(request);
+    });
+
     server.on("/api/date", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
         doc["greg"] = getCurrentDateStr();
@@ -456,6 +473,7 @@ void startWebServer() {
                 currentPrayerConfig.latitude = lat;
                 currentPrayerConfig.longitude = lng;
                 currentPrayerConfig.timezone = tz;
+                syncTimeFromNTP();
             }
         }
         if (request->hasParam("method")) {
