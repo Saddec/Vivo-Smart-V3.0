@@ -257,6 +257,7 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
     String key = country + "|" + city + "|" + String(dateBuf) + "|" + String(config.method);
     if (cachedKey == key && cachedResult.valid) {
         result = cachedResult;
+        applyOffsets(result, config);
         return true;
     }
 
@@ -304,6 +305,7 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
 
     cachedKey = key;
     cachedResult = result;
+    applyOffsets(result, config);
     Serial.printf("[Prayer] Online timings loaded: %s %s %s\n", country.c_str(), city.c_str(), dateBuf);
     return true;
 }
@@ -346,6 +348,82 @@ String PrayerTimesEngine::minutesToTimeStr(int minutes) {
     char buf[6];
     snprintf(buf, sizeof(buf), "%02d:%02d", minutes / 60, minutes % 60);
     return String(buf);
+}
+
+void PrayerTimesEngine::applyOffsets(PrayerTimesResult& result, const PrayerConfig& config) {
+    if (!result.valid) return;
+    result.fajr = addMinutesToTime(result.fajr, config.offsetFajr);
+    result.dhuhr = addMinutesToTime(result.dhuhr, config.offsetDhuhr);
+    result.asr = addMinutesToTime(result.asr, config.offsetAsr);
+    result.maghrib = addMinutesToTime(result.maghrib, config.offsetMaghrib);
+    result.isha = addMinutesToTime(result.isha, config.offsetIsha);
+    if (config.offsetFajr || config.offsetDhuhr || config.offsetAsr || config.offsetMaghrib || config.offsetIsha) {
+        Serial.printf("[Prayer] Offsets applied: fajr=%d dhuhr=%d asr=%d maghrib=%d isha=%d\n",
+                      config.offsetFajr, config.offsetDhuhr, config.offsetAsr,
+                      config.offsetMaghrib, config.offsetIsha);
+    }
+}
+
+String PrayerTimesEngine::dailyOffsetKey(time_t date) {
+    struct tm tinfo;
+    localtime_r(&date, &tinfo);
+    char key[9];
+    snprintf(key, sizeof(key), "%04d%02d%02d", tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday);
+    return String(key);
+}
+
+bool PrayerTimesEngine::getDailyOffsets(const String& key, int offsets[5]) {
+    if (key.length() != 8) return false;
+    Preferences prefs;
+    prefs.begin("prayer_dayoff", true);
+    String value = prefs.getString(key.c_str(), "");
+    prefs.end();
+    if (value.length() == 0) return false;
+
+    int idx = 0;
+    int last = 0;
+    for (int i = 0; i <= value.length() && idx < 5; i++) {
+        if (i == value.length() || value[i] == ',') {
+            offsets[idx++] = value.substring(last, i).toInt();
+            last = i + 1;
+        }
+    }
+    return idx == 5;
+}
+
+void PrayerTimesEngine::setDailyOffsets(const String& key, const int offsets[5]) {
+    if (key.length() != 8) return;
+    String value = String(offsets[0]) + "," + String(offsets[1]) + "," + String(offsets[2]) + "," +
+                   String(offsets[3]) + "," + String(offsets[4]);
+    Preferences prefs;
+    prefs.begin("prayer_dayoff", false);
+    prefs.putString(key.c_str(), value);
+    prefs.end();
+    Serial.printf("[Prayer] Daily offsets saved: date=%s fajr=%d dhuhr=%d asr=%d maghrib=%d isha=%d\n",
+                  key.c_str(), offsets[0], offsets[1], offsets[2], offsets[3], offsets[4]);
+}
+
+void PrayerTimesEngine::clearDailyOffsets(const String& key) {
+    if (key.length() != 8) return;
+    Preferences prefs;
+    prefs.begin("prayer_dayoff", false);
+    prefs.remove(key.c_str());
+    prefs.end();
+    Serial.printf("[Prayer] Daily offsets cleared: date=%s\n", key.c_str());
+}
+
+void PrayerTimesEngine::applyDailyOffsets(PrayerTimesResult& result, time_t date) {
+    if (!result.valid) return;
+    int offsets[5] = {0, 0, 0, 0, 0};
+    String key = dailyOffsetKey(date);
+    if (!getDailyOffsets(key, offsets)) return;
+    result.fajr = addMinutesToTime(result.fajr, offsets[0]);
+    result.dhuhr = addMinutesToTime(result.dhuhr, offsets[1]);
+    result.asr = addMinutesToTime(result.asr, offsets[2]);
+    result.maghrib = addMinutesToTime(result.maghrib, offsets[3]);
+    result.isha = addMinutesToTime(result.isha, offsets[4]);
+    Serial.printf("[Prayer] Daily offsets applied: date=%s fajr=%d dhuhr=%d asr=%d maghrib=%d isha=%d\n",
+                  key.c_str(), offsets[0], offsets[1], offsets[2], offsets[3], offsets[4]);
 }
 
 String PrayerTimesEngine::gregorianToHijri(time_t date) {

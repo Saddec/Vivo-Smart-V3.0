@@ -145,6 +145,20 @@
         </div>
       </div>
       <div class="glass-card">
+        <h3><i class="fas fa-calendar-day"></i> تصحيح يوم محدد (دقائق)</h3>
+        <label>التاريخ</label><input type="date" id="dailyOffsetDate" onchange="loadDailyOffsetStatus()">
+        <div class="row" style="margin-top:15px">
+          <div class="col"><label>الفجر</label><input type="number" id="dailyOffsetFajr" value="0"></div>
+          <div class="col"><label>الظهر</label><input type="number" id="dailyOffsetDhuhr" value="0"></div>
+          <div class="col"><label>العصر</label><input type="number" id="dailyOffsetAsr" value="0"></div>
+          <div class="col"><label>المغرب</label><input type="number" id="dailyOffsetMaghrib" value="0"></div>
+          <div class="col"><label>العشاء</label><input type="number" id="dailyOffsetIsha" value="0"></div>
+        </div>
+        <button class="btn" onclick="saveDailyOffset()">حفظ تصحيح هذا اليوم فقط</button>
+        <button class="btn btn-danger" onclick="deleteDailyOffset()">حذف تصحيح هذا اليوم</button>
+        <div id="dailyOffsetStatus" style="margin-top:10px; font-weight:bold;"></div>
+      </div>
+      <div class="glass-card">
         <h3><i class="fas fa-edit"></i> الضبط اليدوي</h3>
         <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> تفعيل الوضع اليدوي
         <div class="row" style="margin-top:15px">
@@ -175,6 +189,12 @@
         <button class="btn btn-danger" onclick="deleteYearCalendar()"><i class="fas fa-trash"></i> حذف رزنامة السنة من SD</button>
         <div id="calendarStatus" style="margin-top:10px; font-weight:bold;"></div>
         <div id="calendarMonthsView" style="margin-top:10px; font-size:var(--fs-small); line-height:1.8;"></div>
+        <div id="calendarMonthEditor" style="display:none; margin-top:15px;">
+          <h3 id="calendarMonthEditorTitle">محتوى الشهر</h3>
+          <textarea id="calendarMonthCsv" rows="12" style="width:100%; direction:ltr; text-align:left; font-family:monospace;"></textarea>
+          <button class="btn" onclick="saveCalendarMonthCsv()"><i class="fas fa-save"></i> حفظ تعديل الشهر</button>
+          <button class="btn" onclick="closeCalendarMonthEditor()">إغلاق</button>
+        </div>
       </div>
     </div>
     <!-- Files + Player merged -->
@@ -471,6 +491,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.10"></script>
+  <script src="/script.js?v=3.12"></script>
 </body>
 </html>

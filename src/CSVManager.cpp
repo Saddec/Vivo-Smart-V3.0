@@ -220,3 +220,8 @@ bool CSVManager::isCalendarMonthValid(int year, int month) {
     f.close();
     return size > 120 && lines >= 2;
 }
+
+void CSVManager::invalidateCalendarMonth(int year, int month) {
+    if (month < 1 || month > 12) return;
+    if (loadedCalendarYear == year) calendarData[month].clear();
+}

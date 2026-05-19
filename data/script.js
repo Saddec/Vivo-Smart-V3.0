@@ -9,6 +9,8 @@ const appState = {
 const $ = (id) => document.getElementById(id);
 
 let currentDir = '/';
+let calendarEditorYear = 0;
+let calendarEditorMonth = 0;
 
 function toast(message) {
   let container = $('toast-container');
@@ -86,7 +88,7 @@ function showTab(tabName) {
   if (tabName === 'gpio') { loadGpioMappings(); }
   if (tabName === 'maghrib') { loadMaghribAlerts(); }
   if (tabName === 'network') { loadWifiStatus(); }
-  if (tabName === 'prayer') { loadCountries(); loadManualSettings(); loadCsvStatus(); }
+  if (tabName === 'prayer') { loadCountries(); loadManualSettings(); loadCsvStatus(); loadDailyOffsetStatus(); }
   if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
 }
@@ -196,6 +198,7 @@ function initDashboard() {
   fetchStatus();
   loadCountries();
   loadManualSettings();
+  loadDailyOffsetStatus();
   loadFileList();
   loadSchedules();
   loadMaghribAlerts();
@@ -499,6 +502,48 @@ function saveOffsets() {
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
+function loadDailyOffsetStatus() {
+  const dateParam = $('dailyOffsetDate')?.value || '';
+  const query = dateParam ? `?date=${encodeURIComponent(dateParam)}` : '';
+  apiGet(`/api/prayer/daily_offset${query}`, { ok: false }).then((data) => {
+    if (!data.ok) return;
+    if ($('dailyOffsetDate')) $('dailyOffsetDate').value = data.date || '';
+    if ($('dailyOffsetFajr')) $('dailyOffsetFajr').value = data.fajr || 0;
+    if ($('dailyOffsetDhuhr')) $('dailyOffsetDhuhr').value = data.dhuhr || 0;
+    if ($('dailyOffsetAsr')) $('dailyOffsetAsr').value = data.asr || 0;
+    if ($('dailyOffsetMaghrib')) $('dailyOffsetMaghrib').value = data.maghrib || 0;
+    if ($('dailyOffsetIsha')) $('dailyOffsetIsha').value = data.isha || 0;
+    if ($('dailyOffsetStatus')) {
+      $('dailyOffsetStatus').textContent = data.exists ? `يوجد تصحيح محفوظ لهذا اليوم: ${data.date}` : `لا يوجد تصحيح محفوظ لهذا اليوم: ${data.date}`;
+    }
+  });
+}
+
+function saveDailyOffset() {
+  apiPost('/api/prayer/daily_offset', {
+    date: $('dailyOffsetDate')?.value || '',
+    fajr: $('dailyOffsetFajr')?.value || 0,
+    dhuhr: $('dailyOffsetDhuhr')?.value || 0,
+    asr: $('dailyOffsetAsr')?.value || 0,
+    maghrib: $('dailyOffsetMaghrib')?.value || 0,
+    isha: $('dailyOffsetIsha')?.value || 0
+  }).then(() => {
+    toast('تم حفظ تصحيح هذا اليوم فقط');
+    loadDailyOffsetStatus();
+    fetchPrayerTimes();
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function deleteDailyOffset() {
+  apiPost('/api/prayer/daily_offset/delete', {
+    date: $('dailyOffsetDate')?.value || ''
+  }).then(() => {
+    toast('تم حذف تصحيح هذا اليوم');
+    loadDailyOffsetStatus();
+    fetchPrayerTimes();
+  }).catch((err) => toast(`فشل الحذف: ${err.message}`));
+}
+
 function loadManualSettings() {
   apiGet('/api/prayer/manual/status', {}).then((data) => {
     if ($('manualModeToggle')) $('manualModeToggle').checked = !!data.enabled;
@@ -635,7 +680,12 @@ function renderI2SStatus(i2s) {
 }
 
 function populateFileSelects() {
-  const options = appState.files
+  const audioFiles = appState.files.filter((f) =>
+    !f.isDirectory &&
+    !String(f.name || '').startsWith('prayer_csv/') &&
+    /\.(mp3|wav)$/i.test(f.name || '')
+  );
+  const options = audioFiles
     .filter((f) => !f.isDirectory)
     .map((f) => `<option value="${safeAttr(f.name)}">${safeText(f.name)}</option>`)
     .join('');
@@ -980,7 +1030,7 @@ function loadMaghribAlerts() {
         </div>
         <div style="display:flex; flex-direction:column; gap:5px;">
           <label style="font-size:0.9em; opacity:0.8;">الملف الصوتي</label>
-          <select id="maghribFile_${i}" style="width:100%;">${appState.files.filter(f => !f.isDirectory).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
+          <select id="maghribFile_${i}" style="width:100%;">${appState.files.filter(f => !f.isDirectory && !String(f.name || '').startsWith('prayer_csv/') && /\.(mp3|wav)$/i.test(f.name || '')).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
         </div>
         <div style="display:flex; align-items:center; gap:10px;">
           <label style="font-size:0.9em; opacity:0.8; white-space:nowrap;">مستوى الصوت</label>
@@ -1057,11 +1107,44 @@ function monthLabel(month) {
 
 function renderCalendarMonths(year, available, missing) {
   if (!$('calendarMonthsView')) return;
-  const availableText = available.length ? available.map(monthLabel).join('، ') : 'لا يوجد';
+  const availableText = available.length ? available.map((m) =>
+    `<button class="btn" style="padding:6px 10px; margin:3px;" onclick="openCalendarMonth(${year}, ${m})">${safeText(monthLabel(m))}</button>`
+  ).join('') : 'لا يوجد';
   const missingText = missing.length ? missing.map(monthLabel).join('، ') : 'لا يوجد';
   $('calendarMonthsView').innerHTML =
-    `<div>الموجود على SD لسنة ${year}: <span style="color:#2ecc71">${safeText(availableText)}</span></div>` +
+    `<div>الموجود على SD لسنة ${year}: <span style="color:#2ecc71">${availableText}</span></div>` +
     `<div>الناقص: <span style="color:${missing.length ? '#e74c3c' : '#2ecc71'}">${safeText(missingText)}</span></div>`;
+}
+
+function openCalendarMonth(year, month) {
+  apiGet(`/api/calendar/month?year=${encodeURIComponent(year)}&month=${encodeURIComponent(month)}`, { ok: false }, 0)
+    .then((data) => {
+      if (!data.ok) return toast('تعذر فتح ملف الشهر');
+      calendarEditorYear = year;
+      calendarEditorMonth = month;
+      if ($('calendarMonthEditor')) $('calendarMonthEditor').style.display = 'block';
+      if ($('calendarMonthEditorTitle')) $('calendarMonthEditorTitle').textContent = `محتوى ${monthLabel(month)} ${year}`;
+      if ($('calendarMonthCsv')) $('calendarMonthCsv').value = data.csv || '';
+    });
+}
+
+function saveCalendarMonthCsv() {
+  if (!calendarEditorYear || !calendarEditorMonth) return toast('اختر شهر أولاً');
+  apiPost('/api/calendar/month', {
+    year: calendarEditorYear,
+    month: calendarEditorMonth,
+    csv: $('calendarMonthCsv')?.value || ''
+  }).then(() => {
+    toast('تم حفظ تعديل الشهر');
+    loadCsvStatus();
+    fetchPrayerTimes();
+  }).catch((err) => toast(`فشل حفظ الشهر: ${err.message}`));
+}
+
+function closeCalendarMonthEditor() {
+  if ($('calendarMonthEditor')) $('calendarMonthEditor').style.display = 'none';
+  calendarEditorYear = 0;
+  calendarEditorMonth = 0;
 }
 
 function downloadCalendarMonths(months, force = false) {

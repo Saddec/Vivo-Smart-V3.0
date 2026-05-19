@@ -257,6 +257,8 @@ static void applyDailyData(const DailyData& data) {
     todayPrayer.maghrib = data.maghrib;
     todayPrayer.isha = data.isha;
     todayPrayer.valid = true;
+    PrayerTimesEngine::applyOffsets(todayPrayer, currentPrayerConfig);
+    PrayerTimesEngine::applyDailyOffsets(todayPrayer, time(nullptr));
     todayHijri = data.hijri;
 }
 
@@ -319,6 +321,7 @@ void checkPrayerTimes() {
 
             PrayerTimesResult online;
             if (PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
+                PrayerTimesEngine::applyDailyOffsets(online, now);
                 todayPrayer = online;
                 todayHijri = "";
                 Serial.println("[Prayer] System task using online timings");
@@ -329,6 +332,7 @@ void checkPrayerTimes() {
                     Serial.println("[Prayer] System task using SD calendar fallback");
                 } else {
                     todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
+                    PrayerTimesEngine::applyDailyOffsets(todayPrayer, now);
                     todayHijri = "";
                     Serial.println("[Prayer] System task using local calculated timings");
                 }

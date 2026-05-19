@@ -58,6 +58,16 @@ static bool postBool(AsyncWebServerRequest *request, const char *name, bool fall
     return value == "1" || value == "true" || value == "on" || value == "yes";
 }
 
+static String dailyOffsetKeyFromDate(const String &date) {
+    if (date.length() != 10 || date[4] != '-' || date[7] != '-') return "";
+    String key = date;
+    key.replace("-", "");
+    for (size_t i = 0; i < key.length(); i++) {
+        if (!isDigit(key[i])) return "";
+    }
+    return key;
+}
+
 static void saveWifiSettings(AsyncWebServerRequest *request) {
     prefs.begin("network", false);
     prefs.putString("ssid", postValue(request, "ssid", ""));
@@ -135,6 +145,7 @@ static PrayerTimesResult prayerFromDailyData(const DailyData& data) {
     result.asr = data.asr;
     result.maghrib = data.maghrib;
     result.isha = data.isha;
+    PrayerTimesEngine::applyOffsets(result, currentPrayerConfig);
     return result;
 }
 
@@ -336,6 +347,10 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
     f.close();
     Serial.printf("[Calendar] Saved %s\n", path.c_str());
     return true;
+}
+
+static String calendarMonthPath(int year, int month) {
+    return "/prayer_csv/" + String(year) + "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
 }
 
 static void calendarDownloadTask(void *pvParameters) {
@@ -714,6 +729,7 @@ void startWebServer() {
             DailyData csv;
             if (CSVManager::getCalendarData(csv)) {
                 result = prayerFromDailyData(csv);
+                PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
                 todayPrayer = result;
                 Serial.println("[Prayer] Web API using SD calendar only");
                 writePrayerJson(request, result);
@@ -725,14 +741,17 @@ void startWebServer() {
 
         if (reqCountry.length() > 0 && reqCity.length() > 0 &&
             PrayerTimesEngine::fetchOnline(reqCountry, reqCity, time(nullptr), config, result)) {
+            PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
             Serial.println("[Prayer] Using online prayer timings");
         } else {
             DailyData csv;
             if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
                 result = prayerFromDailyData(csv);
+                PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
                 Serial.println("[Prayer] Using SD calendar fallback");
             } else {
                 result = PrayerTimesEngine::calculate(time(nullptr), config);
+                PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
                 Serial.println("[Prayer] Using local calculated prayer timings");
             }
         }
@@ -780,6 +799,59 @@ void startWebServer() {
                       currentPrayerConfig.offsetFajr, currentPrayerConfig.offsetDhuhr,
                       currentPrayerConfig.offsetAsr, currentPrayerConfig.offsetMaghrib,
                       currentPrayerConfig.offsetIsha, currentPrayerConfig.hijriOffset);
+        sendOk(request);
+    });
+
+    server.on("/api/prayer/daily_offset", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String date = request->hasParam("date") ? request->getParam("date")->value() : "";
+        if (date.length() == 0) date = getCurrentDateStr();
+        String key = dailyOffsetKeyFromDate(date);
+        if (key.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_date\"}");
+            return;
+        }
+        int offsets[5] = {0, 0, 0, 0, 0};
+        bool exists = PrayerTimesEngine::getDailyOffsets(key, offsets);
+        DynamicJsonDocument doc(256);
+        doc["ok"] = true;
+        doc["date"] = date;
+        doc["exists"] = exists;
+        doc["fajr"] = offsets[0];
+        doc["dhuhr"] = offsets[1];
+        doc["asr"] = offsets[2];
+        doc["maghrib"] = offsets[3];
+        doc["isha"] = offsets[4];
+        sendJson(request, doc);
+    });
+
+    server.on("/api/prayer/daily_offset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String date = postValue(request, "date", getCurrentDateStr());
+        String key = dailyOffsetKeyFromDate(date);
+        if (key.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_date\"}");
+            return;
+        }
+        int offsets[5] = {
+            postValue(request, "fajr", "0").toInt(),
+            postValue(request, "dhuhr", "0").toInt(),
+            postValue(request, "asr", "0").toInt(),
+            postValue(request, "maghrib", "0").toInt(),
+            postValue(request, "isha", "0").toInt()
+        };
+        PrayerTimesEngine::setDailyOffsets(key, offsets);
+        forcePrayerRecalc();
+        sendOk(request);
+    });
+
+    server.on("/api/prayer/daily_offset/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String date = postValue(request, "date", getCurrentDateStr());
+        String key = dailyOffsetKeyFromDate(date);
+        if (key.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_date\"}");
+            return;
+        }
+        PrayerTimesEngine::clearDailyOffsets(key);
+        forcePrayerRecalc();
         sendOk(request);
     });
 
@@ -1095,6 +1167,69 @@ void startWebServer() {
         DynamicJsonDocument doc(128);
         doc["ok"] = ok;
         sendJson(request, doc);
+    });
+    server.on("/api/calendar/month", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : 0;
+        int month = request->hasParam("month") ? request->getParam("month")->value().toInt() : 0;
+        if (year < 2024 || month < 1 || month > 12) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
+            return;
+        }
+        String path = calendarMonthPath(year, month);
+        if (!SD.exists(path)) {
+            request->send(404, "application/json", "{\"ok\":false,\"error\":\"month_not_found\"}");
+            return;
+        }
+        File f = SD.open(path);
+        if (!f) {
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"file_open_failed\"}");
+            return;
+        }
+        String csv = f.readString();
+        f.close();
+        DynamicJsonDocument doc(8192);
+        doc["ok"] = true;
+        doc["year"] = year;
+        doc["month"] = month;
+        doc["path"] = path;
+        doc["csv"] = csv;
+        sendJson(request, doc);
+    });
+    server.on("/api/calendar/month", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        int year = postValue(request, "year", "0").toInt();
+        int month = postValue(request, "month", "0").toInt();
+        String csv = postValue(request, "csv", "");
+        if (year < 2024 || month < 1 || month > 12 || csv.length() < 40) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
+            return;
+        }
+        if (!csv.startsWith("GregorianDay,")) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_csv_header\"}");
+            return;
+        }
+        String path = calendarMonthPath(year, month);
+        ensureDirExists(path);
+        if (SD.exists(path)) SD.remove(path);
+        File f = SD.open(path, FILE_WRITE);
+        if (!f) {
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"file_open_failed\"}");
+            return;
+        }
+        f.print(csv);
+        if (!csv.endsWith("\n")) f.println();
+        f.close();
+        CSVManager::invalidateCalendarMonth(year, month);
+        forcePrayerRecalc();
+        Serial.printf("[Calendar] Edited %s\n", path.c_str());
+        sendOk(request);
     });
     server.on("/api/csv/upload", HTTP_POST, [](AsyncWebServerRequest *request) {
         request->send(sdReady() ? 200 : 503, "application/json", sdReady() ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"sd_not_connected\"}");

@@ -40,6 +40,12 @@ public:
     static String gregorianToHijri(time_t date);
     static void syncTime(const char* ntpServer = "pool.ntp.org");
     static String minutesToTimeStr(int minutes);
+    static void applyOffsets(PrayerTimesResult& result, const PrayerConfig& config);
+    static void applyDailyOffsets(PrayerTimesResult& result, time_t date);
+    static String dailyOffsetKey(time_t date);
+    static bool getDailyOffsets(const String& key, int offsets[5]);
+    static void setDailyOffsets(const String& key, const int offsets[5]);
+    static void clearDailyOffsets(const String& key);
     static std::vector<String> getCountries();
     static std::vector<String> getCities(const String& country);
     static int getDefaultMethod(const String& country);
