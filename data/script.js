@@ -1047,15 +1047,36 @@ function toggleCalendarFallback() {
     .then(loadCsvStatus).catch((err) => toast(`فشل التحديث: ${err.message}`));
 }
 
-function downloadYearCalendar() {
+let calendarDownloadActive = false;
+let calendarMissingMonths = [];
+
+function monthLabel(month) {
+  const names = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  return names[month - 1] || String(month);
+}
+
+function renderCalendarMonths(year, available, missing) {
+  if (!$('calendarMonthsView')) return;
+  const availableText = available.length ? available.map(monthLabel).join('، ') : 'لا يوجد';
+  const missingText = missing.length ? missing.map(monthLabel).join('، ') : 'لا يوجد';
+  $('calendarMonthsView').innerHTML =
+    `<div>الموجود على SD لسنة ${year}: <span style="color:#2ecc71">${safeText(availableText)}</span></div>` +
+    `<div>الناقص: <span style="color:${missing.length ? '#e74c3c' : '#2ecc71'}">${safeText(missingText)}</span></div>`;
+}
+
+function downloadCalendarMonths(months, force = false) {
   const year = $('calendarYearInput')?.value || new Date().getFullYear();
   const country = $('countrySelect')?.value || '';
   const city = $('citySelect')?.value || '';
   const method = $('methodSelect')?.value || defaultPrayerMethod(country);
   if (!country || !city) return toast('اختر الدولة والمدينة أولاً');
+  if (calendarDownloadActive) return toast('يوجد تحميل رزنامة قيد التنفيذ');
+  if (!months.length) return toast('لا توجد شهور ناقصة للتحميل');
+  calendarDownloadActive = true;
   let saved = 0;
+  let skipped = 0;
   const failed = [];
-  if ($('calendarStatus')) $('calendarStatus').textContent = 'جاري تحميل رزنامة السنة إلى SD... 0/12';
+  if ($('calendarStatus')) $('calendarStatus').textContent = `جاري تحميل الرزنامة إلى SD... 0/${months.length}`;
 
   const waitCalendarJob = (month) => new Promise((resolve) => {
     const poll = () => {
@@ -1078,8 +1099,13 @@ function downloadYearCalendar() {
     poll();
   });
 
-  const downloadMonth = (month) => apiPost('/api/calendar/download_month', { year, month, country, city, method })
+  const downloadMonth = (month, index) => apiPost('/api/calendar/download_month', { year, month, country, city, method, force: force ? '1' : '0' })
     .then((data) => {
+      if (data.skipped) {
+        skipped++;
+        if ($('calendarStatus')) $('calendarStatus').textContent = `تخطي ${monthLabel(month)} لأنه موجود (${index + 1}/${months.length})`;
+        return;
+      }
       if (!data.ok) {
         failed.push(`${month}${data.error ? ':' + data.error : ''}`);
         return;
@@ -1092,22 +1118,32 @@ function downloadYearCalendar() {
     });
 
   let chain = Promise.resolve();
-  for (let month = 1; month <= 12; month++) {
-    chain = chain.then(() => downloadMonth(month));
-  }
+  months.forEach((month, index) => {
+    chain = chain.then(() => downloadMonth(month, index));
+  });
   chain.then(() => {
-    if (saved === 12) {
-      toast('تم تحميل رزنامة السنة كاملة');
-      if ($('calendarStatus')) $('calendarStatus').textContent = 'الرزنامة جاهزة: 12/12 شهر';
+    calendarDownloadActive = false;
+    if (failed.length === 0) {
+      toast('اكتمل تحميل الرزنامة');
+      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل: تم ${saved}، تم تخطي ${skipped}`;
     } else {
-      toast(`اكتمل التحميل جزئياً: ${saved}/12 شهر`);
-      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل جزئياً: ${saved}/12. فشل: ${failed.join(', ')}`;
+      toast(`اكتمل جزئياً: تم ${saved} وفشل ${failed.length}`);
+      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل جزئياً. تم ${saved}، تخطي ${skipped}. فشل: ${failed.join(', ')}`;
     }
     loadCsvStatus();
   });
 }
 
+function downloadYearCalendar() {
+  downloadCalendarMonths([1,2,3,4,5,6,7,8,9,10,11,12], false);
+}
+
+function downloadMissingCalendarMonths() {
+  downloadCalendarMonths(calendarMissingMonths.slice(), false);
+}
+
 function deleteYearCalendar() {
+  if (calendarDownloadActive) return toast('أوقف/انتظر انتهاء التحميل الحالي أولاً');
   const year = $('calendarYearInput')?.value || new Date().getFullYear();
   if (!confirm(`حذف رزنامة سنة ${year} من SD؟`)) return;
   apiPost('/api/calendar/delete_year', { year })
@@ -1130,9 +1166,11 @@ function loadCsvStatus() {
     if ($('calendarYearInput') && data.calendarYear) $('calendarYearInput').value = data.calendarYear;
     if ($('calendarStatus')) {
       const months = data.calendarMonths || [];
+      calendarMissingMonths = data.missingCalendarMonths || [];
       $('calendarStatus').textContent = months.length
         ? `رزنامة ${data.calendarYear}: ${months.length}/12 شهر على SD`
         : 'لا توجد رزنامة سنوية محفوظة للسنة الحالية';
+      renderCalendarMonths(data.calendarYear, months, calendarMissingMonths);
     }
   });
 }
@@ -1400,7 +1438,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchStatus();
       checkSessionTimeout();
       prayerFetchCounter++;
-      if (prayerFetchCounter % 6 === 0) fetchPrayerTimes();
+      if (!calendarDownloadActive && prayerFetchCounter % 6 === 0) fetchPrayerTimes();
     }
   }, 10000);
 });

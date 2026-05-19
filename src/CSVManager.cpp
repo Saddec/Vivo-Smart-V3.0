@@ -200,8 +200,23 @@ std::vector<int> CSVManager::getLoadedMonths() {
 std::vector<int> CSVManager::getCalendarMonths(int year) {
     std::vector<int> months;
     for (int m = 1; m <= 12; m++) {
-        String fname = "/prayer_csv/" + String(year) + "/" + twoDigits(m) + ".csv";
-        if (SD.exists(fname)) months.push_back(m);
+        if (isCalendarMonthValid(year, m)) months.push_back(m);
     }
     return months;
+}
+
+bool CSVManager::isCalendarMonthValid(int year, int month) {
+    String fname = "/prayer_csv/" + String(year) + "/" + twoDigits(month) + ".csv";
+    if (!SD.exists(fname)) return false;
+    File f = SD.open(fname);
+    if (!f) return false;
+    size_t size = f.size();
+    int lines = 0;
+    while (f.available() && lines < 3) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        if (!line.isEmpty()) lines++;
+    }
+    f.close();
+    return size > 120 && lines >= 2;
 }

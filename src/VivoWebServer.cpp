@@ -995,6 +995,10 @@ void startWebServer() {
         for (int month : CSVManager::getLoadedMonths()) months.add(month);
         JsonArray calendarMonths = doc.createNestedArray("calendarMonths");
         for (int month : CSVManager::getCalendarMonths(year)) calendarMonths.add(month);
+        JsonArray missingMonths = doc.createNestedArray("missingCalendarMonths");
+        for (int month = 1; month <= 12; month++) {
+            if (!CSVManager::isCalendarMonthValid(year, month)) missingMonths.add(month);
+        }
         sendJson(request, doc);
     });
     server.on("/api/csv/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1021,8 +1025,17 @@ void startWebServer() {
         String country = postValue(request, "country", "");
         String city = postValue(request, "city", "");
         int method = postValue(request, "method", "1").toInt();
+        bool force = postBool(request, "force", false);
         if (year < 2024 || month < 1 || month > 12 || country.length() == 0 || city.length() == 0) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
+            return;
+        }
+        if (!force && CSVManager::isCalendarMonthValid(year, month)) {
+            DynamicJsonDocument doc(192);
+            doc["ok"] = true;
+            doc["skipped"] = true;
+            doc["month"] = month;
+            sendJson(request, doc);
             return;
         }
 
