@@ -1057,14 +1057,37 @@ function downloadYearCalendar() {
   const failed = [];
   if ($('calendarStatus')) $('calendarStatus').textContent = 'جاري تحميل رزنامة السنة إلى SD... 0/12';
 
+  const waitCalendarJob = (month) => new Promise((resolve) => {
+    const poll = () => {
+      apiGet('/api/calendar/download_status', { ok: false }, 0)
+        .then((status) => {
+          if (!status.done) {
+            setTimeout(poll, 600);
+            return;
+          }
+          if (status.success) saved++;
+          else failed.push(`${month}${status.error ? ':' + status.error : ''}`);
+          if ($('calendarStatus')) $('calendarStatus').textContent = `جاري التحميل... ${month}/12 (تم ${saved})`;
+          resolve();
+        })
+        .catch(() => {
+          failed.push(`${month}:status_failed`);
+          resolve();
+        });
+    };
+    poll();
+  });
+
   const downloadMonth = (month) => apiPost('/api/calendar/download_month', { year, month, country, city, method })
     .then((data) => {
-      if (data.ok) saved++;
-      else failed.push(month);
-      if ($('calendarStatus')) $('calendarStatus').textContent = `جاري التحميل... ${month}/12 (تم ${saved})`;
+      if (!data.ok) {
+        failed.push(`${month}${data.error ? ':' + data.error : ''}`);
+        return;
+      }
+      return waitCalendarJob(month);
     })
     .catch((err) => {
-      failed.push(month);
+      failed.push(`${month}:${err.message}`);
       if ($('calendarStatus')) $('calendarStatus').textContent = `فشل شهر ${month}: ${err.message}`;
     });
 
@@ -1084,8 +1107,23 @@ function downloadYearCalendar() {
   });
 }
 
+function deleteYearCalendar() {
+  const year = $('calendarYearInput')?.value || new Date().getFullYear();
+  if (!confirm(`حذف رزنامة سنة ${year} من SD؟`)) return;
+  apiPost('/api/calendar/delete_year', { year })
+    .then((data) => {
+      if (!data.ok) throw new Error(data.error || 'delete failed');
+      toast('تم حذف رزنامة السنة من SD');
+      if ($('calendarStatus')) $('calendarStatus').textContent = `تم حذف رزنامة ${year}`;
+      loadCsvStatus();
+    })
+    .catch((err) => toast(`فشل الحذف: ${err.message}`));
+}
+
 function loadCsvStatus() {
-  apiGet('/api/csv/status', {}).then((data) => {
+  const selectedYear = $('calendarYearInput')?.value || '';
+  const query = selectedYear ? `?year=${encodeURIComponent(selectedYear)}` : '';
+  apiGet(`/api/csv/status${query}`, {}).then((data) => {
     if ($('csvModeToggle')) $('csvModeToggle').checked = !!data.enabled;
     if ($('calendarOnlyToggle')) $('calendarOnlyToggle').checked = !!data.calendarOnly;
     if ($('calendarFallbackToggle')) $('calendarFallbackToggle').checked = data.calendarFallback !== false;

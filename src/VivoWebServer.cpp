@@ -25,6 +25,19 @@ static File uploadFile;
 static File chunkUploadFile;
 static bool chunkUploadOk = false;
 static String chunkUploadPath;
+static String calendarDownloadError;
+struct CalendarDownloadJob {
+    volatile bool busy = false;
+    volatile bool done = false;
+    bool ok = false;
+    int year = 0;
+    int month = 0;
+    int method = 0;
+    String country;
+    String city;
+    String error;
+};
+static CalendarDownloadJob calendarJob;
 static const uint8_t I2S_BCLK_PIN = 16;
 static const uint8_t I2S_LRCK_PIN = 17;
 static const uint8_t I2S_DOUT_PIN = 18;
@@ -251,6 +264,7 @@ static int toAladhanMethodWeb(int method) {
 }
 
 static bool downloadCalendarMonth(int year, int month, const String& country, const String& city, int method) {
+    calendarDownloadError = "";
     String url = "http://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
                  "?city=" + httpUrlEncode(city) +
                  "&country=" + httpUrlEncode(country) +
@@ -262,26 +276,46 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
     int code = http.GET();
     if (code != 200) {
         Serial.printf("[Calendar] Month download failed: year=%d month=%d http=%d\n", year, month, code);
+        calendarDownloadError = "http_" + String(code);
         http.end();
         return false;
     }
 
-    DynamicJsonDocument doc(32768);
-    DeserializationError err = deserializeJson(doc, http.getString());
+    DynamicJsonDocument filter(768);
+    filter["data"][0]["timings"]["Fajr"] = true;
+    filter["data"][0]["timings"]["Sunrise"] = true;
+    filter["data"][0]["timings"]["Dhuhr"] = true;
+    filter["data"][0]["timings"]["Asr"] = true;
+    filter["data"][0]["timings"]["Maghrib"] = true;
+    filter["data"][0]["timings"]["Isha"] = true;
+    filter["data"][0]["date"]["gregorian"]["day"] = true;
+    filter["data"][0]["date"]["hijri"]["day"] = true;
+    filter["data"][0]["date"]["hijri"]["month"]["number"] = true;
+    filter["data"][0]["date"]["hijri"]["year"] = true;
+
+    DynamicJsonDocument doc(24576);
+    DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
     http.end();
     if (err) {
         Serial.printf("[Calendar] JSON parse failed: %s\n", err.c_str());
+        calendarDownloadError = String("json_") + err.c_str();
         return false;
     }
 
     JsonArray days = doc["data"].as<JsonArray>();
-    if (days.isNull() || days.size() == 0) return false;
+    if (days.isNull() || days.size() == 0) {
+        calendarDownloadError = "empty_data";
+        return false;
+    }
 
     String path = "/prayer_csv/" + String(year) + "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
     ensureDirExists(path);
     if (SD.exists(path)) SD.remove(path);
     File f = SD.open(path, FILE_WRITE);
-    if (!f) return false;
+    if (!f) {
+        calendarDownloadError = "file_open_failed";
+        return false;
+    }
 
     f.println("GregorianDay,Fajr,Shuruk,Dhuhr,Asr,Maghrib,Isha,HijriDay,HijriMonth,HijriYear");
     for (JsonObject day : days) {
@@ -302,6 +336,16 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
     f.close();
     Serial.printf("[Calendar] Saved %s\n", path.c_str());
     return true;
+}
+
+static void calendarDownloadTask(void *pvParameters) {
+    bool ok = downloadCalendarMonth(calendarJob.year, calendarJob.month, calendarJob.country, calendarJob.city, calendarJob.method);
+    calendarJob.ok = ok;
+    calendarJob.error = ok ? "" : calendarDownloadError;
+    forcePrayerRecalc();
+    calendarJob.done = true;
+    calendarJob.busy = false;
+    vTaskDelete(NULL);
 }
 
 
@@ -944,7 +988,8 @@ void startWebServer() {
         time_t now = time(nullptr);
         struct tm tinfo;
         localtime_r(&now, &tinfo);
-        int year = tinfo.tm_year + 1900;
+        int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : (tinfo.tm_year + 1900);
+        if (year < 2024) year = tinfo.tm_year + 1900;
         doc["calendarYear"] = year;
         JsonArray months = doc.createNestedArray("months");
         for (int month : CSVManager::getLoadedMonths()) months.add(month);
@@ -981,11 +1026,61 @@ void startWebServer() {
             return;
         }
 
-        bool ok = downloadCalendarMonth(year, month, country, city, method);
-        forcePrayerRecalc();
-        DynamicJsonDocument doc(192);
-        doc["ok"] = ok;
+        if (calendarJob.busy) {
+            request->send(409, "application/json", "{\"ok\":false,\"error\":\"calendar_download_busy\"}");
+            return;
+        }
+
+        calendarJob.busy = true;
+        calendarJob.done = false;
+        calendarJob.ok = false;
+        calendarJob.error = "";
+        calendarJob.year = year;
+        calendarJob.month = month;
+        calendarJob.country = country;
+        calendarJob.city = city;
+        calendarJob.method = method;
+
+        BaseType_t created = xTaskCreatePinnedToCore(calendarDownloadTask, "CalendarDownload", 8192, NULL, 1, NULL, 1);
+        if (created != pdPASS) {
+            calendarJob.busy = false;
+            calendarJob.done = true;
+            calendarJob.error = "task_create_failed";
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"task_create_failed\"}");
+            return;
+        }
+
+        DynamicJsonDocument doc(256);
+        doc["ok"] = true;
+        doc["started"] = true;
         doc["month"] = month;
+        sendJson(request, doc);
+    });
+    server.on("/api/calendar/download_status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        doc["ok"] = true;
+        doc["busy"] = calendarJob.busy;
+        doc["done"] = calendarJob.done;
+        doc["success"] = calendarJob.ok;
+        doc["month"] = calendarJob.month;
+        if (calendarJob.error.length() > 0) doc["error"] = calendarJob.error;
+        sendJson(request, doc);
+    });
+    server.on("/api/calendar/delete_year", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        int year = postValue(request, "year", "0").toInt();
+        if (year < 2024) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_year\"}");
+            return;
+        }
+        String path = "/prayer_csv/" + String(year);
+        bool ok = !SD.exists(path) || deleteRecursively(path);
+        forcePrayerRecalc();
+        DynamicJsonDocument doc(128);
+        doc["ok"] = ok;
         sendJson(request, doc);
     });
     server.on("/api/csv/upload", HTTP_POST, [](AsyncWebServerRequest *request) {

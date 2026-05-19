@@ -171,6 +171,7 @@
         <label class="switch" style="margin-top:10px"><input type="checkbox" id="calendarFallbackToggle" onchange="toggleCalendarFallback()"><span class="slider"></span></label> استخدام رزنامة SD عند فشل الإنترنت
         <label>السنة</label><input type="number" id="calendarYearInput" value="2026" min="2024" max="2035">
         <button class="btn" onclick="downloadYearCalendar()"><i class="fas fa-download"></i> تحميل رزنامة السنة إلى SD</button>
+        <button class="btn btn-danger" onclick="deleteYearCalendar()"><i class="fas fa-trash"></i> حذف رزنامة السنة من SD</button>
         <div id="calendarStatus" style="margin-top:10px; font-weight:bold;"></div>
       </div>
     </div>
@@ -468,6 +469,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.7"></script>
+  <script src="/script.js?v=3.9"></script>
 </body>
 </html>
