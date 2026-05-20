@@ -202,6 +202,7 @@ void MaghribManager::checkAndTrigger() {
 
     if (!triggeredToday && now >= triggerTime && now < maghribEpoch) {
         // Play with priority 1 (alert) and the day‑specific volume and loop
+        currentAudioDescription = "تنبيه قبل المغرب: " + alert.fileName;
         sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
         triggeredToday = true;
     }

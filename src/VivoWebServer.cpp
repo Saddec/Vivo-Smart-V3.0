@@ -15,6 +15,7 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <LittleFS.h>
+#include <WiFiClientSecure.h>
 
 AsyncWebServer server(80);
 extern QueueHandle_t audioQueue;
@@ -276,14 +277,17 @@ static int toAladhanMethodWeb(int method) {
 
 static bool downloadCalendarMonth(int year, int month, const String& country, const String& city, int method) {
     calendarDownloadError = "";
-    String url = "http://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
+    String url = "https://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
                  "?city=" + httpUrlEncode(city) +
                  "&country=" + httpUrlEncode(country) +
                  "&method=" + String(toAladhanMethodWeb(method));
 
+    WiFiClientSecure client;
+    client.setInsecure();
+
     HTTPClient http;
     http.setTimeout(12000);
-    http.begin(url);
+    http.begin(client, url);
     int code = http.GET();
     if (code != 200) {
         Serial.printf("[Calendar] Month download failed: year=%d month=%d http=%d\n", year, month, code);
@@ -432,7 +436,11 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         ensureDirExists(chunkUploadPath);
         if (offset == 0 && SD.exists(chunkUploadPath)) SD.remove(chunkUploadPath);
 
-        chunkUploadFile = SD.open(chunkUploadPath, FILE_WRITE);
+        if (offset == 0) {
+            chunkUploadFile = SD.open(chunkUploadPath, FILE_WRITE);
+        } else {
+            chunkUploadFile = SD.open(chunkUploadPath, "r+");
+        }
         chunkUploadOk = chunkUploadFile;
         if (chunkUploadOk && offset > 0) chunkUploadFile.seek(offset);
         Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
@@ -522,8 +530,11 @@ void startWebServer() {
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(768);
-        doc["playing"] = (audioManager.getState() != AUDIO_IDLE);
+        bool isPlaying = (audioManager.getState() != AUDIO_IDLE);
+        doc["playing"] = isPlaying;
         doc["file"] = audioManager.getCurrentFile();
+        extern String currentAudioDescription;
+        doc["status_text"] = isPlaying ? (currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + String(audioManager.getCurrentFile()))) : "متوقف";
         doc["volume"] = 15;
         doc["wifi"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
@@ -548,6 +559,8 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing file\"}");
             return;
         }
+        extern String currentAudioDescription;
+        currentAudioDescription = "تشغيل يدوي: " + file;
         sendPlayCommand(file.c_str(), postValue(request, "priority", "1").toInt(), 0, postValue(request, "volume", "0").toInt(), 0);
         sendOk(request);
     });
@@ -558,6 +571,8 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing files\"}");
             return;
         }
+        extern String currentAudioDescription;
+        currentAudioDescription = "تشغيل قائمة ملفات";
         strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
         uint32_t packed = (postBool(request, "respectAdhan") ? 1 : 0);
         AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, (uint8_t)postValue(request, "volume", "15").toInt(), packed};
@@ -664,17 +679,27 @@ void startWebServer() {
         String reqCountry = request->hasParam("country") ? request->getParam("country")->value() : "";
         String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
         bool changed = false;
+
+        prefs.begin("prayer_cfg", true);
+        String savedCountry = prefs.getString("country", "");
+        String savedCity = prefs.getString("city", "");
+        int savedMethod = prefs.getInt("method", -1);
+        prefs.end();
+
         if (reqCountry.length() > 0 && reqCity.length() > 0) {
             float lat, lng;
             int tz;
             if (PrayerTimesEngine::getCoordinates(reqCountry, reqCity, lat, lng, tz)) {
-                config.latitude = lat;
-                config.longitude = lng;
-                config.timezone = tz;
-                currentPrayerConfig.latitude = lat;
-                currentPrayerConfig.longitude = lng;
-                currentPrayerConfig.timezone = tz;
-                changed = true;
+                if (reqCountry != savedCountry || reqCity != savedCity ||
+                    currentPrayerConfig.latitude != lat || currentPrayerConfig.longitude != lng || currentPrayerConfig.timezone != tz) {
+                    config.latitude = lat;
+                    config.longitude = lng;
+                    config.timezone = tz;
+                    currentPrayerConfig.latitude = lat;
+                    currentPrayerConfig.longitude = lng;
+                    currentPrayerConfig.timezone = tz;
+                    changed = true;
+                }
             } else {
                 Serial.printf("[Prayer] Unknown location: country=%s city=%s\n", reqCountry.c_str(), reqCity.c_str());
                 request->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown_location\"}");
@@ -682,9 +707,12 @@ void startWebServer() {
             }
         }
         if (request->hasParam("method")) {
-            config.method = request->getParam("method")->value().toInt();
-            currentPrayerConfig.method = config.method;
-            changed = true;
+            int newMethod = request->getParam("method")->value().toInt();
+            if (newMethod != savedMethod || currentPrayerConfig.method != newMethod) {
+                config.method = newMethod;
+                currentPrayerConfig.method = config.method;
+                changed = true;
+            }
         }
         
         if (changed) {
@@ -887,8 +915,32 @@ void startWebServer() {
         prefs.putString("fajr", postValue(request, "fajr", "fajr_adhan.mp3"));
         prefs.putString("adhan", postValue(request, "adhan", "adhan.mp3"));
         prefs.putString("iqama", postValue(request, "iqama", "iqama.mp3"));
+        for (int i = 0; i < 5; i++) {
+            String enKey = "iqama_en_" + String(i);
+            String delKey = "iqama_del_" + String(i);
+            prefs.putBool(enKey.c_str(), postBool(request, enKey.c_str()));
+            prefs.putInt(delKey.c_str(), postValue(request, delKey.c_str(), "10").toInt());
+        }
         prefs.end();
+        loadIqamaConfig();
         sendOk(request);
+    });
+
+    server.on("/api/adhan/files", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(512);
+        prefs.begin("adhan_files", true);
+        doc["fajr"] = prefs.getString("fajr", "fajr_adhan.mp3");
+        doc["adhan"] = prefs.getString("adhan", "adhan.mp3");
+        doc["iqama"] = prefs.getString("iqama", "iqama.mp3");
+        for (int i = 0; i < 5; i++) {
+            String enKey = "iqama_en_" + String(i);
+            String delKey = "iqama_del_" + String(i);
+            bool defEnable = (i != 3); // Default: enabled for all except Maghrib (3)
+            doc[enKey] = prefs.getBool(enKey.c_str(), defEnable);
+            doc[delKey] = prefs.getInt(delKey.c_str(), 10);
+        }
+        prefs.end();
+        sendJson(request, doc);
     });
 
     server.on("/api/files/list", HTTP_GET, handleFileList);

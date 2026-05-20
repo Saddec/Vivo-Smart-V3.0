@@ -19,4 +19,13 @@ void forcePrayerRecalc();
 extern PrayerTimesResult todayPrayer;
 extern PrayerConfig currentPrayerConfig;
 
+struct IqamaConfig {
+    bool enabled[5];
+    int delayMin[5];
+};
+
+extern IqamaConfig currentIqamaConfig;
+void loadIqamaConfig();
+extern String currentAudioDescription;
+
 #endif

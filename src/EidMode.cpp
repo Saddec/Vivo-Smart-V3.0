@@ -140,6 +140,7 @@ void checkEidSchedule() {
         int pHour = 0, pMin = 0;
         sscanf(prayers[i].c_str(), "%d:%d", &pHour, &pMin);
         if (inPrayerWindow(pHour, pMin, prayerTakbeer[i].beforeMin, prayerTakbeer[i].afterMin, curHour, curMin)) {
+            currentAudioDescription = "تشغيل تكبيرات العيد";
             sendPlayCommand(takbeerFile.c_str(), 1, 60, 0);
             lastTakbeer = now;
             break;

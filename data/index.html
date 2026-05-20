@@ -9,12 +9,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="/all.min.css">   <!-- نسخة محلية كاحتياطي -->
-  <link rel="stylesheet" href="/style.css?v=3.2">
+  <link rel="stylesheet" href="/style.css?v=3.13">
 </head>
 <body>
   <!-- طبقة تسجيل الدخول -->
   <div id="loginOverlay">
-    <div class="glass-card" style="width:350px; text-align:center;">
+    <div class="glass-card" style="max-width:350px; width:90%; text-align:center;">
       <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
       <div style="position:relative; width:100%; margin: 15px auto;">
         <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center; width:100%;">
@@ -26,10 +26,21 @@
     </div>
   </div>
 
+  <!-- Mobile Header -->
+  <header class="mobile-header" id="mobileHeader" style="display:none;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <img src="/logo.png" alt="Logo" style="height:35px; width:auto; border-radius:6px;">
+      <span style="font-weight:800; font-size:18px; color:#fff;">ڤيفو سمارت</span>
+    </div>
+    <button class="menu-toggle-btn" id="menuToggleBtn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+  </header>
+
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
   <nav class="sidebar" id="sidebar">
-    <div class="logo" style="text-align: center; line-height: 1.2;">
-      <i class="fas fa-mosque" style="font-size: 1.5em; display: block; margin-bottom: 5px;"></i>
-      Vivo Smart
+    <div class="logo-container" style="text-align: center; margin-bottom: 20px; width: 100%; padding: 0 10px;">
+      <img src="/logo.png" alt="Vivo Smart" style="max-width: 160px; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15);">
     </div>
     <div class="section-label">العرض الرئيسي</div>
     <a href="#dashboard" class="active" onclick="showTab('dashboard')"><i class="fas fa-home"></i> الرئيسية</a>
@@ -115,8 +126,8 @@
           <label>النطاق (Domain)</label><input type="text" id="ddnsDomain" placeholder="example.ddns.net">
           <label>اسم المستخدم</label><input type="text" id="ddnsUser" placeholder="username">
           <label>كلمة المرور</label><input type="password" id="ddnsPass" placeholder="password">
-          <button class="btn" onclick="saveDDNS()"><i class="fas fa-save"></i> حفظ الإعدادات</button>
         </div>
+        <button class="btn" onclick="saveDDNS()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ الإعدادات</button>
       </div>
     </div>
     <!-- Prayer -->
@@ -233,10 +244,86 @@
       </div>
       <div class="glass-card">
         <h3>تعيين ملفات الأذان والإقامة</h3>
-        <label>أذان الفجر</label><select id="fajrAdhanFileSelect"></select>
-        <label>باقي الصلوات</label><select id="adhanFileSelect"></select>
-        <label>الإقامة</label><select id="iqamaFileSelect"></select>
-        <button class="btn" onclick="saveAdhanAssignments()">حفظ</button>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div>
+            <label>أذان الفجر</label>
+            <select id="fajrAdhanFileSelect" style="width:100%; margin-top:5px;"></select>
+          </div>
+          <div>
+            <label>باقي الصلوات</label>
+            <select id="adhanFileSelect" style="width:100%; margin-top:5px;"></select>
+          </div>
+          <div>
+            <label>ملف الإقامة</label>
+            <select id="iqamaFileSelect" style="width:100%; margin-top:5px;"></select>
+          </div>
+        </div>
+        
+        <h4 style="margin-top:20px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;"><i class="fas fa-clock"></i> ضبط أوقات وتفعيل الإقامة</h4>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+          <!-- Fajr -->
+          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+            <span style="font-weight:bold; min-width:60px;">الفجر</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_0"><span class="slider"></span></label>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+              <input type="number" id="iqama_del_0" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+            </div>
+          </div>
+          <!-- Dhuhr -->
+          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+            <span style="font-weight:bold; min-width:60px;">الظهر</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_1"><span class="slider"></span></label>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+              <input type="number" id="iqama_del_1" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+            </div>
+          </div>
+          <!-- Asr -->
+          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+            <span style="font-weight:bold; min-width:60px;">العصر</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_2"><span class="slider"></span></label>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+              <input type="number" id="iqama_del_2" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+            </div>
+          </div>
+          <!-- Maghrib -->
+          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+            <span style="font-weight:bold; min-width:60px;">المغرب</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_3"><span class="slider"></span></label>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+              <input type="number" id="iqama_del_3" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+            </div>
+          </div>
+          <!-- Isha -->
+          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+            <span style="font-weight:bold; min-width:60px;">العشاء</span>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_4"><span class="slider"></span></label>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+              <input type="number" id="iqama_del_4" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+            </div>
+          </div>
+        </div>
+        
+        <button class="btn" onclick="saveAdhanAssignments()" style="margin-top:20px; width:100%;"><i class="fas fa-save"></i> حفظ الإعدادات</button>
       </div>
     </div>
     <!-- Scheduler + GPIO Schedule merged -->
@@ -491,6 +578,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.12"></script>
+  <script src="/script.js?v=3.13"></script>
 </body>
 </html>

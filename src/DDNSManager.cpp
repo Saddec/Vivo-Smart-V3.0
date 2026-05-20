@@ -5,6 +5,8 @@
 #include <HTTPClient.h>
 #include <base64.h>
 
+#include <WiFiClientSecure.h>
+
 DDNSManager ddnsManager;
 
 void DDNSManager::begin() {
@@ -38,9 +40,12 @@ void DDNSManager::loop() {
 void DDNSManager::performUpdate() {
     if (_domain.length() == 0 || _user.length() == 0) return;
     
+    WiFiClientSecure client;
+    client.setInsecure();
+    
     HTTPClient http;
-    String url = "http://dynupdate.no-ip.com/nic/update?hostname=" + _domain;
-    http.begin(url);
+    String url = "https://dynupdate.no-ip.com/nic/update?hostname=" + _domain;
+    http.begin(client, url);
     
     String auth = _user + ":" + _pass;
     String authEncoded = base64::encode(auth);

@@ -142,7 +142,78 @@ input:checked + .slider:before { transform: translateX(24px); }
 .pwd-toggle-icon:hover { color: var(--color-info); }
 @keyframes fadein{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeout{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-20px)}}
-@media (max-width: 768px) { .sidebar { transform: translateX(100%); } .sidebar.open { transform: translateX(0); } .main-content { margin-right: 0; } }
+/* Mobile Header */
+.mobile-header {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: linear-gradient(180deg, rgba(20,30,50,0.9) 0%, rgba(40,20,60,0.9) 100%);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--glass-border);
+  z-index: 1050; /* Above content but below sidebar */
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 15px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  direction: rtl;
+}
+
+.menu-toggle-btn {
+  background: var(--btn-gradient);
+  border: 1px solid var(--glass-border);
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+  transition: all 0.3s ease;
+}
+
+.menu-toggle-btn:hover {
+  transform: scale(1.05);
+}
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 1040;
+}
+
+@media (max-width: 768px) {
+  .mobile-header {
+    display: flex;
+  }
+  .sidebar {
+    right: -260px;
+    transform: none; /* Disable transform transition */
+    transition: right 0.3s ease;
+    z-index: 1060; /* Above mobile header and overlay */
+  }
+  .sidebar.open {
+    right: 0;
+  }
+  .main-content {
+    margin-right: 0;
+    padding-top: 85px; /* Leave space for mobile header */
+  }
+}
 
 /* Dashboard clock */
 .dashboard-clock-card { text-align: center; }

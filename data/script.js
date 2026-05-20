@@ -83,6 +83,21 @@ function showTab(tabName) {
   const nav = document.querySelector(`.sidebar a[href="#${tabName}"]`);
   if (nav) nav.classList.add('active');
 
+  // Close sidebar on mobile after selecting a tab
+  if (window.innerWidth <= 768) {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const menuBtnIcon = document.querySelector('#menuToggleBtn i');
+    if (sidebar && sidebar.classList.contains('open')) {
+      sidebar.classList.remove('open');
+      if (overlay) overlay.style.display = 'none';
+      if (menuBtnIcon) {
+        menuBtnIcon.classList.remove('fa-times');
+        menuBtnIcon.classList.add('fa-bars');
+      }
+    }
+  }
+
   if (tabName === 'files') { loadFileList(); }
   if (tabName === 'scheduler') { loadSchedules(); }
   if (tabName === 'gpio') { loadGpioMappings(); }
@@ -93,6 +108,29 @@ function showTab(tabName) {
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
 }
 
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const menuBtnIcon = document.querySelector('#menuToggleBtn i');
+  if (!sidebar) return;
+  
+  if (sidebar.classList.contains('open')) {
+    sidebar.classList.remove('open');
+    if (overlay) overlay.style.display = 'none';
+    if (menuBtnIcon) {
+      menuBtnIcon.classList.remove('fa-times');
+      menuBtnIcon.classList.add('fa-bars');
+    }
+  } else {
+    sidebar.classList.add('open');
+    if (overlay) overlay.style.display = 'block';
+    if (menuBtnIcon) {
+      menuBtnIcon.classList.remove('fa-bars');
+      menuBtnIcon.classList.add('fa-times');
+    }
+  }
+}
+
 function doLogin() {
   const password = $('loginPassword')?.value || '';
   apiPost('/api/password/check', { password })
@@ -100,6 +138,7 @@ function doLogin() {
       if (data.ok) {
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
+        if ($('mobileHeader')) $('mobileHeader').style.display = 'flex';
         $('loginError').style.display = 'none';
         localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
@@ -111,6 +150,7 @@ function doLogin() {
       if (password === appState.password) {
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
+        if ($('mobileHeader')) $('mobileHeader').style.display = 'flex';
         localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
       } else {
@@ -233,7 +273,7 @@ function updateClock() {
 function fetchStatus() {
   apiGet('/api/status', {}).then((data) => {
     if ($('playingStatus')) {
-      $('playingStatus').textContent = data.playing ? `يعمل: ${data.file || ''}` : 'متوقف';
+      $('playingStatus').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'متوقف';
     }
     if ($('volumeSlider') && data.volume !== undefined) {
       $('volumeSlider').value = data.volume;
@@ -580,6 +620,7 @@ function loadFileList() {
     appState.files = data.files || [];
     renderFileManager();
     populateFileSelects();
+    loadAdhanSettings();
   });
 }
 
@@ -715,8 +756,11 @@ function uploadFile() {
       statusDiv.textContent = 'جاري الرفع... 0%';
   }
 
-  const chunkSize = 32 * 1024;
+  const chunkSize = 64 * 1024;
   let offset = 0;
+  const startTime = Date.now();
+  let retryCount = 0;
+  const maxRetries = 3;
 
   const sendChunk = () => {
       const end = Math.min(offset + chunkSize, file.size);
@@ -731,30 +775,57 @@ function uploadFile() {
           const loaded = offset + (e.lengthComputable ? e.loaded : 0);
           const percentComplete = Math.min(100, Math.round((loaded / file.size) * 100));
           if (progressBar) progressBar.value = percentComplete;
-          if (statusDiv) statusDiv.textContent = `جاري الرفع... ${percentComplete}%`;
+          
+          const elapsed = (Date.now() - startTime) / 1000;
+          let speedText = '';
+          if (elapsed > 0.5) {
+              const speedBytesPerSec = loaded / elapsed;
+              if (speedBytesPerSec > 1024 * 1024) {
+                  speedText = ` (${(speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s)`;
+              } else {
+                  speedText = ` (${(speedBytesPerSec / 1024).toFixed(1)} KB/s)`;
+              }
+          }
+          if (statusDiv) {
+              statusDiv.style.color = '';
+              statusDiv.textContent = `جاري الرفع... ${percentComplete}%${speedText}`;
+          }
+      };
+
+      const handleFailure = (errMessage) => {
+          if (retryCount < maxRetries) {
+              retryCount++;
+              if (statusDiv) {
+                  statusDiv.style.color = '#f39c12';
+                  statusDiv.textContent = `فشل مؤقت، إعادة المحاولة ${retryCount}/${maxRetries}...`;
+              }
+              setTimeout(sendChunk, 1500);
+          } else {
+              if (statusDiv) {
+                  statusDiv.style.color = '#e74c3c';
+                  statusDiv.textContent = errMessage;
+              }
+              if (progressBar) progressBar.style.display = 'none';
+          }
       };
 
       xhr.onload = function() {
           if (xhr.status !== 200) {
-              if (statusDiv) {
-                  statusDiv.style.color = '#e74c3c';
-                  statusDiv.textContent = 'فشل الرفع. الخادم أرجع خطأ: ' + xhr.status;
-              }
-              if (progressBar) progressBar.style.display = 'none';
+              handleFailure('فشل الرفع. خطأ من السيرفر: ' + xhr.status);
               return;
           }
 
+          retryCount = 0; // Reset retry count on success
           offset = end;
           const percentComplete = Math.min(100, Math.round((offset / file.size) * 100));
           if (progressBar) progressBar.value = percentComplete;
-          if (statusDiv) statusDiv.textContent = `جاري الرفع... ${percentComplete}%`;
 
           if (offset < file.size) {
               sendChunk();
           } else {
               if (statusDiv) {
                   statusDiv.style.color = '#2ecc71';
-                  statusDiv.textContent = `تم الرفع كاملاً (${(file.size / 1024).toFixed(1)} KB)`;
+                  statusDiv.textContent = `تم الرفع كاملاً (${(file.size / (1024 * 1024)).toFixed(2)} MB)`;
               }
               input.value = '';
               loadFileList();
@@ -763,11 +834,7 @@ function uploadFile() {
       };
 
       xhr.onerror = function() {
-          if (statusDiv) {
-              statusDiv.style.color = '#e74c3c';
-              statusDiv.textContent = 'حدث خطأ في الاتصال أثناء الرفع.';
-          }
-          if (progressBar) progressBar.style.display = 'none';
+          handleFailure('حدث خطأ في الاتصال أثناء الرفع.');
       };
 
       xhr.send(chunk);
@@ -800,12 +867,32 @@ function closePreview() {
 }
 
 function saveAdhanAssignments() {
-  apiPost('/api/adhan/files', {
+  const payload = {
     fajr: $('fajrAdhanFileSelect')?.value || '',
     adhan: $('adhanFileSelect')?.value || '',
     iqama: $('iqamaFileSelect')?.value || ''
-  }).then(() => toast('تم حفظ ملفات الأذان والإقامة'))
+  };
+  for (let i = 0; i < 5; i++) {
+    payload[`iqama_en_${i}`] = !!$(`iqama_en_${i}`)?.checked;
+    payload[`iqama_del_${i}`] = $(`iqama_del_${i}`)?.value || '10';
+  }
+  apiPost('/api/adhan/files', payload)
+    .then(() => toast('تم حفظ ملفات الأذان وتفضيلات الإقامة'))
     .catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function loadAdhanSettings() {
+  apiGet('/api/adhan/files', {}).then((data) => {
+    if (data.fajr && $('fajrAdhanFileSelect')) $('fajrAdhanFileSelect').value = data.fajr;
+    if (data.adhan && $('adhanFileSelect')) $('adhanFileSelect').value = data.adhan;
+    if (data.iqama && $('iqamaFileSelect')) $('iqamaFileSelect').value = data.iqama;
+    for (let i = 0; i < 5; i++) {
+      const enCb = $(`iqama_en_${i}`);
+      const delInput = $(`iqama_del_${i}`);
+      if (enCb) enCb.checked = !!data[`iqama_en_${i}`];
+      if (delInput) delInput.value = data[`iqama_del_${i}`] !== undefined ? data[`iqama_del_${i}`] : 10;
+    }
+  }).catch((err) => console.error('Failed to load adhan settings:', err));
 }
 
 function toggleScheduleFields() {

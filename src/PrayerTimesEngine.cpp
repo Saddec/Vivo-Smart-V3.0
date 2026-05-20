@@ -7,6 +7,7 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <WiFiClientSecure.h>
 
 #include "PrayTimes.h"
 
@@ -261,14 +262,17 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
         return true;
     }
 
-    String url = "http://api.aladhan.com/v1/timingsByCity/" + String(dateBuf) +
+    String url = "https://api.aladhan.com/v1/timingsByCity/" + String(dateBuf) +
                  "?city=" + urlEncode(city) +
                  "&country=" + urlEncode(country) +
                  "&method=" + String(toAladhanMethod(config.method));
 
+    WiFiClientSecure client;
+    client.setInsecure();
+
     HTTPClient http;
     http.setTimeout(6000);
-    http.begin(url);
+    http.begin(client, url);
     int code = http.GET();
     if (code != 200) {
         Serial.printf("[Prayer] Online fetch failed: http=%d\n", code);

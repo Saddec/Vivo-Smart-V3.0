@@ -33,6 +33,8 @@ bool adhanPlayed[5] = {false};
 bool iqamaPlayed[5] = {false};
 unsigned long adhanStartTime = 0;
 String todayHijri;
+IqamaConfig currentIqamaConfig;
+String currentAudioDescription = "";
 static bool setupApActive = false;
 static bool lastWifiConnected = false;
 static unsigned long wifiDisconnectedAt = 0;
@@ -262,6 +264,19 @@ static void applyDailyData(const DailyData& data) {
     todayHijri = data.hijri;
 }
 
+void loadIqamaConfig() {
+    Preferences prefs;
+    prefs.begin("adhan_files", true);
+    for (int i = 0; i < 5; i++) {
+        String enKey = "iqama_en_" + String(i);
+        String delKey = "iqama_del_" + String(i);
+        bool defEnable = (i != 3); // Default: enabled for all except Maghrib (3)
+        currentIqamaConfig.enabled[i] = prefs.getBool(enKey.c_str(), defEnable);
+        currentIqamaConfig.delayMin[i] = prefs.getInt(delKey.c_str(), 10);
+    }
+    prefs.end();
+}
+
 static String getAdhanFile(int prayerIndex) {
     String fajrFile, adhanFile;
     Preferences prefs;
@@ -348,24 +363,46 @@ void checkPrayerTimes() {
     String ct = getCurrentTimeStr();
     const String prayers[5] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
 
+    static int activePrayerIndex = -1;
+    const String prayerNames[5] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
+
     for (int i=0; i<5; i++) {
         if (ct == prayers[i] && !adhanPlayed[i]) {
             String file = getAdhanFile(i);
+            currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
             sendPlayCommand(file.c_str(), 3, 0, 0);
             adhanPlayed[i] = true;
             adhanStartTime = millis();
+            activePrayerIndex = i;
             setLedState(LED_ADHAN);
         }
     }
     for (int i=0; i<5; i++) {
-        if (adhanPlayed[i] && !iqamaPlayed[i] && (millis() - adhanStartTime > 600000UL) && i != 3) {
-            String iqamaFile = getIqamaFile();
-            sendPlayCommand(iqamaFile.c_str(), 2, 0, 0);
-            iqamaPlayed[i] = true;
-            setLedState(LED_IQAMA);
+        if (adhanPlayed[i] && !iqamaPlayed[i]) {
+            if (currentIqamaConfig.enabled[i]) {
+                unsigned long delayMs = (unsigned long)currentIqamaConfig.delayMin[i] * 60000UL;
+                if (millis() - adhanStartTime >= delayMs) {
+                    String iqamaFile = getIqamaFile();
+                    currentAudioDescription = "تقام الآن صلاة " + prayerNames[i];
+                    sendPlayCommand(iqamaFile.c_str(), 2, 0, 0);
+                    iqamaPlayed[i] = true;
+                    setLedState(LED_IQAMA);
+                }
+            } else {
+                iqamaPlayed[i] = true;
+            }
         }
     }
-    if (millis() - adhanStartTime > 660000UL) setLedState(LED_IDLE);
+    if (activePrayerIndex != -1) {
+        unsigned long delayMs = 600000UL;
+        if (activePrayerIndex >= 0 && activePrayerIndex < 5) {
+            delayMs = currentIqamaConfig.enabled[activePrayerIndex] ? ((unsigned long)currentIqamaConfig.delayMin[activePrayerIndex] * 60000UL) : 0UL;
+        }
+        if (millis() - adhanStartTime > (delayMs + 60000UL)) {
+            setLedState(LED_IDLE);
+            activePrayerIndex = -1;
+        }
+    }
 }
 
 void playStartupAlert() {
@@ -374,7 +411,10 @@ void playStartupAlert() {
     bool enabled = prefs.getBool("enabled", false);
     String file = prefs.getString("file", "");
     prefs.end();
-    if (enabled && file.length() > 0) sendPlayCommand(file.c_str(), 1, 0, 20, 0);
+    if (enabled && file.length() > 0) {
+        currentAudioDescription = "تنبيه بدء التشغيل";
+        sendPlayCommand(file.c_str(), 1, 0, 20, 0);
+    }
 }
 
 void systemTask(void *pvParameters) {
@@ -390,6 +430,8 @@ void systemTask(void *pvParameters) {
     currentPrayerConfig.offsetIsha = prefs.getInt("isha", 0);
     currentPrayerConfig.hijriOffset = prefs.getInt("hijriOffset", 0);
     prefs.end();
+
+    loadIqamaConfig();
 
     initLED(); setLedState(LED_BOOTING);
     setupWiFi();
