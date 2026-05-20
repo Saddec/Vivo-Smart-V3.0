@@ -197,9 +197,6 @@ input:checked + .slider:before { transform: translateX(24px); }
 }
 
 @media (max-width: 768px) {
-  .mobile-header {
-    display: flex;
-  }
   .sidebar {
     right: -260px;
     transform: none; /* Disable transform transition */
@@ -211,6 +208,11 @@ input:checked + .slider:before { transform: translateX(24px); }
   }
   .main-content {
     margin-right: 0;
+  }
+  body.logged-in .mobile-header {
+    display: flex;
+  }
+  body.logged-in .main-content {
     padding-top: 85px; /* Leave space for mobile header */
   }
 }

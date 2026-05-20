@@ -136,9 +136,9 @@ function doLogin() {
   apiPost('/api/password/check', { password })
     .then((data) => {
       if (data.ok) {
+        document.body.classList.add('logged-in');
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
-        if ($('mobileHeader')) $('mobileHeader').style.display = 'flex';
         $('loginError').style.display = 'none';
         localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
@@ -148,9 +148,9 @@ function doLogin() {
     })
     .catch(() => {
       if (password === appState.password) {
+        document.body.classList.add('logged-in');
         $('loginOverlay').style.display = 'none';
         $('mainContent').style.display = 'block';
-        if ($('mobileHeader')) $('mobileHeader').style.display = 'flex';
         localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
       } else {
