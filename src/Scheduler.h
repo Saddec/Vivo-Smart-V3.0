@@ -4,6 +4,7 @@
 #include <vector>
 
 struct ScheduledAlert {
+    String name;
     String fileName;
     String type;
     int hour, minute;
@@ -20,12 +21,18 @@ struct ScheduledAlert {
     String validFrom, validTo;
     bool eidOnly = false;
     time_t lastTriggered = 0;
+    int repeatInterval = 0; // minutes
+    bool gpioActive = false;
+    uint8_t gpioPin = 0;
+    String gpioMode = "continuous"; // "continuous", "flasher", "pulse"
+    String gpioDurationMode = "audio_duration"; // "audio_duration", "custom"
+    int gpioDurationSec = 5;
 };
 
 class Scheduler {
 public:
     void begin();
-    void addAlert(const ScheduledAlert& alert);
+    void addAlert(const ScheduledAlert& alert, int index = -1);
     void checkAndTrigger();
     String getAlertsJson();
     void removeAlert(int index);

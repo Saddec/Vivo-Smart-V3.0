@@ -69,6 +69,7 @@ static void stopSetupAp() {
 // ---------- WiFi ----------
 void setupWiFi() {
     WiFi.mode(WIFI_STA);
+    Preferences prefs;
     prefs.begin("network", true);
     bool useStatic = prefs.getBool("dhcp", false) == false;
     if (useStatic) {
@@ -228,10 +229,10 @@ String getCurrentDateStr() {
     return String(buf);
 }
 
-void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume, uint32_t loopDuration) {
+void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume, uint32_t loopDuration, int repeatCount) {
     strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
     fileBuffer[sizeof(fileBuffer)-1] = '\0';
-    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume, loopDuration};
+    AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume, loopDuration, repeatCount};
     xQueueSend(audioQueue, &msg, 0);
 }
 
@@ -418,6 +419,7 @@ void playStartupAlert() {
 }
 
 void systemTask(void *pvParameters) {
+    Preferences prefs;
     prefs.begin("prayer_cfg", true);
     currentPrayerConfig.latitude = prefs.getFloat("lat", 30.0444);
     currentPrayerConfig.longitude = prefs.getFloat("lng", 31.2357);

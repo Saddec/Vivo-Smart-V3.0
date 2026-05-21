@@ -13,7 +13,8 @@ enum AudioCommand {
     CMD_SET_VOLUME,
     CMD_PAUSE,
     CMD_RESUME,
-    CMD_PLAY_PLAYLIST
+    CMD_PLAY_PLAYLIST,
+    CMD_SEEK
 };
 
 struct AudioMessage {
@@ -23,6 +24,7 @@ struct AudioMessage {
     int priority;
     uint8_t volume;
     uint32_t loopDuration;
+    int repeatCount;
 };
 
 enum AudioState {
@@ -34,7 +36,7 @@ enum AudioState {
 class AudioManager {
 public:
     void begin();
-    bool playFile(const char* path, int priority, uint32_t duration = 0, uint8_t volume = 0, uint32_t loopDuration = 0);
+    bool playFile(const char* path, int priority, uint32_t duration = 0, uint8_t volume = 0, uint32_t loopDuration = 0, int repeatCount = 0);
     bool playPlaylist(const String& list, uint8_t volume, bool respectAdhan, int pauseAfterAdhan);
     void advancePlaylist();
     void checkPlaylistResume();
@@ -42,6 +44,12 @@ public:
     void stop();
     void pause();
     void resume();
+    void seekTo(uint16_t seconds);
+    uint32_t getAudioFileDuration();
+    uint32_t getAudioCurrentTime();
+    uint8_t getVolume();
+    void setRepeatMode(bool enable);
+    bool getRepeatMode() const;
     AudioState getState();
     const char* getCurrentFile();
     bool isI2SReady() const;
@@ -56,9 +64,11 @@ private:
     uint32_t _customDuration;
     uint32_t _loopDuration = 0;
     uint32_t _loopEndTime = 0;
+    int _repeatCount = 0;
     String _lastPlayedFile;
     int _lastPriority = 0;
     uint8_t _lastVolume = 0;
+    bool _repeatMode = false;
 
     std::vector<String> _playlist;
     int _playlistIndex = 0;

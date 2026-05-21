@@ -70,6 +70,7 @@ static String dailyOffsetKeyFromDate(const String &date) {
 }
 
 static void saveWifiSettings(AsyncWebServerRequest *request) {
+    Preferences prefs;
     prefs.begin("network", false);
     prefs.putString("ssid", postValue(request, "ssid", ""));
     prefs.putString("pass", postValue(request, "pass", ""));
@@ -542,13 +543,13 @@ void startWebServer() {
     });
 
     server.on("/api/audio/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
-        AudioMessage msg = {CMD_STOP, 0, 0, 0, 0, 0};
+        AudioMessage msg = {CMD_STOP, 0, 0, 0, 0, 0, 0};
         xQueueSend(audioQueue, &msg, 0);
         sendOk(request);
     });
 
     server.on("/api/audio/volume", HTTP_POST, [](AsyncWebServerRequest *request) {
-        AudioMessage msg = {CMD_SET_VOLUME, postValue(request, "volume", "15").toInt(), 0, 0, 0, 0};
+        AudioMessage msg = {CMD_SET_VOLUME, postValue(request, "volume", "15").toInt(), 0, 0, 0, 0, 0};
         xQueueSend(audioQueue, &msg, 0);
         sendOk(request);
     });
@@ -575,7 +576,7 @@ void startWebServer() {
         currentAudioDescription = "تشغيل قائمة ملفات";
         strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
         uint32_t packed = (postBool(request, "respectAdhan") ? 1 : 0);
-        AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, (uint8_t)postValue(request, "volume", "15").toInt(), packed};
+        AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, (uint8_t)postValue(request, "volume", "15").toInt(), packed, 0};
         xQueueSend(audioQueue, &msg, 0);
         sendOk(request);
     });
@@ -644,6 +645,7 @@ void startWebServer() {
     server.on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(384);
         bool connected = WiFi.status() == WL_CONNECTED;
+        Preferences prefs;
         prefs.begin("network", true);
         doc["connected"] = connected;
         doc["ssid"] = connected ? WiFi.SSID() : "";
@@ -680,6 +682,7 @@ void startWebServer() {
         String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
         bool changed = false;
 
+        Preferences prefs;
         prefs.begin("prayer_cfg", true);
         String savedCountry = prefs.getString("country", "");
         String savedCity = prefs.getString("city", "");
@@ -885,6 +888,7 @@ void startWebServer() {
 
     server.on("/api/prayer/manual/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(512);
+        Preferences prefs;
         prefs.begin("prayer_manual", true);
         doc["enabled"] = prefs.getBool("enabled", false);
         doc["fajr"] = prefs.getString("fajr", "04:30");
@@ -897,6 +901,7 @@ void startWebServer() {
     });
 
     server.on("/api/prayer/manual/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("prayer_manual", false);
         prefs.putBool("enabled", postBool(request, "enabled"));
         prefs.putString("fajr", postValue(request, "fajr", "04:30"));
@@ -911,6 +916,7 @@ void startWebServer() {
     });
 
     server.on("/api/adhan/files", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("adhan_files", false);
         prefs.putString("fajr", postValue(request, "fajr", "fajr_adhan.mp3"));
         prefs.putString("adhan", postValue(request, "adhan", "adhan.mp3"));
@@ -928,6 +934,7 @@ void startWebServer() {
 
     server.on("/api/adhan/files", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(512);
+        Preferences prefs;
         prefs.begin("adhan_files", true);
         doc["fajr"] = prefs.getString("fajr", "fajr_adhan.mp3");
         doc["adhan"] = prefs.getString("adhan", "adhan.mp3");
@@ -1010,11 +1017,38 @@ void startWebServer() {
     });
     server.on("/api/scheduler/add", HTTP_POST, [](AsyncWebServerRequest *request) {
         ScheduledAlert alert;
+        alert.name = postValue(request, "name", "");
         alert.fileName = postValue(request, "file", "");
-        String filePath = cleanPath(alert.fileName);
-        if (alert.fileName.length() > 0 && (!sdReady() || !SD.exists(filePath))) {
-            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
-            return;
+        if (alert.fileName.length() > 0) {
+            if (!sdReady()) {
+                request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
+                return;
+            }
+            int startIdx = 0;
+            bool allExist = true;
+            while (startIdx < alert.fileName.length()) {
+                int commaIdx = alert.fileName.indexOf(',', startIdx);
+                String subFile;
+                if (commaIdx == -1) {
+                    subFile = alert.fileName.substring(startIdx);
+                    startIdx = alert.fileName.length();
+                } else {
+                    subFile = alert.fileName.substring(startIdx, commaIdx);
+                    startIdx = commaIdx + 1;
+                }
+                subFile.trim();
+                if (subFile.length() > 0) {
+                    String subFilePath = cleanPath(subFile);
+                    if (!SD.exists(subFilePath)) {
+                        allExist = false;
+                        break;
+                    }
+                }
+            }
+            if (!allExist) {
+                request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
+                return;
+            }
         }
         alert.type = postValue(request, "type", "daily");
         alert.hour = postValue(request, "hour", "0").toInt();
@@ -1030,7 +1064,15 @@ void startWebServer() {
         alert.prayerIndex = postValue(request, "prayerIndex", "0").toInt();
         alert.offsetSeconds = postValue(request, "offsetSeconds", "0").toInt();
         alert.eidOnly = postBool(request, "eidOnly");
-        scheduler.addAlert(alert);
+        alert.repeatInterval = postValue(request, "repeatInterval", "0").toInt();
+        alert.gpioActive = postBool(request, "gpioActive");
+        alert.gpioPin = postValue(request, "gpioPin", "0").toInt();
+        alert.gpioMode = postValue(request, "gpioMode", "continuous");
+        alert.gpioDurationMode = postValue(request, "gpioDurationMode", "audio_duration");
+        alert.gpioDurationSec = postValue(request, "gpioDurationSec", "5").toInt();
+        
+        int index = postValue(request, "index", "-1").toInt();
+        scheduler.addAlert(alert, index);
         sendOk(request);
     });
     server.on("/api/scheduler/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1042,7 +1084,20 @@ void startWebServer() {
         request->send(200, "application/json", getGpioMappingsJson());
     });
     server.on("/api/gpio/input", HTTP_POST, [](AsyncWebServerRequest *request) {
-        addInputMapping(postValue(request, "pin", "0").toInt(), postValue(request, "file", ""));
+        String name = postValue(request, "name", "");
+        int pin = postValue(request, "pin", "0").toInt();
+        String file = postValue(request, "file", "");
+        int playDuration = postValue(request, "playDuration", "0").toInt();
+        int repeatCount = postValue(request, "repeatCount", "0").toInt();
+        int outputPin = postValue(request, "outputPin", "0").toInt();
+        int outputDuration = postValue(request, "outputDuration", "0").toInt();
+        addInputMapping(name, pin, file, playDuration, repeatCount, outputPin, outputDuration);
+        sendOk(request);
+    });
+    server.on("/api/gpio/input/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int pin = postValue(request, "pin", "0").toInt();
+        Serial.printf("[WebServer] Delete GPIO input. Pin: %d\n", pin);
+        removeInputMapping(pin);
         sendOk(request);
     });
     server.on("/api/gpio/output", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1054,6 +1109,7 @@ void startWebServer() {
     });
     server.on("/api/gpio/schedule/add", HTTP_POST, [](AsyncWebServerRequest *request) {
         GpioScheduleEntry entry;
+        entry.name = postValue(request, "name", "");
         entry.pin = postValue(request, "pin", "0").toInt();
         entry.state = postBool(request, "state", true);
         entry.type = postValue(request, "type", "daily");
@@ -1064,8 +1120,17 @@ void startWebServer() {
         entry.dayOfWeek = postValue(request, "dayOfWeek", "-1").toInt();
         entry.dayOfMonth = postValue(request, "dayOfMonth", "-1").toInt();
         entry.specificDate = postValue(request, "specificDate", "");
+        entry.alertFile = postValue(request, "alertFile", "");
+        entry.playDurationSec = postValue(request, "playDuration", "0").toInt();
+        entry.repeatCount = postValue(request, "repeatCount", "0").toInt();
         entry.enabled = true;
-        addGpioSchedule(entry);
+        
+        int index = postValue(request, "index", "-1").toInt();
+        addGpioSchedule(entry, index);
+        sendOk(request);
+    });
+    server.on("/api/gpio/schedule/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        removeGpioSchedule(postValue(request, "index", "-1").toInt());
         sendOk(request);
     });
 
@@ -1074,6 +1139,7 @@ void startWebServer() {
         sendOk(request);
     });
     server.on("/api/eid/file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("eid", false);
         prefs.putString("takbeer_file", postValue(request, "file", "takbeer.mp3"));
         prefs.end();
@@ -1097,6 +1163,7 @@ void startWebServer() {
         sendOk(request);
     });
     server.on("/api/maghrib/offset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("maghrib", false);
         prefs.putInt("offset", postValue(request, "offset", "1").toInt());
         prefs.end();
@@ -1289,6 +1356,7 @@ void startWebServer() {
 
     server.on("/api/startup/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
+        Preferences prefs;
         prefs.begin("startup", true);
         doc["enabled"] = prefs.getBool("enabled", false);
         doc["file"] = prefs.getString("file", "");
@@ -1296,6 +1364,7 @@ void startWebServer() {
         sendJson(request, doc);
     });
     server.on("/api/startup/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("startup", false);
         prefs.putBool("enabled", postBool(request, "enabled"));
         prefs.putString("file", postValue(request, "file", ""));
@@ -1305,12 +1374,14 @@ void startWebServer() {
 
     server.on("/api/session/timeout", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(128);
+        Preferences prefs;
         prefs.begin("session", true);
         doc["timeout"] = prefs.getInt("timeout", 10);
         prefs.end();
         sendJson(request, doc);
     });
     server.on("/api/session/timeout/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("session", false);
         prefs.putInt("timeout", postValue(request, "timeout", "10").toInt());
         prefs.end();
@@ -1319,6 +1390,7 @@ void startWebServer() {
 
     server.on("/api/time/manual_status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
+        Preferences prefs;
         prefs.begin("time_manual", true);
         doc["enabled"] = prefs.getBool("enabled", false);
         doc["year"] = prefs.getInt("year", 2026);
@@ -1330,6 +1402,7 @@ void startWebServer() {
         sendJson(request, doc);
     });
     server.on("/api/time/manual_save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("time_manual", false);
         prefs.putBool("enabled", postBool(request, "enabled"));
         prefs.putInt("year", postValue(request, "year", "2026").toInt());
@@ -1343,6 +1416,7 @@ void startWebServer() {
     });
 
     server.on("/api/password/check", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("auth", true);
         String saved = prefs.getString("password", "admin");
         prefs.end();
@@ -1350,6 +1424,7 @@ void startWebServer() {
         request->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
     server.on("/api/password/change", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("auth", true);
         String saved = prefs.getString("password", "admin");
         prefs.end();
@@ -1365,6 +1440,7 @@ void startWebServer() {
 
     server.on("/api/ddns/config", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
+        Preferences prefs;
         prefs.begin("ddns", true);
         doc["enabled"] = prefs.getBool("enabled", false);
         doc["domain"] = prefs.getString("domain", "");
@@ -1376,13 +1452,26 @@ void startWebServer() {
     });
     
     server.on("/api/ddns/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
         prefs.begin("ddns", false);
-        prefs.putBool("enabled", postBool(request, "enabled"));
-        prefs.putString("domain", postValue(request, "domain", ""));
-        prefs.putString("user", postValue(request, "user", ""));
-        String newPass = postValue(request, "pass", "");
-        if (newPass.length() > 0 && newPass != "********") {
-            prefs.putString("pass", newPass);
+        bool enabled = postBool(request, "enabled");
+        prefs.putBool("enabled", enabled);
+        if (!enabled) {
+            prefs.remove("domain");
+            prefs.remove("user");
+            prefs.remove("pass");
+        } else {
+            String domain = postValue(request, "domain", "");
+            String user = postValue(request, "user", "");
+            String newPass = postValue(request, "pass", "");
+            domain.trim();
+            user.trim();
+            newPass.trim();
+            prefs.putString("domain", domain);
+            prefs.putString("user", user);
+            if (newPass.length() > 0 && newPass != "********") {
+                prefs.putString("pass", newPass);
+            }
         }
         prefs.end();
         ddnsManager.forceUpdate();
@@ -1393,6 +1482,7 @@ void startWebServer() {
         String master = postValue(request, "master", "");
         String newPass = postValue(request, "password", "");
         if (master == "Vivo Smart531999" && newPass.length() >= 4) {
+            Preferences prefs;
             prefs.begin("auth", false);
             prefs.putString("password", newPass);
             prefs.end();
@@ -1412,13 +1502,21 @@ void startWebServer() {
         request->send(200, "application/json", "{\"ok\":true}");
         delay(1000);
         // مسح مساحات التخزين للإعدادات
+        Preferences prefs;
         prefs.begin("auth", false); prefs.clear(); prefs.end();
         prefs.begin("network", false); prefs.clear(); prefs.end();
         prefs.begin("prayer_cfg", false); prefs.clear(); prefs.end();
         prefs.begin("prayer_manual", false); prefs.clear(); prefs.end();
         prefs.begin("startup", false); prefs.clear(); prefs.end();
         prefs.begin("gpio", false); prefs.clear(); prefs.end();
-        prefs.begin("gpio_sch", false); prefs.clear(); prefs.end();
+        prefs.begin("gpio_sched", false); prefs.clear(); prefs.end();
+        prefs.begin("scheduler", false); prefs.clear(); prefs.end();
+        prefs.begin("ddns", false); prefs.clear(); prefs.end();
+        prefs.begin("session", false); prefs.clear(); prefs.end();
+        prefs.begin("time_manual", false); prefs.clear(); prefs.end();
+        prefs.begin("adhan_files", false); prefs.clear(); prefs.end();
+        prefs.begin("eid", false); prefs.clear(); prefs.end();
+        prefs.begin("maghrib", false); prefs.clear(); prefs.end();
         ESP.restart();
     });
 

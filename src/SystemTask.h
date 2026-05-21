@@ -6,7 +6,7 @@
 #include "AudioTask.h"
 
 void systemTask(void *pvParameters);
-void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume = 0, uint32_t loopDuration = 0);
+void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume = 0, uint32_t loopDuration = 0, int repeatCount = 0);
 void setupWiFi();
 void maintainWiFi();
 void applyConfiguredTimezone();

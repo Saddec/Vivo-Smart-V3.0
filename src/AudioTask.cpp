@@ -35,7 +35,7 @@ void AudioManager::begin() {
     _loopEndTime = 0;
 }
 
-bool AudioManager::playFile(const char* path, int priority, uint32_t duration, uint8_t volume, uint32_t loopDuration) {
+bool AudioManager::playFile(const char* path, int priority, uint32_t duration, uint8_t volume, uint32_t loopDuration, int repeatCount) {
     if (!_audio) return false;
     if (!isSDReady()) {
         Serial.printf("[Audio] SD not ready: %s\n", getLastSDError().c_str());
@@ -68,6 +68,7 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     _playStartTime = millis();
     _customDuration = duration;
     _loopDuration = loopDuration;
+    _repeatCount = repeatCount;
     if (loopDuration > 0) {
         _loopEndTime = millis() + (loopDuration * 1000);
         _lastPlayedFile = path;
@@ -157,6 +158,41 @@ void AudioManager::resume() {
     }
 }
 
+void AudioManager::seekTo(uint16_t seconds) {
+    if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
+        _audio->setAudioPlayPosition(seconds);
+    }
+}
+
+uint32_t AudioManager::getAudioFileDuration() {
+    if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
+        return _audio->getAudioFileDuration();
+    }
+    return 0;
+}
+
+uint32_t AudioManager::getAudioCurrentTime() {
+    if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
+        return _audio->getAudioCurrentTime();
+    }
+    return 0;
+}
+
+uint8_t AudioManager::getVolume() {
+    if (_audio) {
+        return _audio->getVolume();
+    }
+    return 0;
+}
+
+void AudioManager::setRepeatMode(bool enable) {
+    _repeatMode = enable;
+}
+
+bool AudioManager::getRepeatMode() const {
+    return _repeatMode;
+}
+
 AudioState AudioManager::getState() {
     if (_state == AUDIO_PLAYING && !_audio->isRunning()) {
         audioOnStop(this);
@@ -183,6 +219,23 @@ void AudioManager::audioOnStop(void *userData) {
         self->advancePlaylist();
         return;
     }
+    if (self->_repeatMode) {
+        String repeatPath = normalizeAudioPath(self->_currentFile.c_str());
+        if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
+            self->_state = AUDIO_PLAYING;
+            self->_playStartTime = millis();
+            return;
+        }
+    }
+    if (self->_repeatCount > 0) {
+        self->_repeatCount--;
+        String repeatPath = normalizeAudioPath(self->_currentFile.c_str());
+        if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
+            self->_state = AUDIO_PLAYING;
+            self->_playStartTime = millis();
+            return;
+        }
+    }
     if (self->_loopDuration > 0 && (millis() < self->_loopEndTime) && self->_lastPlayedFile.length() > 0) {
         String loopPath = normalizeAudioPath(self->_lastPlayedFile.c_str());
         if (SD.exists(loopPath) && self->_audio->connecttoSD(loopPath.c_str())) {
@@ -197,6 +250,7 @@ void AudioManager::audioOnStop(void *userData) {
     self->_currentFile = "";
     self->_customDuration = 0;
     self->_loopDuration = 0;
+    self->_repeatCount = 0;
     self->_lastPlayedFile = "";
 }
 
@@ -221,7 +275,7 @@ void audioTask(void *pvParameters) {
                         snprintf(buf, sizeof(buf), "/audio/%04d.mp3", msg.param1);
                         path = buf;
                     }
-                    audioManager.playFile(path, msg.priority, msg.param2, msg.volume, msg.loopDuration);
+                    audioManager.playFile(path, msg.priority, msg.param2, msg.volume, msg.loopDuration, msg.repeatCount);
                     break;
                 }
                 case CMD_PLAY_PLAYLIST: {
@@ -241,6 +295,9 @@ void audioTask(void *pvParameters) {
                     break;
                 case CMD_RESUME:
                     audioManager.resume();
+                    break;
+                case CMD_SEEK:
+                    audioManager.seekTo(msg.param1);
                     break;
             }
         }
