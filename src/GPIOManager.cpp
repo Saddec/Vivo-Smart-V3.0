@@ -27,9 +27,20 @@ struct ActiveAlertOutput {
 static std::vector<ActiveAlertOutput> activeAlertOutputs;
 
 // ---- helper: valid GPIO pins for ESP32-S3 ----
+// Excluded: SD SPI pins (10-CS,11-MOSI,12-SCK,13-MISO) and I2S pins (16-BCLK,17-LRCK,18-DOUT)
 static bool isValidPin(uint8_t pin) {
-    const uint8_t validPins[] = {3,4,5,6,7,8,9,10,11,12,13,14,15,19,47};
+    const uint8_t validPins[] = {3,4,5,6,7,8,9,14,15,19,47};
     for (uint8_t p : validPins) if (pin == p) return true;
+    return false;
+}
+static bool isInputPin(uint8_t pin) {
+    const uint8_t inputPins[] = {8,9,14,47};
+    for (uint8_t p : inputPins) if (pin == p) return true;
+    return false;
+}
+static bool isOutputPin(uint8_t pin) {
+    const uint8_t outputPins[] = {4,5,6,7,15};
+    for (uint8_t p : outputPins) if (pin == p) return true;
     return false;
 }
 
@@ -47,6 +58,7 @@ static void saveGPIOMappings() {
         o["repeatCount"] = in.repeatCount;
         o["outputPin"] = in.outputPin;
         o["outputDuration"] = in.outputDurationSec;
+        o["volume"] = in.volume;
     }
     JsonArray outputs = root.createNestedArray("outputs");
     for (const auto& out : outputMappings) {
@@ -85,6 +97,7 @@ static void loadGPIOMappings() {
                 m.repeatCount = o["repeatCount"] | 0;
                 m.outputPin = o["outputPin"] | 0;
                 m.outputDurationSec = o["outputDuration"] | 0;
+                m.volume = o["volume"] | 20;
                 m.lastState = HIGH;
                 inputMappings.push_back(m);
             }
@@ -134,7 +147,7 @@ void checkGPIOInputs() {
             
             // 1. Play audio file if set
             if (in.file.length() > 0) {
-                sendPlayCommand(in.file.c_str(), 1, in.playDurationSec, 20, 0, in.repeatCount);
+                sendPlayCommand(in.file.c_str(), 1, in.playDurationSec, in.volume, 0, in.repeatCount);
             }
             
             // 2. Output pin handling for Pulse and Toggle modes
@@ -163,8 +176,8 @@ void checkGPIOInputs() {
     }
 }
 
-void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration) {
-    if (!isValidPin(pin)) return;
+void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration, int volume) {
+    if (!isValidPin(pin) || !isInputPin(pin)) return;
     inputMappings.erase(std::remove_if(inputMappings.begin(), inputMappings.end(),
         [pin](const InputMapping& m) { return m.pin == pin; }), inputMappings.end());
     InputMapping m;
@@ -175,9 +188,10 @@ void addInputMapping(const String& name, int pin, const String& file, int playDu
     m.repeatCount = repeatCount;
     m.outputPin = outputPin;
     m.outputDurationSec = outputDuration;
+    m.volume = volume;
     m.lastState = HIGH;
     pinMode(pin, INPUT_PULLUP);
-    if (isValidPin(outputPin)) {
+    if (outputPin != 0 && (isValidPin(outputPin) || isOutputPin(outputPin))) {
         pinMode(outputPin, OUTPUT);
         digitalWrite(outputPin, LOW);
     }
@@ -194,7 +208,7 @@ void removeInputMapping(int pin) {
 }
 
 void addOutputMapping(int pin, const String& alertFile, int durationSec) {
-    if (!isValidPin(pin)) return;
+    if (!isValidPin(pin) || !isOutputPin(pin)) return;
     outputMappings.erase(std::remove_if(outputMappings.begin(), outputMappings.end(),
         [pin](const OutputMapping& m) { return m.pin == pin; }), outputMappings.end());
     OutputMapping m;
@@ -220,6 +234,7 @@ String getGpioMappingsJson() {
         o["repeatCount"] = in.repeatCount;
         o["outputPin"] = in.outputPin;
         o["outputDuration"] = in.outputDurationSec;
+        o["volume"] = in.volume;
     }
     JsonArray outputs = root.createNestedArray("outputs");
     for (const auto& out : outputMappings) {
@@ -366,6 +381,7 @@ String getGpioSchedulesJson() {
         o["alertFile"] = s.alertFile;
         o["playDurationSec"] = s.playDurationSec;
         o["repeatCount"] = s.repeatCount;
+        o["volume"] = s.volume;
         o["enabled"] = s.enabled;
     }
     String json;
@@ -433,7 +449,7 @@ void checkGpioSchedules() {
             if (!sched.triggered) {
                 sched.triggered = true;
                 if (sched.alertFile.length() > 0) {
-                    sendPlayCommand(sched.alertFile.c_str(), 1, sched.playDurationSec, 20, 0, sched.repeatCount); // volume 20, priority 1
+                    sendPlayCommand(sched.alertFile.c_str(), 1, sched.playDurationSec, sched.volume, 0, sched.repeatCount);
                 }
             }
         } else {
@@ -471,6 +487,7 @@ void loadGpioSchedules() {
             e.alertFile = o["alertFile"] | "";
             e.playDurationSec = o["playDurationSec"] | 0;
             e.repeatCount = o["repeatCount"] | 0;
+            e.volume = o["volume"] | 20;
             e.enabled = o["enabled"] | true;
             e.triggered = false;
             gpioSchedules.push_back(e);
@@ -497,6 +514,7 @@ void saveGpioSchedules() {
         o["alertFile"] = s.alertFile;
         o["playDurationSec"] = s.playDurationSec;
         o["repeatCount"] = s.repeatCount;
+        o["volume"] = s.volume;
         o["enabled"] = s.enabled;
     }
     String json;

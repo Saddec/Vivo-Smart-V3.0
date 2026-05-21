@@ -272,24 +272,132 @@ function updateClock() {
 
 function fetchStatus() {
   apiGet('/api/status', {}).then((data) => {
+    const isAdhan = data.adhan === true;
     if ($('playingStatus')) {
       $('playingStatus').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'متوقف';
+      if (isAdhan) $('playingStatus').style.color = '#f39c12';
+      else $('playingStatus').style.color = '';
     }
     if ($('volumeSlider') && data.volume !== undefined) {
       $('volumeSlider').value = data.volume;
       if ($('mainVolVal')) $('mainVolVal').textContent = data.volume;
     }
+    const showControls = data.playing && !isAdhan;
+    if ($('stopBtn')) $('stopBtn').style.display = showControls ? 'inline-block' : 'none';
+    if ($('dashStopBtn')) $('dashStopBtn').style.display = showControls ? 'inline-block' : 'none';
+    if ($('playerControlsContainer')) {
+      $('playerControlsContainer').style.display = data.playing ? 'block' : 'none';
+    }
+    if ($('playerControls')) {
+      $('playerControls').style.display = data.playing && !isAdhan ? 'block' : 'none';
+    }
+    if ($('playPauseBtn')) {
+      if (data.state === 1) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
+      else if (data.state === 2) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+    }
   });
+}
+
+function fetchTrackInfo() {
+  apiGet('/api/audio/track_info', {}).then((data) => {
+    if ($('trackDuration')) $('trackDuration').textContent = data.duration ? formatTime(data.duration) : '--:--';
+    if ($('trackPosition')) $('trackPosition').textContent = data.position !== undefined ? formatTime(data.position) : '00:00';
+    if ($('trackProgress') && data.duration > 0) {
+      const pct = Math.min(100, (data.position / data.duration) * 100);
+      $('trackProgress').value = pct;
+    }
+  });
+}
+
+function formatTime(seconds) {
+  if (!seconds && seconds !== 0) return '--:--';
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function setVolume(value) {
   apiPost('/api/audio/volume', { volume: value })
     .then(fetchStatus)
-    .catch((err) => console.error(err));
+    .catch((err) => {
+      if (err.message && err.message.includes('adhan_playing')) {
+        toast('لا يمكن تعديل الصوت أثناء الأذان أو الإقامة');
+      } else {
+        console.error(err);
+      }
+    });
 }
 
 function stopAudio() {
-  apiPost('/api/audio/stop').then(fetchStatus).catch((err) => console.error(err));
+  apiPost('/api/audio/stop')
+    .then(() => {
+      fetchStatus();
+      if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'none';
+    })
+    .catch((err) => {
+      if (err.message && err.message.includes('adhan_playing')) {
+        toast('لا يمكن إيقاف التشغيل أثناء الأذان أو الإقامة');
+      } else {
+        console.error(err);
+      }
+    });
+}
+
+function pauseAudio() {
+  apiPost('/api/audio/pause')
+    .then(fetchStatus)
+    .catch((err) => console.error(err));
+}
+
+function resumeAudio() {
+  apiPost('/api/audio/resume')
+    .then(fetchStatus)
+    .catch((err) => console.error(err));
+}
+
+function seekAudio(seconds) {
+  apiPost('/api/audio/seek', { seconds })
+    .catch((err) => console.error(err));
+}
+
+function seekForward() {
+  apiGet('/api/audio/track_info', {}).then((data) => {
+    const pos = data.position || 0;
+    seekAudio(pos + 10);
+  }).catch(() => {});
+}
+
+function seekBackward() {
+  apiGet('/api/audio/track_info', {}).then((data) => {
+    const pos = data.position || 0;
+    seekAudio(Math.max(0, pos - 10));
+  }).catch(() => {});
+}
+
+function togglePlayPause() {
+  apiGet('/api/audio/track_info', {}).then((data) => {
+    if (data.adhan) {
+      toast('لا يمكن التحكم في التشغيل أثناء الأذان أو الإقامة');
+      return;
+    }
+    if (data.state === 2) { // AUDIO_PAUSED
+      resumeAudio();
+      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
+    } else if (data.state === 1) { // AUDIO_PLAYING
+      pauseAudio();
+      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+    }
+  }).catch(() => {});
+}
+
+function setTrackProgress(value) {
+  if (!value) return;
+  apiGet('/api/audio/track_info', {}).then((data) => {
+    if (data.duration > 0) {
+      const seconds = Math.floor((value / 100) * data.duration);
+      seekAudio(seconds);
+    }
+  }).catch(() => {});
 }
 
 function scanWiFi() {
@@ -1403,110 +1511,106 @@ function loadSchedules() {
 
 function deleteSchedule(index) {
   if (!confirm('هل أنت متأكد من حذف هذا التنبيه؟')) return;
-  apiPost(`/api/scheduler/delete?index=${index}`, { index }).then(loadSchedules).catch((err) => toast(`فشل الحذف: ${err.message}`));
+  apiPost(`/api/scheduler/delete?index=${index}`, { index }).then(() => {
+    cancelEditSingleAlert();
+    cancelEditPlaylistSched();
+    loadSchedules();
+  }).catch((err) => toast(`فشل الحذف: ${err.message}`));
 }
 
 function populateGpioPins() {
-  const allPins = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 47];
-  
+  // Excluded: SD SPI (10-CS,11-MOSI,12-SCK,13-MISO) and I2S (16-BCLK,17-LRCK,18-DOUT)
+  const allPins = [3, 4, 5, 6, 7, 8, 9, 14, 15, 19, 47];
+  const bestInputs = [8, 9, 14, 47];
+  const bestOutputs = [4, 5, 6, 7, 15];
+
   // Calculate which pins are in use
-  const usedPins = new Set();
-  
-  // 1. Used in input mappings
+  const usedInputPins = new Set();
+  const usedOutputPins = new Set();
+
   if (appState.gpioMappings && appState.gpioMappings.inputs) {
     appState.gpioMappings.inputs.forEach(inp => {
       if (editingInputPin === null || Number(inp.pin) !== Number(editingInputPin)) {
-        usedPins.add(Number(inp.pin));
+        usedInputPins.add(Number(inp.pin));
       }
       if (inp.outputPin && Number(inp.outputPin) !== 0) {
         if (editingInputPin === null || Number(inp.pin) !== Number(editingInputPin)) {
-          usedPins.add(Number(inp.outputPin));
+          usedOutputPins.add(Number(inp.outputPin));
         }
       }
     });
   }
-  
-  // 2. Used in output mappings (direct outputs)
+
   if (appState.gpioMappings && appState.gpioMappings.outputs) {
     appState.gpioMappings.outputs.forEach(out => {
-      usedPins.add(Number(out.pin));
+      usedOutputPins.add(Number(out.pin));
     });
   }
-  
-  // 3. Used in GPIO schedules
+
   if (appState.gpioSchedules) {
     appState.gpioSchedules.forEach((s, idx) => {
       if (editingGpioSchedIndex === -1 || idx !== editingGpioSchedIndex) {
-        usedPins.add(Number(s.pin));
+        usedOutputPins.add(Number(s.pin));
       }
     });
   }
 
-  // Helper to generate options
-  function buildOptions(isInputMode, currentSelectedValue, includeNoneOption = false) {
-    const available = allPins.filter(p => !usedPins.has(p) || Number(p) === Number(currentSelectedValue));
-    
-    const bestInputs = [8, 9, 14, 47];
-    const bestOutputs = [4, 5, 6, 7, 15];
-    const spiPins = [10, 11, 12, 13];
-    
-    let sorted = [];
-    if (isInputMode) {
-      const first = available.filter(p => bestInputs.includes(p));
-      const middle = available.filter(p => !bestInputs.includes(p) && !spiPins.includes(p));
-      const last = available.filter(p => spiPins.includes(p));
-      sorted = [...first, ...middle, ...last];
-    } else {
-      const first = available.filter(p => bestOutputs.includes(p));
-      const middle = available.filter(p => !bestOutputs.includes(p) && !spiPins.includes(p));
-      const last = available.filter(p => spiPins.includes(p));
-      sorted = [...first, ...middle, ...last];
-    }
-    
-    let html = includeNoneOption ? '<option value="0">لا يوجد</option>' : '';
-    sorted.forEach(p => {
-      let label = `${p}`;
-      if (isInputMode && bestInputs.includes(p)) {
-        label = `${p} (أفضل للمدخلات)`;
-      } else if (!isInputMode && bestOutputs.includes(p)) {
-        label = `${p} (أفضل للمخرجات)`;
-      } else if (spiPins.includes(p)) {
-        label = `${p} (⚠️ خاص بـ SD)`;
-      }
-      
+  // Build options for input pins - only bestInputs pins shown
+  function buildInputOptions(currentSelectedValue) {
+    const available = allPins.filter(p => bestInputs.includes(p) && (!usedInputPins.has(p) || Number(p) === Number(currentSelectedValue)));
+    let html = '';
+    available.forEach(p => {
       const selected = (Number(p) === Number(currentSelectedValue)) ? ' selected' : '';
-      html += `<option value="${p}"${selected}>${label}</option>`;
+      html += `<option value="${p}"${selected}>${p} (أفضل للمدخلات)</option>`;
     });
+    if (!html) html = '<option value="">لا توجد دبابيس متاحة</option>';
+    return html;
+  }
+
+  // Build options for output pins - only bestOutputs pins shown
+  function buildOutputOptions(currentSelectedValue, includeNoneOption = false) {
+    const available = allPins.filter(p => bestOutputs.includes(p) && (!usedOutputPins.has(p) || Number(p) === Number(currentSelectedValue)));
+    let html = includeNoneOption ? '<option value="0">لا يوجد</option>' : '';
+    available.forEach(p => {
+      const selected = (Number(p) === Number(currentSelectedValue)) ? ' selected' : '';
+      html += `<option value="${p}"${selected}>${p} (أفضل للمخرجات)</option>`;
+    });
+    if (!html && !includeNoneOption) html = '<option value="">لا توجد دبابيس متاحة</option>';
     return html;
   }
 
   if ($('gpioInputPin')) {
     const currVal = $('gpioInputPin').value;
-    $('gpioInputPin').innerHTML = buildOptions(true, currVal, false);
+    $('gpioInputPin').innerHTML = buildInputOptions(currVal);
   }
-  
+
   if ($('gpioInputOutputPin')) {
     const currVal = $('gpioInputOutputPin').value;
-    $('gpioInputOutputPin').innerHTML = buildOptions(false, currVal, true);
+    $('gpioInputOutputPin').innerHTML = buildOutputOptions(currVal, true);
   }
-  
+
   if ($('outputPin')) {
     const currVal = $('outputPin').value;
-    $('outputPin').innerHTML = buildOptions(false, currVal, false);
+    $('outputPin').innerHTML = buildOutputOptions(currVal, false);
   }
-  
+
   if ($('gpioSchedPin')) {
     const currVal = $('gpioSchedPin').value;
-    $('gpioSchedPin').innerHTML = buildOptions(false, currVal, false);
+    $('gpioSchedPin').innerHTML = buildOutputOptions(currVal, false);
   }
 }
 
 function saveOutputMapping() {
+  const pinVal = $('outputPin')?.value;
+  if (!pinVal || pinVal === '') return toast('اختر دبوساً صالحاً');
   apiPost('/api/gpio/output', {
-    pin: $('outputPin')?.value,
+    pin: pinVal,
     alert: $('outputAlert')?.value || '',
     duration: $('outputDuration')?.value || 5
-  }).then(() => toast('تم حفظ المخرج')).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+  }).then(() => {
+    toast('تم حفظ المخرج');
+    loadGpioMappings();
+  }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
 function saveSmartInput() {
@@ -1516,6 +1620,7 @@ function saveSmartInput() {
   const playDuration = $('gpioInputPlayDuration')?.value || 0;
   const repeatCount = $('gpioInputRepeatCount')?.value || 0;
   const outputPin = $('gpioInputOutputPin')?.value || '0';
+  const volume = parseInt($('gpioInputVolume')?.value || '20');
   
   const mode = $('gpioInputOutputMode')?.value || '0';
   let outputDuration = 0;
@@ -1538,7 +1643,8 @@ function saveSmartInput() {
       playDuration,
       repeatCount,
       outputPin,
-      outputDuration
+      outputDuration,
+      volume
     });
   }).then(() => {
     toast('تم حفظ المدخل الذكي');
@@ -1562,6 +1668,11 @@ function editGpioInput(pin) {
   if ($('gpioInputPlayDuration')) $('gpioInputPlayDuration').value = mapping.playDuration !== undefined ? mapping.playDuration : 0;
   if ($('gpioInputRepeatCount')) $('gpioInputRepeatCount').value = mapping.repeatCount !== undefined ? mapping.repeatCount : 0;
   if ($('gpioInputOutputPin')) $('gpioInputOutputPin').value = mapping.outputPin !== undefined ? mapping.outputPin : '0';
+  if ($('gpioInputVolume')) {
+    const vol = mapping.volume !== undefined ? mapping.volume : 20;
+    $('gpioInputVolume').value = vol;
+    if ($('gpioInputVolVal')) $('gpioInputVolVal').textContent = vol;
+  }
   
   if ($('gpioInputOutputMode')) {
     const dur = mapping.outputDuration !== undefined ? mapping.outputDuration : 0;
@@ -1584,13 +1695,17 @@ function cancelEditGpioInput() {
   editingInputPin = null;
   editingInputOutputPin = null;
   if ($('gpioInputName')) $('gpioInputName').value = '';
-  if ($('gpioInputFile')) $('gpioInputFile').value = '';
+  if ($('gpioInputFile')) $('gpioInputFile').selectedIndex = 0;
   if ($('gpioInputPlayDuration')) $('gpioInputPlayDuration').value = 0;
   if ($('gpioInputRepeatCount')) $('gpioInputRepeatCount').value = 0;
   if ($('gpioInputOutputPin')) $('gpioInputOutputPin').value = '0';
   if ($('gpioInputOutputMode')) {
     $('gpioInputOutputMode').value = '0';
     toggleGpioOutputModeFields();
+  }
+  if ($('gpioInputVolume')) {
+    $('gpioInputVolume').value = 20;
+    if ($('gpioInputVolVal')) $('gpioInputVolVal').textContent = 20;
   }
   if ($('gpioInputSaveBtn')) $('gpioInputSaveBtn').innerHTML = '<i class="fas fa-save"></i> حفظ المدخل الذكي';
   if ($('gpioInputCancelBtn')) $('gpioInputCancelBtn').style.display = 'none';
@@ -1599,7 +1714,10 @@ function cancelEditGpioInput() {
 
 function deleteGpioInput(pin) {
   if (!confirm('هل أنت متأكد من حذف هذا المدخل؟')) return;
-  apiPost(`/api/gpio/input/delete?pin=${pin}`, { pin }).then(loadGpioMappings).catch((err) => toast(`فشل الحذف: ${err.message}`));
+  apiPost(`/api/gpio/input/delete?pin=${pin}`, { pin }).then(() => {
+    cancelEditGpioInput();
+    loadGpioMappings();
+  }).catch((err) => toast(`فشل الحذف: ${err.message}`));
 }
 
 function toggleGpioOutputModeFields() {
@@ -1615,22 +1733,28 @@ function loadGpioMappings() {
     appState.gpioMappings = data;
     const inputs = data.inputs || [];
     if (!$('gpioInputsList')) return;
+    if (inputs.length === 0) {
+      $('gpioInputsList').innerHTML = '<p style="text-align:center; opacity:0.7;">لا توجد مدخلات مضافة بعد</p>';
+      populateGpioPins();
+      return;
+    }
     $('gpioInputsList').innerHTML = inputs.map((inp) => {
       let info = `<strong>دبوس ${inp.pin}</strong>`;
       if (inp.name) info += ` (${safeText(inp.name)})`;
       if (inp.file) info += ` 🎵 ${safeText(inp.file)}`;
       if (inp.playDuration > 0 || inp.repeatCount > 0) info += ` (مدة ${inp.playDuration}ث، تكرار ${inp.repeatCount})`;
-      if (inp.outputPin && inp.outputPin !== '0' && inp.outputPin !== 0) {
+      if (inp.outputPin && Number(inp.outputPin) !== 0) {
         info += ` 🔌 مخرج ${inp.outputPin}`;
         if (inp.outputDuration > 0) info += ` (نبضة ${inp.outputDuration}ث)`;
         else if (inp.outputDuration === -1) info += ` (تبديل)`;
         else info += ` (مستمر)`;
       }
+      const pinVal = Number(inp.pin);
       return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
         <span>${info}</span>
         <div style="display:flex; gap:8px;">
-          <button class="btn btn-secondary" onclick="editGpioInput(${inp.pin})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
-          <button class="btn btn-danger" onclick="deleteGpioInput(${inp.pin})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-trash"></i> حذف</button>
+          <button class="btn btn-secondary" onclick="editGpioInput(${pinVal})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
+          <button class="btn btn-danger" onclick="deleteGpioInput(${pinVal})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-trash"></i> حذف</button>
         </div>
       </li>`;
     }).join('');
@@ -1641,7 +1765,7 @@ function loadGpioMappings() {
 function saveGpioSched() {
   const name = $('gpioSchedName')?.value || '';
   const pin = $('gpioSchedPin')?.value || '';
-  if (!pin) return toast('يجب اختيار دبوس (Pin)');
+  if (!pin || pin === '') return toast('يجب اختيار دبوس (Pin) صالح');
   
   const [startHour = '0', startMin = '0'] = ($('gpioSchedStart')?.value || '00:00').split(':');
   const [endHour = '0', endMin = '0'] = ($('gpioSchedEnd')?.value || '00:00').split(':');
@@ -1654,6 +1778,7 @@ function saveGpioSched() {
   const alertFile = $('gpioSchedAlertFile')?.value || '';
   const audioMode = $('gpioSchedAudioMode')?.value || 'original';
   const repeatCount = (audioMode === 'repeat' && alertFile) ? parseInt($('gpioSchedRepeatCount')?.value || '1') : 0;
+  const volume = parseInt($('gpioSchedVolume')?.value || '20');
   
   const data = {
     name,
@@ -1669,6 +1794,7 @@ function saveGpioSched() {
     specificDate: $('gpioSchedDate')?.value || '',
     alertFile,
     repeatCount,
+    volume,
     index: editingGpioSchedIndex
   };
 
@@ -1735,6 +1861,11 @@ function editGpioSched(index) {
   if ($('gpioSchedRepeatCount')) {
     $('gpioSchedRepeatCount').value = (sched.repeatCount && sched.repeatCount > 0) ? sched.repeatCount : 1;
   }
+  if ($('gpioSchedVolume')) {
+    const vol = sched.volume !== undefined ? sched.volume : 20;
+    $('gpioSchedVolume').value = vol;
+    if ($('gpioSchedVolVal')) $('gpioSchedVolVal').textContent = vol;
+  }
   
   if (sched.type === 'weekly' && sched.dayOfWeek >= 0) {
     const mask = sched.dayOfWeek;
@@ -1793,7 +1924,10 @@ function loadGpioSchedules() {
 
 function deleteGpioSched(index) {
   if (!confirm('هل أنت متأكد من حذف هذه الجدولة؟')) return;
-  apiPost(`/api/gpio/schedule/delete?index=${index}`, { index }).then(loadGpioSchedules).catch((err) => toast(`فشل الحذف: ${err.message}`));
+  apiPost(`/api/gpio/schedule/delete?index=${index}`, { index }).then(() => {
+    cancelEditGpioSched();
+    loadGpioSchedules();
+  }).catch((err) => toast(`فشل الحذف: ${err.message}`));
 }
 
 function toggleEidMode() {
@@ -1816,6 +1950,9 @@ function playSingleFile() {
   if (!file) return toast('اختر ملفاً أولاً');
   const volume = $('playlistVolume')?.value || 15;
   apiPost('/api/audio/play', { file: file, priority: 1, volume: volume })
+    .then(() => {
+      if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
+    })
     .catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
 
@@ -1843,6 +1980,8 @@ function playPlaylist() {
     files: appState.playlist.join(','),
     volume: $('playlistVolume')?.value || 15,
     respectAdhan: $('playlistAdhanRespect')?.checked ? '1' : '0'
+  }).then(() => {
+    if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
   }).catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
 
@@ -2371,11 +2510,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if ($('mainContent')?.style.display !== 'none') {
       updateClock();
       fetchStatus();
+      fetchTrackInfo();
       checkSessionTimeout();
       prayerFetchCounter++;
       if (!calendarDownloadActive && prayerFetchCounter % 6 === 0) fetchPrayerTimes();
     }
-  }, 10000);
+  }, 2000);
 });
 
 function togglePasswordVisibility(inputId, iconId) {

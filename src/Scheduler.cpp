@@ -170,7 +170,7 @@ void Scheduler::checkAndTrigger() {
         if(match) {
             time_t triggerMinute = now - timeinfo.tm_sec;
             if (alert.lastTriggered != triggerMinute) {
-                currentAudioDescription = "تنبيه مجدول: " + alert.fileName;
+                currentAudioDescription = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
                 if (alert.fileName.indexOf(',') != -1) {
                     extern QueueHandle_t audioQueue;
                     extern char fileBuffer[128];

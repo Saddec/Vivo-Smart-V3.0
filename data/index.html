@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="/all.min.css">   <!-- نسخة محلية كاحتياطي -->
-  <link rel="stylesheet" href="/style.css?v=3.13">
+  <link rel="stylesheet" href="/style.css?v=3.14">
 </head>
 <body>
   <!-- طبقة تسجيل الدخول -->
@@ -58,7 +58,7 @@
     <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
     <a href="#settings" onclick="showTab('settings')"><i class="fas fa-cog"></i> الإعدادات</a>
     <a href="#" onclick="doLogout()" style="color:#e74c3c;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
-    <span class="version">v3.0 ESP32-S3</span>
+    <span class="version">v3.1 ESP32-S3</span>
   </nav>
 
   <main class="main-content" id="mainContent" style="display:none;">
@@ -77,7 +77,9 @@
           <p id="playingStatus">متوقف</p>
           <input type="range" id="volumeSlider" min="0" max="30" value="15" oninput="if($('mainVolVal')) $('mainVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
           <span id="mainVolVal" style="display:block; text-align:center; font-weight:bold; margin-bottom:10px;">15</span>
-          <button class="btn" onclick="stopAudio()"><i class="fas fa-stop"></i> إيقاف الصوت</button>
+          <div style="display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-danger" id="dashStopBtn" onclick="stopAudio()" style="display:none;" title="إيقاف"><i class="fas fa-stop"></i></button>
+          </div>
         </div>
       </div>
       <div class="glass-card dashboard-prayer-card">
@@ -402,11 +404,7 @@
         <h3><i class="fas fa-sign-in-alt"></i> ربط مدخل ذكي (Smart Inputs)</h3>
         <label>اسم المدخل</label><input type="text" id="gpioInputName" placeholder="مثال: حساس الحريق / حساس المطر" style="width:100%; margin-bottom:10px;">
         <label>الدبوس (Input Pin)</label>
-        <select id="gpioInputPin">
-          <option>3</option><option>4</option><option>5</option><option>6</option><option>7</option>
-          <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
-          <option>13</option><option>14</option><option>15</option><option>19</option><option>47</option>
-        </select>
+        <select id="gpioInputPin"></select>
         <label>الملف الصوتي عند التفعيل (اختياري)</label>
         <select id="gpioInputFile" onchange="toggleGpioFileSelected('gpioInput')">
           <option value="">بدون صوت</option>
@@ -421,14 +419,12 @@
             <label>عدد مرات التكرار</label>
             <input type="number" id="gpioInputRepeatCount" value="1" min="1">
           </div>
+          <label>مستوى الصوت</label>
+          <input type="range" id="gpioInputVolume" min="0" max="30" value="20" oninput="if($('gpioInputVolVal')) $('gpioInputVolVal').textContent=this.value" style="width:100%">
+          <span id="gpioInputVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
         </div>
         <label>المخرج المرتبط (اختياري)</label>
-        <select id="gpioInputOutputPin">
-          <option value="0">لا يوجد</option>
-          <option>3</option><option>4</option><option>5</option><option>6</option><option>7</option>
-          <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
-          <option>13</option><option>14</option><option>15</option><option>19</option><option>47</option>
-        </select>
+        <select id="gpioInputOutputPin"></select>
         <label>وضع تفعيل المخرج</label>
         <select id="gpioInputOutputMode" onchange="toggleGpioOutputModeFields()">
           <option value="0">مستمر طالما المدخل نشط (Level-Active)</option>
@@ -441,7 +437,7 @@
         </div>
         <div style="display:flex; gap:10px; margin-top:15px;">
           <button id="gpioInputSaveBtn" class="btn" onclick="saveSmartInput()"><i class="fas fa-save"></i> حفظ المدخل الذكي</button>
-          <button id="gpioInputCancelBtn" class="btn btn-secondary" onclick="cancelEditGpioInput()" style="display:none; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+          <button id="gpioInputCancelBtn" class="btn btn-secondary" onclick="cancelEditGpioInput()" style="display:none;"><i class="fas fa-times"></i> إلغاء التعديل</button>
         </div>
       </div>
 
@@ -449,11 +445,7 @@
       <div class="glass-card">
         <h3><i class="fas fa-clock"></i> جدولة المخارج (GPIO)</h3>
         <label>اسم الجدولة</label><input type="text" id="gpioSchedName" placeholder="مثال: تشغيل الإنارة الخارجية" style="width:100%; margin-bottom:10px;">
-        <label>الدبوس</label><select id="gpioSchedPin">
-          <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
-          <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-          <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="19">19</option><option value="47">47</option>
-        </select>
+        <label>الدبوس</label><select id="gpioSchedPin"></select>
         <label>الحالة عند البدء</label>
         <select id="gpioSchedState">
           <option value="1">تشغيل (HIGH)</option>
@@ -482,19 +474,18 @@
             <label>عدد مرات التكرار</label>
             <input type="number" id="gpioSchedRepeatCount" value="1" min="1">
           </div>
+          <label>مستوى الصوت</label>
+          <input type="range" id="gpioSchedVolume" min="0" max="30" value="20" oninput="if($('gpioSchedVolVal')) $('gpioSchedVolVal').textContent=this.value" style="width:100%">
+          <span id="gpioSchedVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
         </div>
         <button class="btn" id="gpioSchedSaveBtn" onclick="saveGpioSched()"><i class="fas fa-save"></i> حفظ جدولة GPIO</button>
-        <button class="btn btn-secondary" id="gpioSchedCancelEditBtn" onclick="cancelEditGpioSched()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+        <button class="btn btn-secondary" id="gpioSchedCancelEditBtn" onclick="cancelEditGpioSched()" style="display:none; margin-top:10px;"><i class="fas fa-times"></i> إلغاء التعديل</button>
       </div>
 
       <div class="glass-card">
         <h3>ربط مخرج تلقائي مع تنبيه</h3>
         <label>الدبوس</label>
-        <select id="outputPin">
-          <option>3</option><option>4</option><option>5</option><option>6</option><option>7</option>
-          <option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
-          <option>13</option><option>14</option><option>15</option><option>19</option><option>47</option>
-        </select>
+        <select id="outputPin"></select>
         <label>اسم التنبيه المرتبط</label>
         <input type="text" id="outputAlert" placeholder="مثال: alert.mp3">
         <label>المدة (ثواني)</label><input type="number" id="outputDuration" value="5">
@@ -570,6 +561,24 @@
             <button class="btn" onclick="addToPlaylist()"><i class="fas fa-plus"></i> إضافة للقائمة</button>
           </div>
         </div>
+
+        <!-- Professional Player Controls -->
+        <div id="playerControlsContainer" class="player-container" style="display:none;">
+          <div class="player-btn-row">
+            <button class="btn btn-danger" id="stopBtn" onclick="stopAudio()" style="display:none;" title="إيقاف"><i class="fas fa-stop"></i></button>
+            <button class="btn btn-seek" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> -10</button>
+            <button class="btn btn-play" id="playPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i></button>
+            <button class="btn btn-seek" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> +10</button>
+          </div>
+          <div id="playerControls" style="display:none;">
+            <div class="player-progress-row">
+              <span class="player-time" id="trackPosition">00:00</span>
+              <input type="range" id="trackProgress" class="player-progress" min="0" max="100" value="0" onchange="setTrackProgress(this.value)">
+              <span class="player-time" id="trackDuration">00:00</span>
+            </div>
+          </div>
+        </div>
+
         <div style="margin-top:15px; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
           <h4 style="margin-top:0;">قائمة التشغيل المؤقتة:</h4>
           <div id="playlist" style="margin-bottom:10px;"></div>
@@ -746,6 +755,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.13"></script>
+  <script src="/script.js?v=3.14"></script>
 </body>
 </html>

@@ -53,6 +53,8 @@ public:
     AudioState getState();
     const char* getCurrentFile();
     bool isI2SReady() const;
+    bool isAdhanPlaying() const;
+    int getCurrentPriority() const;
     void loop();
     static void audioOnStop(void *userData);
 private:
@@ -69,6 +71,7 @@ private:
     int _lastPriority = 0;
     uint8_t _lastVolume = 0;
     bool _repeatMode = false;
+    bool _adhanPlaying = false;
 
     std::vector<String> _playlist;
     int _playlistIndex = 0;

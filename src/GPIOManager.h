@@ -13,6 +13,7 @@ struct InputMapping {
     int repeatCount;
     uint8_t outputPin;
     int outputDurationSec; // 0 = active level, >0 = pulse duration, -1 = toggle
+    int volume = 20;
     bool lastState;
 };
 
@@ -37,6 +38,7 @@ struct GpioScheduleEntry {
     String alertFile;       // linked audio alert file
     int playDurationSec = 0;
     int repeatCount = 0;
+    int volume = 20;
     bool enabled;
     bool triggered = false; // for audio trigger rising-edge check (not saved to NVS)
 };
@@ -45,7 +47,7 @@ struct GpioScheduleEntry {
 void initGPIO();
 void checkGPIOInputs();
 void checkGpioSchedules();
-void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration);
+void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration, int volume = 20);
 void removeInputMapping(int pin);
 void addOutputMapping(int pin, const String& alertFile, int durationSec);
 String getGpioMappingsJson();

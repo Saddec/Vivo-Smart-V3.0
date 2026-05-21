@@ -534,27 +534,76 @@ void startWebServer() {
         bool isPlaying = (audioManager.getState() != AUDIO_IDLE);
         doc["playing"] = isPlaying;
         doc["file"] = audioManager.getCurrentFile();
+        doc["volume"] = audioManager.getVolume();
+        doc["state"] = (int)audioManager.getState();
+        doc["adhan"] = audioManager.isAdhanPlaying();
         extern String currentAudioDescription;
         doc["status_text"] = isPlaying ? (currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + String(audioManager.getCurrentFile()))) : "متوقف";
-        doc["volume"] = 15;
         doc["wifi"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
         sendJson(request, doc);
     });
 
     server.on("/api/audio/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (audioManager.isAdhanPlaying()) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"adhan_playing\"}");
+            return;
+        }
         AudioMessage msg = {CMD_STOP, 0, 0, 0, 0, 0, 0};
         xQueueSend(audioQueue, &msg, 0);
         sendOk(request);
     });
 
+    server.on("/api/audio/pause", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (audioManager.isAdhanPlaying()) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"adhan_playing\"}");
+            return;
+        }
+        AudioMessage msg = {CMD_PAUSE, 0, 0, 0, 0, 0, 0};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/resume", HTTP_POST, [](AsyncWebServerRequest *request) {
+        AudioMessage msg = {CMD_RESUME, 0, 0, 0, 0, 0, 0};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/seek", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int seconds = postValue(request, "seconds", "0").toInt();
+        AudioMessage msg = {CMD_SEEK, seconds, 0, 0, 0, 0, 0};
+        xQueueSend(audioQueue, &msg, 0);
+        sendOk(request);
+    });
+
+    server.on("/api/audio/track_info", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        uint32_t dur = audioManager.getAudioFileDuration();
+        uint32_t pos = audioManager.getAudioCurrentTime();
+        doc["duration"] = dur;
+        doc["position"] = pos;
+        doc["state"] = (int)audioManager.getState();
+        doc["adhan"] = audioManager.isAdhanPlaying();
+        doc["file"] = audioManager.getCurrentFile();
+        sendJson(request, doc);
+    });
+
     server.on("/api/audio/volume", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (audioManager.isAdhanPlaying()) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"adhan_playing\"}");
+            return;
+        }
         AudioMessage msg = {CMD_SET_VOLUME, postValue(request, "volume", "15").toInt(), 0, 0, 0, 0, 0};
         xQueueSend(audioQueue, &msg, 0);
         sendOk(request);
     });
 
     server.on("/api/audio/play", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (audioManager.isAdhanPlaying()) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"adhan_playing\"}");
+            return;
+        }
         String file = postValue(request, "file", "");
         if (file.length() == 0) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing file\"}");
@@ -1091,7 +1140,8 @@ void startWebServer() {
         int repeatCount = postValue(request, "repeatCount", "0").toInt();
         int outputPin = postValue(request, "outputPin", "0").toInt();
         int outputDuration = postValue(request, "outputDuration", "0").toInt();
-        addInputMapping(name, pin, file, playDuration, repeatCount, outputPin, outputDuration);
+        int volume = postValue(request, "volume", "20").toInt();
+        addInputMapping(name, pin, file, playDuration, repeatCount, outputPin, outputDuration, volume);
         sendOk(request);
     });
     server.on("/api/gpio/input/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1123,6 +1173,7 @@ void startWebServer() {
         entry.alertFile = postValue(request, "alertFile", "");
         entry.playDurationSec = postValue(request, "playDuration", "0").toInt();
         entry.repeatCount = postValue(request, "repeatCount", "0").toInt();
+        entry.volume = postValue(request, "volume", "20").toInt();
         entry.enabled = true;
         
         int index = postValue(request, "index", "-1").toInt();

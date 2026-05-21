@@ -51,6 +51,8 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
 
     if (_state != AUDIO_IDLE) _audio->stopSong();
 
+    _adhanPlaying = (priority >= 2);
+
     String fullPath = normalizeAudioPath(path);
     if (!SD.exists(fullPath)) {
         Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
@@ -130,10 +132,18 @@ void AudioManager::checkPlaylistResume() {
 }
 
 void AudioManager::setVolume(uint8_t vol) {
+    if (_adhanPlaying) {
+        Serial.println("[Audio] Adhan/Iqama playing, volume change blocked");
+        return;
+    }
     if (_audio) _audio->setVolume(vol);
 }
 
 void AudioManager::stop() {
+    if (_adhanPlaying) {
+        Serial.println("[Audio] Adhan/Iqama playing, stop blocked");
+        return;
+    }
     if (_audio) {
         _audio->stopSong();
         _state = AUDIO_IDLE;
@@ -141,10 +151,12 @@ void AudioManager::stop() {
         _customDuration = 0;
         _loopDuration = 0;
         _lastPlayedFile = "";
+        _adhanPlaying = false;
     }
 }
 
 void AudioManager::pause() {
+    if (_adhanPlaying) return;
     if (_audio && _state == AUDIO_PLAYING) {
         _audio->pauseResume();
         _state = AUDIO_PAUSED;
@@ -152,6 +164,7 @@ void AudioManager::pause() {
 }
 
 void AudioManager::resume() {
+    if (_adhanPlaying) return;
     if (_audio && _state == AUDIO_PAUSED) {
         _audio->pauseResume();
         _state = AUDIO_PLAYING;
@@ -159,6 +172,7 @@ void AudioManager::resume() {
 }
 
 void AudioManager::seekTo(uint16_t seconds) {
+    if (_adhanPlaying) return;
     if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
         _audio->setAudioPlayPosition(seconds);
     }
@@ -208,6 +222,14 @@ const char* AudioManager::getCurrentFile() {
     return _currentFile.c_str();
 }
 
+bool AudioManager::isAdhanPlaying() const {
+    return _adhanPlaying;
+}
+
+int AudioManager::getCurrentPriority() const {
+    return _currentPriority;
+}
+
 bool AudioManager::isI2SReady() const {
     return _audio != nullptr;
 }
@@ -252,6 +274,7 @@ void AudioManager::audioOnStop(void *userData) {
     self->_loopDuration = 0;
     self->_repeatCount = 0;
     self->_lastPlayedFile = "";
+    self->_adhanPlaying = false;
 }
 
 void AudioManager::loop() {
