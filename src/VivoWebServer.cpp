@@ -16,10 +16,12 @@
 #include <Update.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
+#include <freertos/semphr.h>
 
 AsyncWebServer server(80);
 extern QueueHandle_t audioQueue;
 extern AudioManager audioManager;
+extern SemaphoreHandle_t fileBufferMutex;
 extern char fileBuffer[128];
 
 static File uploadFile;
@@ -27,6 +29,19 @@ static File chunkUploadFile;
 static bool chunkUploadOk = false;
 static String chunkUploadPath;
 static String calendarDownloadError;
+static bool uploadBusy = false;
+static String sessionToken = "";
+static String generateSessionToken() {
+    uint32_t r1 = esp_random();
+    uint32_t r2 = esp_random();
+    uint32_t r3 = esp_random();
+    char buf[33];
+    snprintf(buf, sizeof(buf), "%08x%08x%08x", r1, r2, r3);
+    return String(buf);
+}
+static bool sessionValid() {
+    return sessionToken.length() > 0;
+}
 struct CalendarDownloadJob {
     volatile bool busy = false;
     volatile bool done = false;
@@ -100,7 +115,14 @@ static String cleanPath(const String &name) {
     String path = name;
     path.replace("\\", "/");
     while (path.startsWith("/")) path.remove(0, 1);
-    path.replace("..", "");
+    int prevLen;
+    do {
+        prevLen = path.length();
+        path.replace("..", "");
+    } while (path.length() < prevLen);
+    if (path.indexOf("..") >= 0 || !path.startsWith("/")) {
+        return "/";
+    }
     return "/" + path;
 }
 
@@ -409,6 +431,8 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!sdReady()) return;
     if (!index) {
+        if (uploadBusy) { Serial.println("[Upload] Busy, rejecting"); return; }
+        uploadBusy = true;
         String folder = "/";
         if (request->hasHeader("X-Folder")) {
             folder = urlDecode(request->getHeader("X-Folder")->value());
@@ -419,7 +443,7 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
         uploadFile = SD.open(path, FILE_WRITE);
     }
     if (uploadFile && len) uploadFile.write(data, len);
-    if (final && uploadFile) uploadFile.close();
+    if (final && uploadFile) { uploadFile.close(); uploadBusy = false; }
 }
 
 static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -429,6 +453,8 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
     }
 
     if (index == 0) {
+        if (uploadBusy) { chunkUploadOk = false; return; }
+        uploadBusy = true;
         String name = request->hasParam("name") ? request->getParam("name")->value() : "";
         String folder = request->hasParam("folder") ? request->getParam("folder")->value() : "/";
         size_t offset = request->hasParam("offset") ? (size_t)request->getParam("offset")->value().toInt() : 0;
@@ -444,6 +470,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         }
         chunkUploadOk = chunkUploadFile;
         if (chunkUploadOk && offset > 0) chunkUploadFile.seek(offset);
+        if (!chunkUploadOk) uploadBusy = false;
         Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
     }
 
@@ -458,6 +485,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
     if (index + len == total && chunkUploadFile) {
         chunkUploadFile.flush();
         chunkUploadFile.close();
+        uploadBusy = false;
     }
 }
 
@@ -467,22 +495,44 @@ static void handleCsvUpload(AsyncWebServerRequest *request, String filename, siz
     if (month < 1 || month > 12) month = 1;
     String path = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
     if (!index) {
+        if (uploadBusy) { Serial.println("[CSV] Busy, rejecting"); return; }
+        uploadBusy = true;
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
     }
     if (uploadFile && len) uploadFile.write(data, len);
     if (final && uploadFile) {
         uploadFile.close();
+        uploadBusy = false;
         CSVManager::loadMonth(month, path);
     }
 }
 
 static void handleOtaUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!index) {
-        Update.begin(UPDATE_SIZE_UNKNOWN);
+        if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); return; }
+        uploadBusy = true;
+        size_t maxSize = 8388608;
+        if (!Update.begin(maxSize)) {
+            Serial.println("[OTA] Begin failed, not enough space");
+            uploadBusy = false;
+            return;
+        }
+        if (request->hasHeader("X-MD5")) {
+            Update.setMD5(request->getHeader("X-MD5")->value().c_str());
+        }
     }
-    if (len) Update.write(data, len);
-    if (final) Update.end(true);
+    if (len && Update.write(data, len) != len) {
+        Serial.printf("[OTA] Write error at offset %u\n", (unsigned)index);
+    }
+    if (final) {
+        if (Update.end(true)) {
+            Serial.println("[OTA] Update successful");
+        } else {
+            Serial.printf("[OTA] Update failed: %s\n", Update.errorString());
+        }
+        uploadBusy = false;
+    }
 }
 
 void startWebServer() {
@@ -623,7 +673,13 @@ void startWebServer() {
         }
         extern String currentAudioDescription;
         currentAudioDescription = "تشغيل قائمة ملفات";
-        strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
+        if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
+            xSemaphoreGive(fileBufferMutex);
+        } else {
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"busy\"}");
+            return;
+        }
         uint32_t packed = (postBool(request, "respectAdhan") ? 1 : 0);
         AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, (uint8_t)postValue(request, "volume", "15").toInt(), packed, 0};
         xQueueSend(audioQueue, &msg, 0);
@@ -1114,6 +1170,8 @@ void startWebServer() {
         alert.offsetSeconds = postValue(request, "offsetSeconds", "0").toInt();
         alert.eidOnly = postBool(request, "eidOnly");
         alert.repeatInterval = postValue(request, "repeatInterval", "0").toInt();
+        alert.endHour = postValue(request, "endHour", "-1").toInt();
+        alert.endMinute = postValue(request, "endMinute", "-1").toInt();
         alert.gpioActive = postBool(request, "gpioActive");
         alert.gpioPin = postValue(request, "gpioPin", "0").toInt();
         alert.gpioMode = postValue(request, "gpioMode", "continuous");
@@ -1472,7 +1530,17 @@ void startWebServer() {
         String saved = prefs.getString("password", "admin");
         prefs.end();
         bool ok = postValue(request, "password", "") == saved;
-        request->send(200, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
+        if (ok) {
+            sessionToken = generateSessionToken();
+            DynamicJsonDocument doc(128);
+            doc["ok"] = true;
+            doc["token"] = sessionToken;
+            String json;
+            serializeJson(doc, json);
+            request->send(200, "application/json", json);
+        } else {
+            request->send(200, "application/json", "{\"ok\":false}");
+        }
     });
     server.on("/api/password/change", HTTP_POST, [](AsyncWebServerRequest *request) {
         Preferences prefs;
@@ -1483,10 +1551,21 @@ void startWebServer() {
             request->send(200, "application/json", "{\"ok\":false}");
             return;
         }
+        String token = postValue(request, "token", "");
+        if (token != sessionToken) {
+            request->send(200, "application/json", "{\"ok\":false,\"error\":\"session expired\"}");
+            return;
+        }
         prefs.begin("auth", false);
         prefs.putString("password", postValue(request, "password", "admin"));
         prefs.end();
-        request->send(200, "application/json", "{\"ok\":true}");
+        sessionToken = generateSessionToken();
+        DynamicJsonDocument doc(128);
+        doc["ok"] = true;
+        doc["token"] = sessionToken;
+        String json;
+        serializeJson(doc, json);
+        request->send(200, "application/json", json);
     });
 
     server.on("/api/ddns/config", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -1532,10 +1611,38 @@ void startWebServer() {
     server.on("/api/password/master_reset", HTTP_POST, [](AsyncWebServerRequest *request) {
         String master = postValue(request, "master", "");
         String newPass = postValue(request, "password", "");
-        if (master == "Vivo Smart531999" && newPass.length() >= 4) {
-            Preferences prefs;
+        if (newPass.length() < 4) {
+            request->send(200, "application/json", "{\"ok\":false,\"error\":\"password too short\"}");
+            return;
+        }
+        Preferences prefs;
+        prefs.begin("auth", true);
+        String savedMaster = prefs.getString("master", "Vivo Smart531999");
+        prefs.end();
+        if (master == savedMaster) {
             prefs.begin("auth", false);
             prefs.putString("password", newPass);
+            sessionToken = "";
+            prefs.end();
+            request->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            request->send(200, "application/json", "{\"ok\":false}");
+        }
+    });
+    server.on("/api/password/master_change", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String oldMaster = postValue(request, "old", "");
+        String newMaster = postValue(request, "new", "");
+        if (newMaster.length() < 4) {
+            request->send(200, "application/json", "{\"ok\":false,\"error\":\"code too short\"}");
+            return;
+        }
+        Preferences prefs;
+        prefs.begin("auth", true);
+        String savedMaster = prefs.getString("master", "Vivo Smart531999");
+        prefs.end();
+        if (oldMaster == savedMaster) {
+            prefs.begin("auth", false);
+            prefs.putString("master", newMaster);
             prefs.end();
             request->send(200, "application/json", "{\"ok\":true}");
         } else {

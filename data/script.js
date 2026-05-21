@@ -3,7 +3,7 @@ const appState = {
   countries: [],
   cities: [],
   playlist: [],
-  password: localStorage.getItem('vivoPassword') || 'admin'
+  sessionToken: localStorage.getItem('vivoSessionToken') || ''
 };
 
 const $ = (id) => document.getElementById(id);
@@ -137,30 +137,33 @@ function doLogin() {
     .then((data) => {
       if (data.ok) {
         document.body.classList.add('logged-in');
-        $('loginOverlay').style.display = 'none';
-        $('mainContent').style.display = 'block';
-        $('loginError').style.display = 'none';
+        const overlay = $('loginOverlay');
+        if (overlay) overlay.style.display = 'none';
+        const main = $('mainContent');
+        if (main) main.style.display = 'block';
+        const err = $('loginError');
+        if (err) err.style.display = 'none';
+        if (data.token) {
+          appState.sessionToken = data.token;
+          localStorage.setItem('vivoSessionToken', data.token);
+        }
         localStorage.setItem('vivoSessionTime', Date.now().toString());
         initDashboard();
       } else {
-        $('loginError').style.display = 'block';
+        const err = $('loginError');
+        if (err) err.style.display = 'block';
       }
     })
     .catch(() => {
-      if (password === appState.password) {
-        document.body.classList.add('logged-in');
-        $('loginOverlay').style.display = 'none';
-        $('mainContent').style.display = 'block';
-        localStorage.setItem('vivoSessionTime', Date.now().toString());
-        initDashboard();
-      } else {
-        $('loginError').style.display = 'block';
-      }
+      const err = $('loginError');
+      if (err) err.style.display = 'block';
     });
 }
 
 function doLogout() {
     localStorage.removeItem('vivoSessionTime');
+    localStorage.removeItem('vivoSessionToken');
+    appState.sessionToken = '';
     location.reload();
 }
 
@@ -174,13 +177,14 @@ function forgotPassword() {
     apiPost('/api/password/master_reset', { master: code, password: newPass })
         .then((data) => {
             if (data.ok) {
-                toast('تم استعادة وتغيير كلمة المرور بنجاح! يرجى تسجيل الدخول');
-                appState.password = newPass;
-                localStorage.setItem('vivoPassword', newPass);
+                appState.sessionToken = '';
+                localStorage.removeItem('vivoSessionToken');
+                toast('تم إعادة تعيين كلمة المرور بنجاح، يرجى تسجيل الدخول مرة أخرى');
             } else {
                 toast('كود الاستعادة غير صحيح');
             }
-        }).catch(err => toast(`فشل الاتصال: ${err.message}`));
+        })
+        .catch((err) => toast(`فشل: ${err.message}`));
 }
 
 function togglePasswordVisibility(inputId, iconId) {
@@ -1059,6 +1063,14 @@ function toggleLoopFields(prefix = 'singleAlert') {
   }
 }
 
+function toggleAlertEndTimeField(prefix) {
+  const interval = Number($(`${prefix}RepeatInterval`)?.value || 0);
+  const container = $(`${prefix}EndTimeContainer`);
+  if (container) {
+    container.style.display = interval > 0 ? 'block' : 'none';
+  }
+}
+
 function toggleAlertGpioFields(prefix) {
   const active = $(`${prefix}GpioActive`)?.checked;
   const fields = $(`${prefix}GpioFields`);
@@ -1147,6 +1159,8 @@ function saveSingleAlert() {
     eidOnly: '0',
     index: editingSingleAlertIndex,
     repeatInterval: Number($('singleAlertRepeatInterval')?.value || 0),
+    endHour: $('singleAlertEndTime')?.value ? Number($('singleAlertEndTime').value.split(':')[0]) : -1,
+    endMinute: $('singleAlertEndTime')?.value ? Number($('singleAlertEndTime').value.split(':')[1]) : -1,
     gpioActive: $('singleAlertGpioActive')?.checked ? 1 : 0,
     gpioPin: $('singleAlertGpioPin')?.value || 0,
     gpioMode: $('singleAlertGpioMode')?.value || 'continuous',
@@ -1228,6 +1242,14 @@ function editSingleAlert(index) {
   
   if ($('singleAlertRepeatInterval')) {
     $('singleAlertRepeatInterval').value = alert.repeatInterval !== undefined ? alert.repeatInterval : 0;
+    toggleAlertEndTimeField('singleAlert');
+  }
+  if ($('singleAlertEndTime') && alert.endHour !== undefined && alert.endHour >= 0) {
+    const eh = String(alert.endHour).padStart(2, '0');
+    const em = String(alert.endMinute).padStart(2, '0');
+    $('singleAlertEndTime').value = eh + ':' + em;
+  } else if ($('singleAlertEndTime')) {
+    $('singleAlertEndTime').value = '';
   }
   if ($('singleAlertGpioActive')) {
     $('singleAlertGpioActive').checked = alert.gpioActive === true || alert.gpioActive === 1;
@@ -1294,6 +1316,8 @@ function savePlaylistSched() {
     eidOnly: '0',
     index: editingPlaylistSchedIndex,
     repeatInterval: Number($('playlistSchedRepeatInterval')?.value || 0),
+    endHour: $('playlistSchedEndTime')?.value ? Number($('playlistSchedEndTime').value.split(':')[0]) : -1,
+    endMinute: $('playlistSchedEndTime')?.value ? Number($('playlistSchedEndTime').value.split(':')[1]) : -1,
     gpioActive: $('playlistSchedGpioActive')?.checked ? 1 : 0,
     gpioPin: $('playlistSchedGpioPin')?.value || 0,
     gpioMode: $('playlistSchedGpioMode')?.value || 'continuous',
@@ -1383,6 +1407,14 @@ function editPlaylistSched(index) {
   
   if ($('playlistSchedRepeatInterval')) {
     $('playlistSchedRepeatInterval').value = alert.repeatInterval !== undefined ? alert.repeatInterval : 0;
+    toggleAlertEndTimeField('playlistSched');
+  }
+  if ($('playlistSchedEndTime') && alert.endHour !== undefined && alert.endHour >= 0) {
+    const eh = String(alert.endHour).padStart(2, '0');
+    const em = String(alert.endMinute).padStart(2, '0');
+    $('playlistSchedEndTime').value = eh + ':' + em;
+  } else if ($('playlistSchedEndTime')) {
+    $('playlistSchedEndTime').value = '';
   }
   if ($('playlistSchedGpioActive')) {
     $('playlistSchedGpioActive').checked = alert.gpioActive === true || alert.gpioActive === 1;
@@ -1453,7 +1485,14 @@ function loadSchedules() {
         }
         info += ` | 🔊 ${a.volume}`;
         if (a.loop && a.loop > 0) info += ` (تكرار ${a.loop} ق)`;
-        if (a.repeatInterval && a.repeatInterval > 0) info += ` | 🔁 كل ${a.repeatInterval} دقيقة`;
+        if (a.repeatInterval && a.repeatInterval > 0) {
+          info += ` | 🔁 كل ${a.repeatInterval} دقيقة`;
+          if (a.endHour !== undefined && a.endHour >= 0) {
+            const eh = String(a.endHour).padStart(2, '0');
+            const em = String(a.endMinute).padStart(2, '0');
+            info += ` (حتى ${eh}:${em})`;
+          }
+        }
         if (a.gpioActive) {
           const modeArabic = a.gpioMode === 'flasher' ? 'متقطع فلاشر' : a.gpioMode === 'pulse' ? 'نبضة' : 'مستمر';
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
@@ -1489,7 +1528,14 @@ function loadSchedules() {
         }
         info += ` | 🔊 ${a.volume}`;
         if (a.loop && a.loop > 0) info += ` (تكرار ${a.loop} ق)`;
-        if (a.repeatInterval && a.repeatInterval > 0) info += ` | 🔁 كل ${a.repeatInterval} دقيقة`;
+        if (a.repeatInterval && a.repeatInterval > 0) {
+          info += ` | 🔁 كل ${a.repeatInterval} دقيقة`;
+          if (a.endHour !== undefined && a.endHour >= 0) {
+            const eh = String(a.endHour).padStart(2, '0');
+            const em = String(a.endMinute).padStart(2, '0');
+            info += ` (حتى ${eh}:${em})`;
+          }
+        }
         if (a.gpioActive) {
           const modeArabic = a.gpioMode === 'flasher' ? 'متقطع فلاشر' : a.gpioMode === 'pulse' ? 'نبضة' : 'مستمر';
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
@@ -2464,11 +2510,11 @@ function changePassword() {
   const confirmPassword = $('confirmPassword')?.value || '';
   if (newPassword.length < 4) return toast('كلمة المرور قصيرة');
   if (newPassword !== confirmPassword) return toast('تأكيد كلمة المرور غير مطابق');
-  apiPost('/api/password/change', { old: oldPassword, password: newPassword })
+  apiPost('/api/password/change', { old: oldPassword, password: newPassword, token: appState.sessionToken })
     .then((data) => {
       if (!data.ok) return toast('كلمة المرور القديمة غير صحيحة');
-      appState.password = newPassword;
-      localStorage.setItem('vivoPassword', newPassword);
+      appState.sessionToken = data.token || appState.sessionToken;
+      localStorage.setItem('vivoSessionToken', appState.sessionToken);
       toast('تم تغيير كلمة المرور');
     })
     .catch((err) => toast(`فشل التغيير: ${err.message}`));
@@ -2493,10 +2539,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const sessionTime = parseInt(localStorage.getItem('vivoSessionTime') || '0');
   let timeoutMinutes = parseInt(localStorage.getItem('vivoSessionTimeout') || '10');
   const sessionValid = (Date.now() - sessionTime) < (timeoutMinutes * 60000);
+  const hasToken = appState.sessionToken || localStorage.getItem('vivoPassword');
 
-  if (sessionValid && appState.password) {
-      $('loginPassword').value = appState.password;
-      doLogin();
+  if (sessionValid && hasToken) {
+      document.body.classList.add('logged-in');
+      const overlay = $('loginOverlay');
+      if (overlay) overlay.style.display = 'none';
+      const main = $('mainContent');
+      if (main) main.style.display = 'block';
+      initDashboard();
   }
 
   if ($('eidScheduleVolume')) {

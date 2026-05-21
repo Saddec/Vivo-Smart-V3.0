@@ -77,26 +77,8 @@ void DDNSManager::performUpdate() {
         http.end();
     }
     
-    // Second attempt (fallback): HTTP
     if (httpCode <= 0) {
-        Serial.println("[DDNS] HTTPS failed. Falling back to HTTP...");
-        WiFiClient client;
-        
-        HTTPClient http;
-        String url = "http://dynupdate.no-ip.com/nic/update?hostname=" + _domain;
-        http.begin(client, url);
-        
-        http.addHeader("Authorization", "Basic " + authEncoded);
-        http.addHeader("User-Agent", "VivoSmart/3.0 admin@example.com");
-        
-        httpCode = http.GET();
-        if (httpCode > 0) {
-            payload = http.getString();
-            Serial.printf("[DDNS] HTTP Fallback Response: Code %d, Payload: %s\n", httpCode, payload.c_str());
-        } else {
-            Serial.printf("[DDNS] HTTP Fallback Failed: %s\n", http.errorToString(httpCode).c_str());
-        }
-        http.end();
+        Serial.println("[DDNS] HTTPS failed, will retry later");
     }
     
     _lastUpdate = millis();

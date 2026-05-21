@@ -72,7 +72,14 @@ static bool inPrayerWindow(int pHour, int pMin, int beforeMin, int afterMin,
     if (beforeStart < 0) beforeStart += 1440;
     int curTotal = curHour * 60 + curMin;
     if (beforeMin > 0 && curTotal >= beforeStart && curTotal < prayerTotal) return true;
-    if (afterMin > 0 && curTotal >= prayerTotal && curTotal < prayerTotal + afterMin) return true;
+    if (afterMin > 0) {
+        int afterEnd = prayerTotal + afterMin;
+        if (afterEnd >= 1440) {
+            if (curTotal >= prayerTotal || curTotal < afterEnd - 1440) return true;
+        } else {
+            if (curTotal >= prayerTotal && curTotal < afterEnd) return true;
+        }
+    }
     return false;
 }
 

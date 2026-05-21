@@ -9,7 +9,7 @@
 #include "SystemTask.h"
 
 QueueHandle_t audioQueue;
-SemaphoreHandle_t wifiMutex;
+SemaphoreHandle_t fileBufferMutex;
 Preferences prefs;
 
 char fileBuffer[128] = {0};
@@ -19,7 +19,7 @@ void setup() {
     Serial.println("بدء تشغيل Vivo Smart ESP32-S3");
 
     audioQueue = xQueueCreate(10, sizeof(AudioMessage));
-    wifiMutex = xSemaphoreCreateMutex();
+    fileBufferMutex = xSemaphoreCreateMutex();
 
     xTaskCreatePinnedToCore(
         systemTask, "SystemTask", 16384, NULL, 4, NULL, 0

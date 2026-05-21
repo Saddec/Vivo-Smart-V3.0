@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
+#include <freertos/semphr.h>
 
 #include "PrayTimes.h"
 
@@ -249,6 +250,8 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
 
     static String cachedKey;
     static PrayerTimesResult cachedResult;
+    static SemaphoreHandle_t cacheMutex = NULL;
+    if (cacheMutex == NULL) cacheMutex = xSemaphoreCreateMutex();
 
     struct tm tinfo;
     localtime_r(&date, &tinfo);
@@ -256,10 +259,14 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
     snprintf(dateBuf, sizeof(dateBuf), "%02d-%02d-%04d", tinfo.tm_mday, tinfo.tm_mon + 1, tinfo.tm_year + 1900);
 
     String key = country + "|" + city + "|" + String(dateBuf) + "|" + String(config.method);
-    if (cachedKey == key && cachedResult.valid) {
-        result = cachedResult;
-        applyOffsets(result, config);
-        return true;
+    if (xSemaphoreTake(cacheMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (cachedKey == key && cachedResult.valid) {
+            result = cachedResult;
+            xSemaphoreGive(cacheMutex);
+            applyOffsets(result, config);
+            return true;
+        }
+        xSemaphoreGive(cacheMutex);
     }
 
     String url = "https://api.aladhan.com/v1/timingsByCity/" + String(dateBuf) +
@@ -307,8 +314,11 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
         Serial.println("[Prayer] Umm Al-Qura calibration applied: dhuhr=+1 asr=+1");
     }
 
-    cachedKey = key;
-    cachedResult = result;
+    if (xSemaphoreTake(cacheMutex, portMAX_DELAY) == pdTRUE) {
+        cachedKey = key;
+        cachedResult = result;
+        xSemaphoreGive(cacheMutex);
+    }
     applyOffsets(result, config);
     Serial.printf("[Prayer] Online timings loaded: %s %s %s\n", country.c_str(), city.c_str(), dateBuf);
     return true;

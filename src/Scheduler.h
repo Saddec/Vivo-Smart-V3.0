@@ -22,6 +22,8 @@ struct ScheduledAlert {
     bool eidOnly = false;
     time_t lastTriggered = 0;
     int repeatInterval = 0; // minutes
+    int endHour = -1; // -1 means no end bound (repeat until midnight)
+    int endMinute = -1;
     bool gpioActive = false;
     uint8_t gpioPin = 0;
     String gpioMode = "continuous"; // "continuous", "flasher", "pulse"

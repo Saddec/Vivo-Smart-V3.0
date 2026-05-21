@@ -11,6 +11,5 @@ void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t in
 extern AsyncWebServer server;
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
-extern SemaphoreHandle_t wifiMutex;
 
 #endif

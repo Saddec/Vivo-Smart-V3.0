@@ -14,6 +14,7 @@
 #include <time.h>
 #include <Preferences.h>
 #include <math.h>
+#include <freertos/semphr.h>
 
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
@@ -86,7 +87,7 @@ void setupWiFi() {
     setLedState(LED_WIFI_CONNECTING);
     WiFi.begin(ssid.c_str(), pass.c_str());
     int tries = 0;
-    while (WiFi.status() != WL_CONNECTED && tries < 30) { delay(500); tries++; }
+    while (WiFi.status() != WL_CONNECTED && tries < 30) { vTaskDelay(500 / portTICK_PERIOD_MS); tries++; }
     if (WiFi.status() == WL_CONNECTED) {
         setLedState(LED_WIFI_OK);
         lastWifiConnected = true;
@@ -230,10 +231,18 @@ String getCurrentDateStr() {
 }
 
 void sendPlayCommand(const char* file, int priority, int duration, uint8_t volume, uint32_t loopDuration, int repeatCount) {
-    strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
-    fileBuffer[sizeof(fileBuffer)-1] = '\0';
+    if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        strncpy(fileBuffer, file, sizeof(fileBuffer)-1);
+        fileBuffer[sizeof(fileBuffer)-1] = '\0';
+        xSemaphoreGive(fileBufferMutex);
+    } else {
+        Serial.println("[System] fileBufferMutex timeout in sendPlayCommand");
+        return;
+    }
     AudioMessage msg = {CMD_PLAY_FILE, 0, duration, priority, volume, loopDuration, repeatCount};
-    xQueueSend(audioQueue, &msg, 0);
+    if (xQueueSend(audioQueue, &msg, pdMS_TO_TICKS(100)) == pdFALSE) {
+        Serial.println("[System] audioQueue full, dropping CMD_PLAY_FILE");
+    }
 }
 
 bool loadManualPrayerTimes(PrayerTimesResult &result) {
@@ -361,14 +370,20 @@ void checkPrayerTimes() {
 
     if (!todayPrayer.valid) return;
 
-    String ct = getCurrentTimeStr();
+    time_t now_ts = time(nullptr);
+    struct tm t_now;
+    localtime_r(&now_ts, &t_now);
+    int curMin = t_now.tm_hour * 60 + t_now.tm_min;
     const String prayers[5] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
 
     static int activePrayerIndex = -1;
     const String prayerNames[5] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
 
     for (int i=0; i<5; i++) {
-        if (ct == prayers[i] && !adhanPlayed[i]) {
+        int hh = prayers[i].substring(0, 2).toInt();
+        int mm = prayers[i].substring(3, 5).toInt();
+        int prayerMin = hh * 60 + mm;
+        if (curMin >= prayerMin && curMin < prayerMin + 2 && !adhanPlayed[i]) {
             String file = getAdhanFile(i);
             currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
             sendPlayCommand(file.c_str(), 3, 0, 0);

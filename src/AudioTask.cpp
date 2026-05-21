@@ -18,6 +18,7 @@ static String normalizeAudioPath(const char* path) {
 AudioManager audioManager;
 
 void AudioManager::begin() {
+    _audioMutex = xSemaphoreCreateRecursiveMutex();
     if (!initSDCard(true)) {
         Serial.printf("[Audio] SD Card failed: %s\n", getLastSDError().c_str());
     } else {
@@ -41,7 +42,9 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
         Serial.printf("[Audio] SD not ready: %s\n", getLastSDError().c_str());
         return false;
     }
-    if (_state == AUDIO_PLAYING && priority < _currentPriority) return false;
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return false;
+    if (_adhanPlaying && priority < 2) { xSemaphoreGiveRecursive(_audioMutex); return false; }
+    if (_state == AUDIO_PLAYING && priority < _currentPriority) { xSemaphoreGiveRecursive(_audioMutex); return false; }
 
     if (_respectAdhan && !_playlist.empty() && priority == 3 && _state == AUDIO_PLAYING) {
         _playlistSuspended = true;
@@ -57,23 +60,25 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     if (!SD.exists(fullPath)) {
         Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
         _state = AUDIO_IDLE;
+        xSemaphoreGiveRecursive(_audioMutex);
         return false;
     }
     if (!_audio->connecttoSD(fullPath.c_str())) {
         Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
         _state = AUDIO_IDLE;
+        xSemaphoreGiveRecursive(_audioMutex);
         return false;
     }
     _state = AUDIO_PLAYING;
     _currentPriority = priority;
-    _currentFile = path;
+    _currentFile = fullPath;
     _playStartTime = millis();
     _customDuration = duration;
     _loopDuration = loopDuration;
     _repeatCount = repeatCount;
     if (loopDuration > 0) {
         _loopEndTime = millis() + (loopDuration * 1000);
-        _lastPlayedFile = path;
+        _lastPlayedFile = fullPath;
         _lastPriority = priority;
         _lastVolume = volume;
     } else {
@@ -85,50 +90,63 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     else if (priority == 3) _audio->setVolume(25);
     else if (priority == 2) _audio->setVolume(22);
     else _audio->setVolume(15);
+    xSemaphoreGiveRecursive(_audioMutex);
     return true;
 }
 
 bool AudioManager::playPlaylist(const String& list, uint8_t volume, bool respectAdhan, int pauseAfterAdhan) {
-    _playlist.clear();
+    std::vector<String> tempList;
     int idx = 0, last = 0;
     while (idx < list.length()) {
         if (list[idx] == ',') {
-            if (idx > last) _playlist.push_back(list.substring(last, idx));
+            if (idx > last) tempList.push_back(list.substring(last, idx));
             last = idx + 1;
         }
         idx++;
     }
-    if (idx > last) _playlist.push_back(list.substring(last));
-    if (_playlist.empty()) return false;
+    if (idx > last) tempList.push_back(list.substring(last));
+    if (tempList.empty()) return false;
 
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return false;
+    _playlist = std::move(tempList);
     _playlistIndex = 0;
     _playlistVolume = volume;
     _respectAdhan = respectAdhan;
     _pauseAfterAdhan = pauseAfterAdhan;
     _playlistSuspended = false;
+    xSemaphoreGiveRecursive(_audioMutex);
 
     return playFile(_playlist[0].c_str(), 0, 0, volume);
 }
 
 void AudioManager::advancePlaylist() {
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_playlistIndex + 1 < _playlist.size()) {
         _playlistIndex++;
-        playFile(_playlist[_playlistIndex].c_str(), 0, 0, _playlistVolume);
+        String nextFile = _playlist[_playlistIndex];
+        xSemaphoreGiveRecursive(_audioMutex);
+        playFile(nextFile.c_str(), 0, 0, _playlistVolume);
     } else {
         _playlist.clear();
         _state = AUDIO_IDLE;
+        xSemaphoreGiveRecursive(_audioMutex);
     }
 }
 
 void AudioManager::checkPlaylistResume() {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return;
     if (_playlistSuspended && _respectAdhan && _playlist.size() > 0) {
         if (millis() - _suspendTime >= (unsigned long)(_pauseAfterAdhan * 1000)) {
             _playlistSuspended = false;
             if (_playlistIndex < _playlist.size()) {
-                playFile(_playlist[_playlistIndex].c_str(), 0, 0, _playlistVolume);
+                String resumeFile = _playlist[_playlistIndex];
+                xSemaphoreGiveRecursive(_audioMutex);
+                playFile(resumeFile.c_str(), 0, 0, _playlistVolume);
+                return;
             }
         }
     }
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 void AudioManager::setVolume(uint8_t vol) {
@@ -136,7 +154,9 @@ void AudioManager::setVolume(uint8_t vol) {
         Serial.println("[Audio] Adhan/Iqama playing, volume change blocked");
         return;
     }
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio) _audio->setVolume(vol);
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 void AudioManager::stop() {
@@ -144,6 +164,7 @@ void AudioManager::stop() {
         Serial.println("[Audio] Adhan/Iqama playing, stop blocked");
         return;
     }
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio) {
         _audio->stopSong();
         _state = AUDIO_IDLE;
@@ -153,50 +174,66 @@ void AudioManager::stop() {
         _lastPlayedFile = "";
         _adhanPlaying = false;
     }
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 void AudioManager::pause() {
     if (_adhanPlaying) return;
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && _state == AUDIO_PLAYING) {
         _audio->pauseResume();
         _state = AUDIO_PAUSED;
     }
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 void AudioManager::resume() {
     if (_adhanPlaying) return;
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && _state == AUDIO_PAUSED) {
         _audio->pauseResume();
         _state = AUDIO_PLAYING;
     }
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 void AudioManager::seekTo(uint16_t seconds) {
     if (_adhanPlaying) return;
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
         _audio->setAudioPlayPosition(seconds);
     }
+    xSemaphoreGiveRecursive(_audioMutex);
 }
 
 uint32_t AudioManager::getAudioFileDuration() {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return 0;
+    uint32_t ret = 0;
     if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
-        return _audio->getAudioFileDuration();
+        ret = _audio->getAudioFileDuration();
     }
-    return 0;
+    xSemaphoreGiveRecursive(_audioMutex);
+    return ret;
 }
 
 uint32_t AudioManager::getAudioCurrentTime() {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return 0;
+    uint32_t ret = 0;
     if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
-        return _audio->getAudioCurrentTime();
+        ret = _audio->getAudioCurrentTime();
     }
-    return 0;
+    xSemaphoreGiveRecursive(_audioMutex);
+    return ret;
 }
 
 uint8_t AudioManager::getVolume() {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return 0;
+    uint8_t ret = 0;
     if (_audio) {
-        return _audio->getVolume();
+        ret = _audio->getVolume();
     }
-    return 0;
+    xSemaphoreGiveRecursive(_audioMutex);
+    return ret;
 }
 
 void AudioManager::setRepeatMode(bool enable) {
@@ -208,6 +245,7 @@ bool AudioManager::getRepeatMode() const {
 }
 
 AudioState AudioManager::getState() {
+    if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return _state;
     if (_state == AUDIO_PLAYING && !_audio->isRunning()) {
         audioOnStop(this);
     }
@@ -215,7 +253,9 @@ AudioState AudioManager::getState() {
         (millis() - _playStartTime >= _customDuration * 1000)) {
         stop();
     }
-    return _state;
+    AudioState s = _state;
+    xSemaphoreGiveRecursive(_audioMutex);
+    return s;
 }
 
 const char* AudioManager::getCurrentFile() {
@@ -237,7 +277,9 @@ bool AudioManager::isI2SReady() const {
 void AudioManager::audioOnStop(void *userData) {
     AudioManager* self = static_cast<AudioManager*>(userData);
     if (!self) return;
+    if (xSemaphoreTakeRecursive(self->_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (!self->_playlist.empty() && !self->_playlistSuspended) {
+        xSemaphoreGiveRecursive(self->_audioMutex);
         self->advancePlaylist();
         return;
     }
@@ -246,6 +288,7 @@ void AudioManager::audioOnStop(void *userData) {
         if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
             self->_state = AUDIO_PLAYING;
             self->_playStartTime = millis();
+            xSemaphoreGiveRecursive(self->_audioMutex);
             return;
         }
     }
@@ -255,6 +298,7 @@ void AudioManager::audioOnStop(void *userData) {
         if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
             self->_state = AUDIO_PLAYING;
             self->_playStartTime = millis();
+            xSemaphoreGiveRecursive(self->_audioMutex);
             return;
         }
     }
@@ -265,6 +309,7 @@ void AudioManager::audioOnStop(void *userData) {
         } else {
             self->_state = AUDIO_IDLE;
         }
+        xSemaphoreGiveRecursive(self->_audioMutex);
         return;
     }
     self->_state = AUDIO_IDLE;
@@ -275,6 +320,7 @@ void AudioManager::audioOnStop(void *userData) {
     self->_repeatCount = 0;
     self->_lastPlayedFile = "";
     self->_adhanPlaying = false;
+    xSemaphoreGiveRecursive(self->_audioMutex);
 }
 
 void AudioManager::loop() {
@@ -292,7 +338,15 @@ void audioTask(void *pvParameters) {
                 case CMD_PLAY_FILE: {
                     const char* path;
                     if (msg.param1 == 0) {
-                        path = fileBuffer;
+                        static char localPath[128];
+                        if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                            strlcpy(localPath, fileBuffer, sizeof(localPath));
+                            xSemaphoreGive(fileBufferMutex);
+                        } else {
+                            Serial.println("[Audio] fileBufferMutex timeout in CMD_PLAY_FILE");
+                            break;
+                        }
+                        path = localPath;
                     } else {
                         static char buf[64];
                         snprintf(buf, sizeof(buf), "/audio/%04d.mp3", msg.param1);
@@ -304,7 +358,15 @@ void audioTask(void *pvParameters) {
                 case CMD_PLAY_PLAYLIST: {
                     bool respectAdhan = (msg.loopDuration & 0x1) ? true : false;
                     int pauseAfterAdhan = (msg.loopDuration >> 1) & 0xFFFF;
-                    audioManager.playPlaylist(String(fileBuffer), msg.volume, respectAdhan, pauseAfterAdhan);
+                    char listBuf[256];
+                    if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                        strlcpy(listBuf, fileBuffer, sizeof(listBuf));
+                        xSemaphoreGive(fileBufferMutex);
+                    } else {
+                        Serial.println("[Audio] fileBufferMutex timeout in CMD_PLAY_PLAYLIST");
+                        break;
+                    }
+                    audioManager.playPlaylist(String(listBuf), msg.volume, respectAdhan, pauseAfterAdhan);
                     break;
                 }
                 case CMD_STOP:

@@ -30,6 +30,8 @@ String Scheduler::getAlertsJson() {
         obj["offsetSeconds"]=a.offsetSeconds; obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
         obj["eidOnly"]=a.eidOnly;
         obj["repeatInterval"]=a.repeatInterval;
+        obj["endHour"]=a.endHour;
+        obj["endMinute"]=a.endMinute;
         obj["gpioActive"]=a.gpioActive;
         obj["gpioPin"]=a.gpioPin;
         obj["gpioMode"]=a.gpioMode;
@@ -42,7 +44,7 @@ String Scheduler::getAlertsJson() {
 void Scheduler::removeAlert(int index) { if(index>=0&&index<(int)alerts.size()){alerts.erase(alerts.begin()+index); saveToNVS(); } }
 
 void Scheduler::checkAndTrigger() {
-    time_t now = time(nullptr); if(now==lastCheck) return; lastCheck=now;
+    time_t now = time(nullptr); if(now - lastCheck < 1) return; lastCheck=now;
     struct tm timeinfo; localtime_r(&now,&timeinfo);
     int curHour=timeinfo.tm_hour, curMin=timeinfo.tm_min, curWday=timeinfo.tm_wday,
         curMday=timeinfo.tm_mday, curMon=timeinfo.tm_mon+1, curYear=timeinfo.tm_year+1900;
@@ -71,7 +73,8 @@ void Scheduler::checkAndTrigger() {
             int targetTimeMin = alert.hour * 60 + alert.minute;
             int diffMin = curTimeMin - targetTimeMin;
             if (alert.repeatInterval > 0) {
-                match = (diffMin >= 0 && (diffMin % alert.repeatInterval) == 0);
+                int endTimeMin = alert.endHour >= 0 ? (alert.endHour * 60 + alert.endMinute) : (24 * 60);
+                match = (diffMin >= 0 && curTimeMin < endTimeMin && (diffMin % alert.repeatInterval) == 0);
             } else {
                 match = (curHour==alert.hour && curMin==alert.minute);
             }
@@ -83,7 +86,8 @@ void Scheduler::checkAndTrigger() {
             int diffMin = curTimeMin - targetTimeMin;
             bool timeMatch = false;
             if (alert.repeatInterval > 0) {
-                timeMatch = (diffMin >= 0 && (diffMin % alert.repeatInterval) == 0);
+                int endTimeMin = alert.endHour >= 0 ? (alert.endHour * 60 + alert.endMinute) : (24 * 60);
+                timeMatch = (diffMin >= 0 && curTimeMin < endTimeMin && (diffMin % alert.repeatInterval) == 0);
             } else {
                 timeMatch = (curHour==alert.hour && curMin==alert.minute);
             }
@@ -104,7 +108,8 @@ void Scheduler::checkAndTrigger() {
             int diffMin = curTimeMin - targetTimeMin;
             bool timeMatch = false;
             if (alert.repeatInterval > 0) {
-                timeMatch = (diffMin >= 0 && (diffMin % alert.repeatInterval) == 0);
+                int endTimeMin = alert.endHour >= 0 ? (alert.endHour * 60 + alert.endMinute) : (24 * 60);
+                timeMatch = (diffMin >= 0 && curTimeMin < endTimeMin && (diffMin % alert.repeatInterval) == 0);
             } else {
                 timeMatch = (curHour==alert.hour && curMin==alert.minute);
             }
@@ -118,7 +123,8 @@ void Scheduler::checkAndTrigger() {
             int diffMin = curTimeMin - targetTimeMin;
             bool timeMatch = false;
             if (alert.repeatInterval > 0) {
-                timeMatch = (diffMin >= 0 && (diffMin % alert.repeatInterval) == 0);
+                int endTimeMin = alert.endHour >= 0 ? (alert.endHour * 60 + alert.endMinute) : (24 * 60);
+                timeMatch = (diffMin >= 0 && curTimeMin < endTimeMin && (diffMin % alert.repeatInterval) == 0);
             } else {
                 timeMatch = (curHour==alert.hour && curMin==alert.minute);
             }
@@ -147,7 +153,8 @@ void Scheduler::checkAndTrigger() {
             int diffMin = curTimeMin - targetTimeMin;
             bool timeMatch = false;
             if (alert.repeatInterval > 0) {
-                timeMatch = (diffMin >= 0 && (diffMin % alert.repeatInterval) == 0);
+                int endTimeMin = alert.endHour >= 0 ? (alert.endHour * 60 + alert.endMinute) : (24 * 60);
+                timeMatch = (diffMin >= 0 && curTimeMin < endTimeMin && (diffMin % alert.repeatInterval) == 0);
             } else {
                 timeMatch = (curHour==aH && curMin==aM);
             }
@@ -209,6 +216,8 @@ void Scheduler::loadFromNVS() {
             a.validFrom=obj["validFrom"]|""; a.validTo=obj["validTo"]|"";
             a.eidOnly=obj["eidOnly"]|false;
             a.repeatInterval=obj["repeatInterval"]|0;
+            a.endHour=obj["endHour"]|-1;
+            a.endMinute=obj["endMinute"]|-1;
             a.gpioActive=obj["gpioActive"]|false;
             a.gpioPin=obj["gpioPin"]|0;
             a.gpioMode=obj["gpioMode"]|"continuous";
@@ -231,6 +240,8 @@ void Scheduler::saveToNVS() {
         obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
         obj["eidOnly"]=a.eidOnly;
         obj["repeatInterval"]=a.repeatInterval;
+        obj["endHour"]=a.endHour;
+        obj["endMinute"]=a.endMinute;
         obj["gpioActive"]=a.gpioActive;
         obj["gpioPin"]=a.gpioPin;
         obj["gpioMode"]=a.gpioMode;

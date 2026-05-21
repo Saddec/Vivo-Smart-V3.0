@@ -346,7 +346,11 @@
           <label>الوقت</label><input type="time" id="singleAlertTime">
         </div>
         <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
-        <input type="number" id="singleAlertRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;">
+        <input type="number" id="singleAlertRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('singleAlert')">
+        <div id="singleAlertEndTimeContainer" style="display:none;">
+          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+          <input type="time" id="singleAlertEndTime" style="width:100%; margin-bottom:10px;">
+        </div>
         <label>مستوى الصوت (0-30)</label>
         <input type="range" id="singleAlertVolume" min="0" max="30" value="20" oninput="$('singleAlertVolumeValue').textContent=this.value">
         <span id="singleAlertVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
@@ -610,7 +614,11 @@
           <label>الوقت</label><input type="time" id="playlistSchedTime">
         </div>
         <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
-        <input type="number" id="playlistSchedRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;">
+        <input type="number" id="playlistSchedRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('playlistSched')">
+        <div id="playlistSchedEndTimeContainer" style="display:none;">
+          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+          <input type="time" id="playlistSchedEndTime" style="width:100%; margin-bottom:10px;">
+        </div>
         
         <label>مستوى الصوت (0-30)</label>
         <input type="range" id="playlistSchedVolume" min="0" max="30" value="20" oninput="$('playlistSchedVolumeValue').textContent=this.value">

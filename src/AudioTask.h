@@ -5,6 +5,7 @@
 #include <Audio.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <vector>
 
 enum AudioCommand {
@@ -59,6 +60,7 @@ public:
     static void audioOnStop(void *userData);
 private:
     Audio* _audio;
+    SemaphoreHandle_t _audioMutex;
     AudioState _state;
     int _currentPriority;
     String _currentFile;
@@ -86,6 +88,7 @@ void audioTask(void *pvParameters);
 
 extern AudioManager audioManager;
 extern QueueHandle_t audioQueue;
+extern SemaphoreHandle_t fileBufferMutex;
 extern char fileBuffer[];
 
 #endif
