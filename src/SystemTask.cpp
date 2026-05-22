@@ -10,6 +10,7 @@
 #include "CSVManager.h"
 #include "SDManager.h"
 #include "DDNSManager.h"
+#include "EventLogger.h"
 #include <WiFi.h>
 #include <time.h>
 #include <Preferences.h>
@@ -79,12 +80,16 @@ void setupWiFi() {
         subnet.fromString(prefs.getString("mask", "255.255.255.0"));
         dns.fromString(prefs.getString("dns", "8.8.8.8"));
         WiFi.config(staticIP, gateway, subnet, dns);
+        LOG_WF("WIFI", "Configured static IP: %s", staticIP.toString().c_str());
+    } else {
+        LOG_WF("WIFI", "Configured DHCP IP");
     }
     String ssid = prefs.getString("ssid", defaultSSID);
     String pass = prefs.getString("pass", defaultPass);
     prefs.end();
 
     setLedState(LED_WIFI_CONNECTING);
+    LOG_WF("WIFI", "Connecting to SSID: %s", ssid.c_str());
     WiFi.begin(ssid.c_str(), pass.c_str());
     int tries = 0;
     while (WiFi.status() != WL_CONNECTED && tries < 30) { vTaskDelay(500 / portTICK_PERIOD_MS); tries++; }
@@ -92,8 +97,10 @@ void setupWiFi() {
         setLedState(LED_WIFI_OK);
         lastWifiConnected = true;
         wifiConnectedAt = millis();
+        LOG_WF("WIFI", "Connected to WiFi successfully. IP: %s", WiFi.localIP().toString().c_str());
     } else {
         setLedState(LED_ERROR);
+        LOG_W("WIFI", "Failed to connect to SSID: %s, starting Setup AP", ssid.c_str());
         startSetupAp();
         wifiDisconnectedAt = millis();
     }
@@ -108,10 +115,12 @@ void maintainWiFi() {
             lastWifiConnected = true;
             wifiConnectedAt = nowMs;
             setLedState(LED_WIFI_OK);
+            LOG_WF("WIFI", "WiFi reconnected. IP: %s", WiFi.localIP().toString().c_str());
             syncTimeFromNTP();
         }
 
         if (setupApActive && nowMs - wifiConnectedAt >= apDisableStableMs) {
+            LOG_WF("WIFI", "WiFi connection stable, stopping Setup AP");
             stopSetupAp();
         }
         return;
@@ -122,27 +131,41 @@ void maintainWiFi() {
         wifiDisconnectedAt = nowMs;
         lastReconnectAttempt = 0;
         setLedState(LED_WIFI_CONNECTING);
+        LOG_W("WIFI", "WiFi disconnected");
     }
 
     if (!setupApActive && nowMs - wifiDisconnectedAt >= apEnableDelayMs) {
         setLedState(LED_ERROR);
+        LOG_W("WIFI", "WiFi disconnected for too long, starting Setup AP");
         startSetupAp();
     }
 
     if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
         lastReconnectAttempt = nowMs;
         if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
+        LOG_WF("WIFI", "Attempting WiFi reconnection...");
         WiFi.reconnect();
     }
 }
 
 void applyConfiguredTimezone() {
-    int tzOffset = currentPrayerConfig.timezone;
-    char tzBuf[32];
-    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
+    Preferences prefs;
+    prefs.begin("prayer_cfg", true);
+    String country = prefs.getString("country", "Egypt");
+    bool egyptDst = prefs.getBool("egyptDst", true);
+    prefs.end();
+
+    char tzBuf[64];
+    if ((country == "Egypt" || country == "مصر") && egyptDst) {
+        strncpy(tzBuf, "EET-2EEST,M4.5.5/0,M10.5.4/24", sizeof(tzBuf));
+    } else {
+        int tzOffset = currentPrayerConfig.timezone;
+        snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
+    }
     setenv("TZ", tzBuf, 1);
     tzset();
-    Serial.printf("[Time] Timezone applied: offset=%d, TZ=%s\n", tzOffset, tzBuf);
+    Serial.printf("[Time] Timezone applied: country=%s, egyptDst=%d, TZ=%s\n", country.c_str(), egyptDst, tzBuf);
+    LOG_SYS("SYSTEM", "Timezone applied: country=%s, egyptDst=%d, TZ=%s", country.c_str(), egyptDst, tzBuf);
 }
 
 static bool isSystemTimeValid() {
@@ -155,12 +178,14 @@ static bool isSystemTimeValid() {
 static bool setSystemEpoch(time_t epoch, const char *source) {
     if (epoch < 1704067200) {
         Serial.printf("[Time] Ignored invalid %s epoch: %ld\n", source, (long)epoch);
+        LOG_E("SYSTEM", "Ignored invalid time sync epoch from %s: %ld", source, (long)epoch);
         return false;
     }
     struct timeval tv = {epoch, 0};
     settimeofday(&tv, NULL);
     forcePrayerRecalc();
     Serial.printf("[Time] System time set from %s: epoch=%ld\n", source, (long)epoch);
+    LOG_SYS("SYSTEM", "System time updated from %s: epoch=%ld", source, (long)epoch);
     return true;
 }
 
@@ -169,9 +194,11 @@ bool syncTimeFromBrowser(time_t browserEpoch) {
     time_t current = time(nullptr);
     double delta = fabs(difftime(current, browserEpoch));
     if (!isSystemTimeValid() || delta > 120.0) {
+        LOG_SYS("SYSTEM", "Synchronizing system time from browser");
         return setSystemEpoch(browserEpoch, "browser");
     }
     Serial.printf("[Time] Browser sync skipped: delta=%.0f seconds\n", delta);
+    LOG_SYS("SYSTEM", "Browser time sync skipped: current delta is %.0f seconds", delta);
     return false;
 }
 
@@ -198,22 +225,38 @@ void syncTimeFromNTP() {
         time_t epoch = mktime(&t);
         setSystemEpoch(epoch, "manual");
         Serial.printf("[Time] Manual time applied: %04d-%02d-%02d %02d:%02d\n", year, month, day, hour, minute);
+        LOG_SYS("SYSTEM", "Manual time configuration applied: %04d-%02d-%02d %02d:%02d", year, month, day, hour, minute);
         return;
     }
     prefs.end();
     
-    int tzOffset = currentPrayerConfig.timezone;
-    char tzBuf[32];
-    snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
+    Preferences prefsCfg;
+    prefsCfg.begin("prayer_cfg", true);
+    String country = prefsCfg.getString("country", "Egypt");
+    bool egyptDst = prefsCfg.getBool("egyptDst", true);
+    prefsCfg.end();
+
+    char tzBuf[64];
+    if ((country == "Egypt" || country == "مصر") && egyptDst) {
+        strncpy(tzBuf, "EET-2EEST,M4.5.5/0,M10.5.4/24", sizeof(tzBuf));
+    } else {
+        int tzOffset = currentPrayerConfig.timezone;
+        snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
+    }
     configTzTime(tzBuf, "pool.ntp.org", "time.nist.gov");
     Serial.println("[Time] NTP sync requested");
+    LOG_SYS("SYSTEM", "NTP time synchronization requested");
     struct tm tinfo;
     if (getLocalTime(&tinfo, 6000)) {
         Serial.printf("[Time] NTP time valid: %04d-%02d-%02d %02d:%02d\n",
                       tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
                       tinfo.tm_hour, tinfo.tm_min);
+        LOG_SYS("SYSTEM", "NTP sync successful: %04d-%02d-%02d %02d:%02d",
+                tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
+                tinfo.tm_hour, tinfo.tm_min);
     } else {
         Serial.println("[Time] NTP sync failed or timed out");
+        LOG_E("SYSTEM", "NTP time synchronization failed or timed out");
     }
     forcePrayerRecalc();
 }
@@ -320,8 +363,10 @@ void checkPrayerTimes() {
             if (CSVManager::getCalendarData(csv)) {
                 applyDailyData(csv);
                 Serial.println("[Prayer] Using SD calendar only");
+                LOG_PR("PRAYER", "Using SD calendar timing data");
             } else {
                 Serial.println("[Prayer] SD calendar only enabled but today's row is missing");
+                LOG_E("PRAYER", "SD calendar only enabled but today's row is missing");
                 todayPrayer.valid = false;
             }
             lastCalendarLoad = now;
@@ -332,6 +377,7 @@ void checkPrayerTimes() {
         if (now - lastCSVLoad > 60) {
             DailyData csv = CSVManager::getTodayData();
             applyDailyData(csv);
+            LOG_PR("PRAYER", "Loaded daily prayer times from SD CSV database");
             lastCSVLoad = now;
         }
     }
@@ -350,16 +396,19 @@ void checkPrayerTimes() {
                 todayPrayer = online;
                 todayHijri = "";
                 Serial.println("[Prayer] System task using online timings");
+                LOG_PR("PRAYER", "Using online timings fetched from API for %s, %s", city.c_str(), country.c_str());
             } else {
                 DailyData csv;
                 if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
                     applyDailyData(csv);
                     Serial.println("[Prayer] System task using SD calendar fallback");
+                    LOG_PR("PRAYER", "Online timing failed. Using SD calendar fallback data");
                 } else {
                     todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
                     PrayerTimesEngine::applyDailyOffsets(todayPrayer, now);
                     todayHijri = "";
                     Serial.println("[Prayer] System task using local calculated timings");
+                    LOG_PR("PRAYER", "Online and SD timing failed. Using locally calculated timings");
                 }
             }
             lastPrayerCalc = now;
@@ -394,6 +443,7 @@ void checkPrayerTimes() {
                 if (diff > 0 && diff <= 15) {
                     if (audioManager.getState() != AUDIO_IDLE) {
                         Serial.printf("[System] Stopping audio playback 15s before Adhan %d\n", i);
+                        LOG_SYS("SYSTEM", "Stopping audio playback 15s before Adhan %s", prayerNames[i].c_str());
                         AudioMessage msgCmd = {CMD_STOP, 0, 0, 0, 0, 0, 0};
                         xQueueSend(audioQueue, &msgCmd, 0);
                     }
@@ -409,6 +459,7 @@ void checkPrayerTimes() {
         if (curMin >= prayerMin && curMin < prayerMin + 2 && !adhanPlayed[i]) {
             String file = getAdhanFile(i);
             currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
+            LOG_PR("PRAYER", "Triggering Adhan play command for: %s, file: %s", prayerNames[i].c_str(), file.c_str());
             sendPlayCommand(file.c_str(), 3, 0, 0);
             adhanPlayed[i] = true;
             adhanStartTime = millis();
@@ -423,6 +474,7 @@ void checkPrayerTimes() {
                 if (millis() - adhanStartTime >= delayMs) {
                     String iqamaFile = getIqamaFile();
                     currentAudioDescription = "تقام الآن صلاة " + prayerNames[i];
+                    LOG_PR("PRAYER", "Triggering Iqama play command for: %s, file: %s", prayerNames[i].c_str(), iqamaFile.c_str());
                     sendPlayCommand(iqamaFile.c_str(), 2, 0, 0);
                     iqamaPlayed[i] = true;
                     setLedState(LED_IQAMA);
@@ -452,11 +504,14 @@ void playStartupAlert() {
     prefs.end();
     if (enabled && file.length() > 0) {
         currentAudioDescription = "تنبيه بدء التشغيل";
-        sendPlayCommand(file.c_str(), 1, 0, 20, 0);
+        sendPlayCommand(file.c_str(), 1, 0, 30, 0);
     }
 }
 
 void systemTask(void *pvParameters) {
+    EventLogger::getInstance().begin();
+    LOG_SYS("SYSTEM", "System task starting...");
+
     Preferences prefs;
     prefs.begin("prayer_cfg", true);
     currentPrayerConfig.latitude = prefs.getFloat("lat", 30.0444);
@@ -488,7 +543,10 @@ void systemTask(void *pvParameters) {
     for (;;) {
         updateLEDTask();
         maintainWiFi();
-        if (shouldRetrySDCard()) initSDCard(false);
+        if (shouldRetrySDCard()) {
+            LOG_SYS("SYSTEM", "Retrying SD card initialization...");
+            initSDCard(false);
+        }
         checkPrayerTimes();
         checkGpioSchedules();
         checkOutputTimers();

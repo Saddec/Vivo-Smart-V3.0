@@ -167,6 +167,10 @@ void EventLogger::flush() {
         return;
     }
 
+    if (!SD.exists("/logs")) {
+        SD.mkdir("/logs");
+    }
+
     String path = getLogFilePath();
     File file = SD.open(path, FILE_APPEND);
     if (!file) {

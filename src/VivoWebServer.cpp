@@ -9,6 +9,7 @@
 #include "CSVManager.h"
 #include "SDManager.h"
 #include "DDNSManager.h"
+#include "EventLogger.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -349,7 +350,7 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
         return false;
     }
 
-    String path = "/prayer_csv/" + String(year) + "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    String path = CSVManager::getCalendarPath(year, month, country, city);
     ensureDirExists(path);
     if (SD.exists(path)) SD.remove(path);
     File f = SD.open(path, FILE_WRITE);
@@ -380,7 +381,7 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
 }
 
 static String calendarMonthPath(int year, int month) {
-    return "/prayer_csv/" + String(year) + "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    return CSVManager::getCalendarPath(year, month);
 }
 
 static void calendarDownloadTask(void *pvParameters) {
@@ -825,10 +826,21 @@ void startWebServer() {
                 changed = true;
             }
         }
+        if (request->hasParam("egyptDst")) {
+            bool reqEgyptDst = request->getParam("egyptDst")->value() == "1" || request->getParam("egyptDst")->value() == "true";
+            Preferences p;
+            p.begin("prayer_cfg", true);
+            bool savedEgyptDst = p.getBool("egyptDst", true);
+            p.end();
+            if (reqEgyptDst != savedEgyptDst) {
+                p.begin("prayer_cfg", false);
+                p.putBool("egyptDst", reqEgyptDst);
+                p.end();
+                changed = true;
+            }
+        }
         
         if (changed) {
-            applyConfiguredTimezone();
-
             prefs.begin("prayer_cfg", false);
             prefs.putFloat("lat", currentPrayerConfig.latitude);
             prefs.putFloat("lng", currentPrayerConfig.longitude);
@@ -838,10 +850,13 @@ void startWebServer() {
             if (reqCity.length() > 0) prefs.putString("city", reqCity);
             prefs.end();
 
+            applyConfiguredTimezone();
+
             prefs.begin("prayer_manual", true);
             if (prefs.getBool("enabled", false)) syncTimeFromNTP();
             prefs.end();
 
+            CSVManager::invalidateCalendarCache();
             forcePrayerRecalc();
             Serial.printf("[Prayer] Location/config updated: country=%s city=%s lat=%.4f lng=%.4f tz=%d method=%d\n",
                           reqCountry.c_str(), reqCity.c_str(), currentPrayerConfig.latitude,
@@ -912,6 +927,7 @@ void startWebServer() {
         doc["method"] = method;
         doc["defaultMethod"] = PrayerTimesEngine::getDefaultMethod(savedCountry);
         doc["hijriOffset"] = currentPrayerConfig.hijriOffset;
+        doc["egyptDst"] = prefs.getBool("egyptDst", true);
         prefs.end();
         sendJson(request, doc);
     });
@@ -1392,7 +1408,7 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_year\"}");
             return;
         }
-        String path = "/prayer_csv/" + String(year);
+        String path = CSVManager::getCalendarPath(year, 0);
         bool ok = !SD.exists(path) || deleteRecursively(path);
         forcePrayerRecalc();
         DynamicJsonDocument doc(128);
@@ -1695,6 +1711,86 @@ void startWebServer() {
             ESP.restart();
         }
     }, handleOtaUpload);
+
+    // --- Event Logger APIs ---
+    server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
+        int limit = 200;
+        if (request->hasParam("limit")) {
+            limit = request->getParam("limit")->value().toInt();
+        }
+        String levelFilter = "";
+        if (request->hasParam("level")) {
+            levelFilter = request->getParam("level")->value();
+        }
+
+        std::vector<String> logs = EventLogger::getInstance().getRecentLogs(limit, levelFilter);
+        
+        String json = "[";
+        for (size_t i = 0; i < logs.size(); i++) {
+            String line = logs[i];
+            int p1 = line.indexOf('|');
+            if (p1 == -1) continue;
+            int p2 = line.indexOf('|', p1 + 1);
+            if (p2 == -1) continue;
+            int p3 = line.indexOf('|', p2 + 1);
+            if (p3 == -1) continue;
+            int p4 = line.indexOf('|', p3 + 1);
+            if (p4 == -1) continue;
+            int p5 = line.indexOf('|', p4 + 1);
+            if (p5 == -1) continue;
+
+            String ts = line.substring(0, p1);
+            String lvl = line.substring(p1 + 1, p2);
+            String cat = line.substring(p2 + 1, p3);
+            String msg = line.substring(p3 + 1, p4);
+            String heap = line.substring(p4 + 1, p5);
+            String uptime = line.substring(p5 + 1);
+
+            msg.replace("\\", "\\\\");
+            msg.replace("\"", "\\\"");
+
+            if (json.length() > 1) json += ",";
+            json += "{\"timestamp\":\"" + ts + "\",\"level\":\"" + lvl + "\",\"category\":\"" + cat + "\",\"message\":\"" + msg + "\",\"freeHeap\":" + heap + ",\"uptime\":" + uptime + "}";
+        }
+        json += "]";
+
+        request->send(200, "application/json", json);
+    });
+
+    server.on("/api/logs", HTTP_DELETE, [](AsyncWebServerRequest *request) {
+        String password = postValue(request, "password", "");
+        bool ok = EventLogger::getInstance().clearLogs(password);
+        if (ok) {
+            request->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"unauthorized_or_failed\"}");
+        }
+    });
+
+    server.on("/api/logs/download", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (!sdReady()) {
+            request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        String path;
+        if (request->hasParam("date")) {
+            String date = request->getParam("date")->value(); // YYYY-MM-DD
+            path = "/logs/events_" + date + ".log";
+        } else {
+            time_t now = time(nullptr);
+            struct tm t;
+            localtime_r(&now, &t);
+            char buf[64];
+            snprintf(buf, sizeof(buf), "/logs/events_%04d-%02d-%02d.log", t.tm_year + 1900, t.tm_mon + 1, t.tm_mday);
+            path = String(buf);
+        }
+
+        if (!SD.exists(path)) {
+            request->send(404, "application/json", "{\"ok\":false,\"error\":\"file_not_found\"}");
+            return;
+        }
+        request->send(SD, path, "application/octet-stream");
+    });
 
     server.onNotFound([](AsyncWebServerRequest *request) {
         if (request->method() == HTTP_OPTIONS) {

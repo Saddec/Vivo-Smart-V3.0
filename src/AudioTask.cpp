@@ -2,6 +2,7 @@
 #include "SDManager.h"
 #include <SD.h>
 #include "Audio.h"
+#include "EventLogger.h"
 
 #define I2S_BCLK 16
 #define I2S_LRCK 17
@@ -92,6 +93,7 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     String fullPath = normalizeAudioPath(path);
     if (!SD.exists(fullPath)) {
         Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
+        LOG_E("AUDIO", "Missing audio file: %s", fullPath.c_str());
         _state = AUDIO_IDLE;
         _adhanPlaying = false;
         _cachedIsRunning = false;
@@ -102,6 +104,7 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     }
     if (!_audio->connecttoSD(fullPath.c_str())) {
         Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
+        LOG_E("AUDIO", "Cannot play audio file: %s", fullPath.c_str());
         _state = AUDIO_IDLE;
         _adhanPlaying = false;
         _cachedIsRunning = false;
@@ -139,6 +142,8 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     _cachedDuration = 0;
     _cachedCurrentTime = 0;
 
+    LOG_AUD("AUDIO", "Started playing file: %s (Priority: %d, Vol: %d)", fullPath.c_str(), priority, targetVol);
+
     xSemaphoreGiveRecursive(_audioMutex);
     return true;
 }
@@ -164,6 +169,7 @@ bool AudioManager::playPlaylist(const String& list, uint8_t volume, bool respect
     _pauseAfterAdhan = pauseAfterAdhan;
     _playlistSuspended = false;
     _playlistPriority = priority;
+    LOG_AUD("AUDIO", "Started playlist playback with %d files", (int)_playlist.size());
     xSemaphoreGiveRecursive(_audioMutex);
 
     return playFile(_playlist[0].c_str(), priority, 0, volume);
@@ -185,6 +191,7 @@ void AudioManager::advancePlaylist() {
             _waitingForResumption = true;
         }
         _currentPriority = 0;
+        LOG_AUD("AUDIO", "Playlist playback completed");
         xSemaphoreGiveRecursive(_audioMutex);
     }
 }
@@ -197,6 +204,7 @@ void AudioManager::checkPlaylistResume() {
             if (_playlistIndex < (int)_playlist.size()) {
                 String resumeFile = _playlist[_playlistIndex];
                 int priority = _playlistPriority;
+                LOG_AUD("AUDIO", "Resuming suspended playlist");
                 xSemaphoreGiveRecursive(_audioMutex);
                 playFile(resumeFile.c_str(), priority, 0, _playlistVolume);
                 return;
@@ -215,6 +223,7 @@ void AudioManager::setVolume(uint8_t vol) {
     if (_audio) {
         _audio->setVolume((vol * 21) / 30);
         _cachedVolume = vol;
+        LOG_AUD("AUDIO", "Volume set to %d", vol);
     }
     xSemaphoreGiveRecursive(_audioMutex);
 }
@@ -253,6 +262,7 @@ void AudioManager::stop() {
         _suspendedPauseAfterAdhan = 0;
         _isPlaylistSuspendedState = false;
         _waitingForResumption = false;
+        LOG_AUD("AUDIO", "Playback stopped");
     }
     xSemaphoreGiveRecursive(_audioMutex);
 }
@@ -264,6 +274,7 @@ void AudioManager::pause() {
         _audio->pauseResume();
         _state = AUDIO_PAUSED;
         _cachedIsRunning = false;
+        LOG_AUD("AUDIO", "Playback paused");
     }
     xSemaphoreGiveRecursive(_audioMutex);
 }
@@ -275,6 +286,7 @@ void AudioManager::resume() {
         _audio->pauseResume();
         _state = AUDIO_PLAYING;
         _cachedIsRunning = true;
+        LOG_AUD("AUDIO", "Playback resumed");
     }
     xSemaphoreGiveRecursive(_audioMutex);
 }

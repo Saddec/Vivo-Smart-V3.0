@@ -2,6 +2,7 @@
 #include "SystemTask.h"
 #include "PrayerTimesEngine.h"
 #include "EidMode.h"
+#include "EventLogger.h"
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -245,6 +246,7 @@ void Scheduler::checkAndTrigger() {
             time_t triggerMinute = now - timeinfo.tm_sec;
             if (alert.lastTriggered != triggerMinute) {
                 currentAudioDescription = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
+                LOG_SCH("SCHEDULER", "Triggering alert: '%s' (file: %s, vol: %d)", alert.name.c_str(), alert.fileName.c_str(), alert.volume);
                 if (alert.fileName.indexOf(',') != -1) {
                     extern QueueHandle_t audioQueue;
                     extern char fileBuffer[128];

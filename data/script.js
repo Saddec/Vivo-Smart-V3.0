@@ -106,6 +106,7 @@ function showTab(tabName) {
   if (tabName === 'prayer') { loadCountries(); loadManualSettings(); loadCsvStatus(); loadDailyOffsetStatus(); }
   if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
+  if (tabName === 'logs') { fetchLogs(); }
 }
 
 function toggleSidebar() {
@@ -580,6 +581,13 @@ function loadCountries() {
         if ($('offsetHijri') && cfg.hijriOffset !== undefined) {
           $('offsetHijri').value = cfg.hijriOffset;
         }
+        if ($('egyptDstToggle') && cfg.egyptDst !== undefined) {
+          $('egyptDstToggle').checked = cfg.egyptDst;
+        }
+        const egyptDstCont = $('egyptDstContainer');
+        if (egyptDstCont) {
+          egyptDstCont.style.display = (cfg.country === 'Egypt' || cfg.country === 'مصر') ? 'flex' : 'none';
+        }
         // Fetch cities for this country and set the selected city
         apiGet(`/api/location/cities?country=${encodeURIComponent(cfg.country)}`, { cities: [] }).then((cData) => {
           appState.cities = cData.cities || cData || [];
@@ -598,6 +606,10 @@ function loadCountries() {
 
 function onCountryChange() {
   const country = $('countrySelect')?.value || '';
+  const egyptDstCont = $('egyptDstContainer');
+  if (egyptDstCont) {
+    egyptDstCont.style.display = (country === 'Egypt' || country === 'مصر') ? 'flex' : 'none';
+  }
   if ($('citySelect')) $('citySelect').innerHTML = '<option value="">اختر المدينة</option>';
   if ($('methodSelect') && country) $('methodSelect').value = defaultPrayerMethod(country);
   if (!country) return;
@@ -616,7 +628,10 @@ function fetchPrayerTimes() {
   const country = countrySelect?.value || '';
   const city = citySelect?.value || '';
   const method = $('methodSelect')?.value || '0';
-  const query = country && city ? `?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}` : `?method=${method}`;
+  const egyptDst = $('egyptDstToggle')?.checked ? 1 : 0;
+  const query = country && city ? 
+    `?country=${encodeURIComponent(country)}&city=${encodeURIComponent(city)}&method=${method}&egyptDst=${egyptDst}` : 
+    `?method=${method}&egyptDst=${egyptDst}`;
 
   if (country && city && $('locationDisplay')) {
     const cName = countrySelect.options[countrySelect.selectedIndex]?.text || country;
@@ -2619,3 +2634,200 @@ function togglePasswordVisibility(inputId, iconId) {
     icon.classList.add('fa-eye');
   }
 }
+
+// Event Log Management Logic
+let allLogs = [];
+
+function fetchLogs() {
+  const tbody = $('logsTableBody');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; font-weight: bold; color: var(--primary-blue);">جاري تحميل سجل الأحداث...</td></tr>';
+  }
+  
+  fetch('/api/logs?limit=200')
+    .then(res => res.json())
+    .then(data => {
+      allLogs = Array.isArray(data) ? data : [];
+      filterLogs();
+    })
+    .catch(err => {
+      console.error('Error fetching logs:', err);
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--color-danger); padding: 20px; font-weight: bold;">فشل في تحميل السجلات. تأكد من اتصالك بالشبكة.</td></tr>';
+      }
+    });
+}
+
+function filterLogs() {
+  const searchQuery = ($('logSearchInput')?.value || '').toLowerCase().trim();
+  const levelFilter = $('logLevelFilter')?.value || 'ALL';
+  const tbody = $('logsTableBody');
+  const noData = $('logsNoData');
+  
+  if (!tbody) return;
+  
+  const filtered = allLogs.filter(log => {
+    // Level filter
+    if (levelFilter !== 'ALL' && log.level.toUpperCase() !== levelFilter.toUpperCase()) {
+      return false;
+    }
+    // Search query filter
+    if (searchQuery) {
+      const msgMatch = (log.message || '').toLowerCase().includes(searchQuery);
+      const catMatch = (log.category || '').toLowerCase().includes(searchQuery);
+      const tsMatch = (log.timestamp || '').toLowerCase().includes(searchQuery);
+      return msgMatch || catMatch || tsMatch;
+    }
+    return true;
+  });
+  
+  // Sort in reverse chronological order (newest first)
+  filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  tbody.innerHTML = '';
+  if (filtered.length === 0) {
+    if (noData) noData.style.display = 'block';
+    return;
+  }
+  if (noData) noData.style.display = 'none';
+  
+  filtered.forEach(log => {
+    const tr = document.createElement('tr');
+    
+    const tdTs = document.createElement('td');
+    tdTs.textContent = log.timestamp;
+    tdTs.style.padding = '12px 10px';
+    tr.appendChild(tdTs);
+    
+    const tdLvl = document.createElement('td');
+    tdLvl.style.textAlign = 'center';
+    tdLvl.style.padding = '12px 10px';
+    const badge = document.createElement('span');
+    badge.className = `log-level-badge log-level-${log.level.toLowerCase()}`;
+    badge.textContent = log.level;
+    tdLvl.appendChild(badge);
+    tr.appendChild(tdLvl);
+    
+    const tdCat = document.createElement('td');
+    tdCat.textContent = log.category;
+    tdCat.style.padding = '12px 10px';
+    tr.appendChild(tdCat);
+    
+    const tdMsg = document.createElement('td');
+    tdMsg.textContent = log.message;
+    tdMsg.style.padding = '12px 10px';
+    tdMsg.style.whiteSpace = 'normal';
+    tdMsg.style.wordBreak = 'break-all';
+    tr.appendChild(tdMsg);
+    
+    const tdHeap = document.createElement('td');
+    tdHeap.textContent = Number(log.freeHeap).toLocaleString();
+    tdHeap.style.padding = '12px 10px';
+    tdHeap.style.textAlign = 'left';
+    tr.appendChild(tdHeap);
+    
+    const tdUptime = document.createElement('td');
+    tdUptime.textContent = Number(log.uptime).toLocaleString();
+    tdUptime.style.padding = '12px 10px';
+    tdUptime.style.textAlign = 'left';
+    tr.appendChild(tdUptime);
+    
+    tbody.appendChild(tr);
+  });
+}
+
+function clearLogs() {
+  const pass = prompt('الرجاء إدخال كلمة مرور الإدارة لمسح جميع السجلات:');
+  if (pass === null) return;
+  if (!pass.trim()) {
+    alert('كلمة المرور فارغة!');
+    return;
+  }
+  
+  const formData = new FormData();
+  formData.append('password', pass);
+  
+  fetch('/api/logs', {
+    method: 'DELETE',
+    body: formData
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.ok) {
+      alert('تم مسح جميع السجلات بنجاح.');
+      allLogs = [];
+      filterLogs();
+    } else {
+      alert('فشل المسح: ' + (data.error || 'كلمة المرور غير صحيحة'));
+    }
+  })
+  .catch(err => {
+    console.error('Error clearing logs:', err);
+    alert('حدث خطأ أثناء محاولة مسح السجلات.');
+  });
+}
+
+function exportLogs(format) {
+  if (allLogs.length === 0) {
+    alert('لا توجد سجلات لتصديرها!');
+    return;
+  }
+  
+  let output = '';
+  let filename = `system_logs_${new Date().toISOString().split('T')[0]}`;
+  let mimeType = 'text/plain';
+  
+  const searchQuery = ($('logSearchInput')?.value || '').toLowerCase().trim();
+  const levelFilter = $('logLevelFilter')?.value || 'ALL';
+  const filtered = allLogs.filter(log => {
+    if (levelFilter !== 'ALL' && log.level.toUpperCase() !== levelFilter.toUpperCase()) return false;
+    if (searchQuery) {
+      const msgMatch = (log.message || '').toLowerCase().includes(searchQuery);
+      const catMatch = (log.category || '').toLowerCase().includes(searchQuery);
+      const tsMatch = (log.timestamp || '').toLowerCase().includes(searchQuery);
+      return msgMatch || catMatch || tsMatch;
+    }
+    return true;
+  });
+  
+  filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  if (format === 'csv') {
+    filename += '.csv';
+    mimeType = 'text/csv';
+    output = '\uFEFF'; // Excel Arabic support BOM
+    output += 'Timestamp,Level,Category,Message,Free Heap (Bytes),Uptime (Seconds)\n';
+    filtered.forEach(log => {
+      const escapedMsg = `"${(log.message || '').replace(/"/g, '""')}"`;
+      const escapedCat = `"${(log.category || '').replace(/"/g, '""')}"`;
+      output += `${log.timestamp},${log.level},${escapedCat},${escapedMsg},${log.freeHeap},${log.uptime}\n`;
+    });
+  } else {
+    filename += '.txt';
+    filtered.forEach(log => {
+      output += `[${log.timestamp}] [${log.level}] [${log.category}] ${log.message} (Heap: ${log.freeHeap}, Uptime: ${log.uptime}s)\r\n`;
+    });
+  }
+  
+  const blob = new Blob([output], { type: `${mimeType};charset=utf-8;` });
+  const link = document.createElement('a');
+  if (link.download !== undefined) {
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+function downloadRawLogFile() {
+  const link = document.createElement('a');
+  link.href = '/api/logs/download';
+  link.download = '';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+

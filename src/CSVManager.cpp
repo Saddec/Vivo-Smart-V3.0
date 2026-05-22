@@ -13,6 +13,15 @@ static String twoDigits(int value) {
     return String(value < 10 ? "0" : "") + String(value);
 }
 
+static String cleanFsName(String str) {
+    str.trim();
+    str.replace(" ", "_");
+    str.replace("'", "_");
+    str.replace("/", "_");
+    str.replace("\\", "_");
+    return str;
+}
+
 static void parseCsvLine(const String& line, DailyData& d) {
     int cellCount = 1;
     for (int i = 0; i < line.length(); i++) if (line[i] == ',') cellCount++;
@@ -106,7 +115,7 @@ bool CSVManager::getCalendarData(DailyData& result) {
     }
 
     if (calendarData[month].empty()) {
-        String fname = "/prayer_csv/" + String(year) + "/" + twoDigits(month) + ".csv";
+        String fname = getCalendarPath(year, month);
         calendarData[month] = loadCsvFile(fname);
     }
 
@@ -206,7 +215,7 @@ std::vector<int> CSVManager::getCalendarMonths(int year) {
 }
 
 bool CSVManager::isCalendarMonthValid(int year, int month) {
-    String fname = "/prayer_csv/" + String(year) + "/" + twoDigits(month) + ".csv";
+    String fname = getCalendarPath(year, month);
     if (!SD.exists(fname)) return false;
     File f = SD.open(fname);
     if (!f) return false;
@@ -224,4 +233,31 @@ bool CSVManager::isCalendarMonthValid(int year, int month) {
 void CSVManager::invalidateCalendarMonth(int year, int month) {
     if (month < 1 || month > 12) return;
     if (loadedCalendarYear == year) calendarData[month].clear();
+}
+
+void CSVManager::invalidateCalendarCache() {
+    for (int i = 1; i <= 12; i++) {
+        calendarData[i].clear();
+    }
+    loadedCalendarYear = 0;
+}
+
+String CSVManager::getCalendarPath(int year, int month, const String& country, const String& city) {
+    String cleanCountry = cleanFsName(country);
+    String cleanCity = cleanFsName(city);
+    if (cleanCountry.isEmpty()) cleanCountry = "Egypt";
+    if (cleanCity.isEmpty()) cleanCity = "Cairo";
+    if (month == 0) {
+        return "/prayer_csv/" + cleanCountry + "/" + cleanCity + "/" + String(year);
+    }
+    return "/prayer_csv/" + cleanCountry + "/" + cleanCity + "/" + String(year) + "/" + twoDigits(month) + ".csv";
+}
+
+String CSVManager::getCalendarPath(int year, int month) {
+    Preferences prefs;
+    prefs.begin("prayer_cfg", true);
+    String country = prefs.getString("country", "Egypt");
+    String city = prefs.getString("city", "Cairo");
+    prefs.end();
+    return getCalendarPath(year, month, country, city);
 }

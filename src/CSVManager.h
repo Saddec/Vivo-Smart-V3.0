@@ -28,6 +28,9 @@ public:
     static std::vector<int> getCalendarMonths(int year);
     static bool isCalendarMonthValid(int year, int month);
     static void invalidateCalendarMonth(int year, int month);
+    static void invalidateCalendarCache();
+    static String getCalendarPath(int year, int month, const String& country, const String& city);
+    static String getCalendarPath(int year, int month);
     static void setEnabled(bool enable);
     static bool isEnabled();
     static bool saveUploadedCSV(int month, File file);

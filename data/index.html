@@ -57,6 +57,7 @@
     <div class="section-label">الشبكة والإعدادات</div>
     <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
     <a href="#settings" onclick="showTab('settings')"><i class="fas fa-cog"></i> الإعدادات</a>
+    <a href="#logs" onclick="showTab('logs')"><i class="fas fa-clipboard-list"></i> سجل الأحداث</a>
     <a href="#" onclick="doLogout()" style="color:#e74c3c;"><i class="fas fa-sign-out-alt"></i> تسجيل الخروج</a>
     <span class="version">v3.1 ESP32-S3</span>
   </nav>
@@ -157,6 +158,10 @@
           <select id="citySelect" onchange="fetchPrayerTimes()"><option value="">اختر المدينة</option></select>
           <label>طريقة الحساب</label>
           <select id="methodSelect"><option value="0">الهيئة المصرية</option><option value="1">رابطة العالم الإسلامي</option><option value="2">أم القرى</option></select>
+          <div id="egyptDstContainer" style="margin-top: 15px; margin-bottom: 15px; display: none; align-items: center; gap: 10px;">
+            <label class="switch"><input type="checkbox" id="egyptDstToggle" onchange="fetchPrayerTimes()"><span class="slider"></span></label>
+            <span>التوقيت الصيفي التلقائي في مصر</span>
+          </div>
           <button class="btn" onclick="fetchPrayerTimes()">حساب المواقيت</button>
         </div>
         <div class="col glass-card">
@@ -764,6 +769,61 @@
         <h3><i class="fas fa-upload"></i> تحديث OTA</h3>
         <input type="file" id="otaFile" accept=".bin">
         <button class="btn" onclick="startOTA()"><i class="fas fa-upload"></i> رفع التحديث</button>
+      </div>
+    </div>
+
+    <!-- Event Logs -->
+    <div id="tab-logs" class="tab">
+      <h1><i class="fas fa-clipboard-list"></i> سجل الأحداث</h1>
+      <div class="glass-card">
+        <h3><i class="fas fa-filter"></i> فلاتر البحث والتصفية</h3>
+        <div class="row" style="align-items: center; gap: 15px; margin-bottom: 15px;">
+          <div class="col" style="flex: 2; min-width: 200px; margin: 0;">
+            <label>بحث نصي</label>
+            <input type="text" id="logSearchInput" oninput="filterLogs()" placeholder="اكتب للبحث في الرسائل أو الفئات..." style="margin: 5px 0 0 0;">
+          </div>
+          <div class="col" style="flex: 1; min-width: 150px; margin: 0;">
+            <label>مستوى الشدة</label>
+            <select id="logLevelFilter" onchange="filterLogs()" style="margin: 5px 0 0 0;">
+              <option value="ALL">الكل</option>
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR</option>
+              <option value="CRITICAL">CRITICAL</option>
+              <option value="AUDIO">AUDIO</option>
+              <option value="PRAYER">PRAYER</option>
+              <option value="SCHEDULER">SCHEDULER</option>
+              <option value="WIFI">WIFI</option>
+              <option value="SYSTEM">SYSTEM</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="gap: 10px; margin-top: 15px; margin-bottom: 0;">
+          <button class="btn" onclick="fetchLogs()"><i class="fas fa-sync"></i> تحديث</button>
+          <button class="btn btn-danger" onclick="clearLogs()"><i class="fas fa-trash-alt"></i> مسح السجل</button>
+          <button class="btn" style="background: linear-gradient(135deg, #27ae60, #2ecc71); box-shadow: 0 8px 20px rgba(46,204,113,0.3);" onclick="exportLogs('csv')"><i class="fas fa-file-csv"></i> تصدير CSV</button>
+          <button class="btn" style="background: linear-gradient(135deg, #2980b9, #3498db); box-shadow: 0 8px 20px rgba(52,152,219,0.3);" onclick="exportLogs('txt')"><i class="fas fa-file-alt"></i> تصدير TXT</button>
+          <button class="btn" style="background: linear-gradient(135deg, #8e44ad, #9b59b6); box-shadow: 0 8px 20px rgba(142,68,173,0.3);" onclick="downloadRawLogFile()"><i class="fas fa-download"></i> تحميل ملف اليوم</button>
+        </div>
+      </div>
+
+      <div class="glass-card" style="overflow-x: auto; padding: 15px;">
+        <table class="logs-table" style="width: 100%; border-collapse: collapse; text-align: right; direction: rtl;">
+          <thead>
+            <tr style="border-bottom: 2px solid rgba(255,255,255,0.15); color: var(--primary-blue);">
+              <th style="padding: 12px; font-weight: bold; width: 180px;">التاريخ والوقت</th>
+              <th style="padding: 12px; font-weight: bold; width: 110px; text-align: center;">المستوى</th>
+              <th style="padding: 12px; font-weight: bold; width: 120px;">الفئة</th>
+              <th style="padding: 12px; font-weight: bold;">الرسالة</th>
+              <th style="padding: 12px; font-weight: bold; width: 120px; text-align: left;">الذاكرة الحرة (بايت)</th>
+              <th style="padding: 12px; font-weight: bold; width: 110px; text-align: left;">النهوض (ثانية)</th>
+            </tr>
+          </thead>
+          <tbody id="logsTableBody">
+            <!-- Dynamic rows will be inserted here -->
+          </tbody>
+        </table>
+        <div id="logsNoData" style="text-align: center; padding: 30px; display: none; color: rgba(255,255,255,0.5); font-weight: bold;">لا توجد سجلات مطابقة للبحث</div>
       </div>
     </div>
     <!-- Footer -->

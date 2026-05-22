@@ -337,8 +337,19 @@ PrayerTimesResult PrayerTimesEngine::calculate(time_t date, const PrayerConfig& 
     int month = tinfo.tm_mon + 1;
     int day = tinfo.tm_mday;
     
+    Preferences prefs;
+    prefs.begin("prayer_cfg", true);
+    String country = prefs.getString("country", "Egypt");
+    bool egyptDst = prefs.getBool("egyptDst", true);
+    prefs.end();
+
+    double calTimeZone = config.timezone;
+    if ((country == "Egypt" || country == "مصر") && egyptDst && tinfo.tm_isdst > 0) {
+        calTimeZone += 1.0;
+    }
+
     double times[6];
-    pt.getPrayerTimes(year, month, day, config.latitude, config.longitude, config.timezone, times);
+    pt.getPrayerTimes(year, month, day, config.latitude, config.longitude, calTimeZone, times);
     
     auto formatTime = [](double t, int offset) -> String {
         int minutes = (int)round(t * 60.0) + offset;
