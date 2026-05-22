@@ -286,30 +286,49 @@ function fetchStatus() {
       $('volumeSlider').value = data.volume;
       if ($('mainVolVal')) $('mainVolVal').textContent = data.volume;
     }
+    if ($('playlistVolume') && data.volume !== undefined) {
+      $('playlistVolume').value = data.volume;
+      if ($('playlistVolVal')) $('playlistVolVal').textContent = data.volume;
+    }
     const showControls = data.playing && !isAdhan;
     if ($('stopBtn')) $('stopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('dashStopBtn')) $('dashStopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('playerControlsContainer')) {
       $('playerControlsContainer').style.display = data.playing ? 'block' : 'none';
     }
+    if ($('dashPlayerControlsContainer')) {
+      $('dashPlayerControlsContainer').style.display = data.playing ? 'block' : 'none';
+    }
     if ($('playerControls')) {
       $('playerControls').style.display = data.playing && !isAdhan ? 'block' : 'none';
     }
+    if ($('dashPlayerControls')) {
+      $('dashPlayerControls').style.display = data.playing && !isAdhan ? 'block' : 'none';
+    }
     if ($('playPauseBtn')) {
-      if (data.state === 1) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
-      else if (data.state === 2) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+      if (data.state === 1) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i> إيقاف مؤقت';
+      else if (data.state === 2) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i> تشغيل';
+    }
+    if ($('dashPlayPauseBtn')) {
+      if (data.state === 1) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-pause"></i> إيقاف مؤقت';
+      else if (data.state === 2) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-play"></i> تشغيل';
     }
   });
 }
 
 function fetchTrackInfo() {
   apiGet('/api/audio/track_info', {}).then((data) => {
-    if ($('trackDuration')) $('trackDuration').textContent = data.duration ? formatTime(data.duration) : '--:--';
-    if ($('trackPosition')) $('trackPosition').textContent = data.position !== undefined ? formatTime(data.position) : '00:00';
-    if ($('trackProgress') && data.duration > 0) {
-      const pct = Math.min(100, (data.position / data.duration) * 100);
-      $('trackProgress').value = pct;
-    }
+    const durationStr = data.duration ? formatTime(data.duration) : '--:--';
+    const positionStr = data.position !== undefined ? formatTime(data.position) : '00:00';
+    const pct = (data.duration > 0 && data.position !== undefined) ? Math.min(100, (data.position / data.duration) * 100) : 0;
+    
+    if ($('trackDuration')) $('trackDuration').textContent = durationStr;
+    if ($('trackPosition')) $('trackPosition').textContent = positionStr;
+    if ($('trackProgress')) $('trackProgress').value = pct;
+
+    if ($('dashTrackDuration')) $('dashTrackDuration').textContent = durationStr;
+    if ($('dashTrackPosition')) $('dashTrackPosition').textContent = positionStr;
+    if ($('dashTrackProgress')) $('dashTrackProgress').value = pct;
   });
 }
 
@@ -337,6 +356,7 @@ function stopAudio() {
     .then(() => {
       fetchStatus();
       if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'none';
+      if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'none';
     })
     .catch((err) => {
       if (err.message && err.message.includes('adhan_playing')) {
@@ -386,10 +406,12 @@ function togglePlayPause() {
     }
     if (data.state === 2) { // AUDIO_PAUSED
       resumeAudio();
-      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i>';
+      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-pause"></i> إيقاف مؤقت';
+      if ($('dashPlayPauseBtn')) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-pause"></i> إيقاف مؤقت';
     } else if (data.state === 1) { // AUDIO_PLAYING
       pauseAudio();
-      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i>';
+      if ($('playPauseBtn')) $('playPauseBtn').innerHTML = '<i class="fas fa-play"></i> تشغيل';
+      if ($('dashPlayPauseBtn')) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-play"></i> تشغيل';
     }
   }).catch(() => {});
 }
@@ -1044,7 +1066,11 @@ function toggleScheduleFields(prefix = 'singleAlert') {
   } else if (type === 'yearly') {
     html = '<label>التاريخ السنوي (السنة غير مهمة)</label><input type="date" id="' + prefix + 'Date">';
   } else if (type === 'prayer_relative') {
-    html = '<label>الصلاة</label><select id="' + prefix + 'Prayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select><label>الإزاحة بالدقائق (سالب أو موجب)</label><input type="number" id="' + prefix + 'Offset" value="0">';
+    html = '<label>الصلاة</label><select id="' + prefix + 'Prayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select>' +
+      '<label>الإزاحة بالدقائق (سالب أو موجب)</label><input type="number" id="' + prefix + 'Offset" value="0">' +
+      '<label>أيام التشغيل (اختياري - اتركه فارغاً للتشغيل يومياً)</label><div id="' + prefix + 'WeeklyDays">' +
+      dayNames.map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0;font-size:var(--fs-small)"><input type="checkbox" class="${prefix}-weekly-day-cb" value="${i}"> ${d}</label>`
+    ).join('') + '</div>';
   }
   const extraFields = $(`${prefix}ExtraFields`);
   if (extraFields) extraFields.innerHTML = html;
@@ -1140,7 +1166,7 @@ function saveSingleAlert() {
   const [hour = '0', minute = '0'] = ($('singleAlertTime')?.value || '00:00').split(':');
   const type = $('singleAlertType')?.value || 'daily';
   let dayOfWeek = -1, dayOfMonth = -1;
-  if (type === 'weekly') dayOfWeek = getSelectedDaysBitmask('singleAlert');
+  if (type === 'weekly' || type === 'prayer_relative') dayOfWeek = getSelectedDaysBitmask('singleAlert');
   if (type === 'monthly') dayOfMonth = $('singleAlertDay')?.value || '-1';
   
   const data = {
@@ -1263,7 +1289,7 @@ function editSingleAlert(index) {
   }
   if ($('singleAlertGpioDurationSec') && alert.gpioDurationSec !== undefined) $('singleAlertGpioDurationSec').value = alert.gpioDurationSec;
   
-  if (alert.type === 'weekly' && alert.dayOfWeek >= 0) {
+  if ((alert.type === 'weekly' || alert.type === 'prayer_relative') && alert.dayOfWeek >= 0) {
     const mask = alert.dayOfWeek;
     document.querySelectorAll('.singleAlert-weekly-day-cb').forEach(cb => {
       const dayVal = parseInt(cb.value);
@@ -1297,7 +1323,7 @@ function savePlaylistSched() {
   const [hour = '0', minute = '0'] = ($('playlistSchedTime')?.value || '00:00').split(':');
   const type = $('playlistSchedType')?.value || 'daily';
   let dayOfWeek = -1, dayOfMonth = -1;
-  if (type === 'weekly') dayOfWeek = getSelectedDaysBitmask('playlistSched');
+  if (type === 'weekly' || type === 'prayer_relative') dayOfWeek = getSelectedDaysBitmask('playlistSched');
   if (type === 'monthly') dayOfMonth = $('playlistSchedDay')?.value || '-1';
   
   const data = {
@@ -1428,7 +1454,7 @@ function editPlaylistSched(index) {
   }
   if ($('playlistSchedGpioDurationSec') && alert.gpioDurationSec !== undefined) $('playlistSchedGpioDurationSec').value = alert.gpioDurationSec;
   
-  if (alert.type === 'weekly' && alert.dayOfWeek >= 0) {
+  if ((alert.type === 'weekly' || alert.type === 'prayer_relative') && alert.dayOfWeek >= 0) {
     const mask = alert.dayOfWeek;
     document.querySelectorAll('.playlistSched-weekly-day-cb').forEach(cb => {
       const dayVal = parseInt(cb.value);
@@ -1478,7 +1504,11 @@ function loadSchedules() {
         if (a.type === 'specific') info += ` (${safeText(a.specificDate)})`;
         if (a.type === 'prayer_relative') {
           const prayerNames = ['الفجر', 'الظهر', 'العصر', 'المغرب', 'العشاء'];
-          info += ` (صلاة ${prayerNames[a.prayerIndex] || a.prayerIndex}، إزاحة ${Math.round(a.offsetSeconds / 60)} دقيقة)`;
+          info += ` (صلاة ${prayerNames[a.prayerIndex] || a.prayerIndex}، إزاحة ${Math.round(a.offsetSeconds / 60)} دقيقة`;
+          if (a.dayOfWeek !== undefined && a.dayOfWeek >= 0) {
+            info += `، أيام: ${formatDays(a.dayOfWeek)}`;
+          }
+          info += `)`;
         }
         if (a.type !== 'prayer_relative' || a.repeatInterval <= 0) {
           info += ` الساعة ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
@@ -1521,7 +1551,11 @@ function loadSchedules() {
         if (a.type === 'specific') info += ` (${safeText(a.specificDate)})`;
         if (a.type === 'prayer_relative') {
           const prayerNames = ['الفجر', 'الظهر', 'العصر', 'المغرب', 'العشاء'];
-          info += ` (صلاة ${prayerNames[a.prayerIndex] || a.prayerIndex}، إزاحة ${Math.round(a.offsetSeconds / 60)} دقيقة)`;
+          info += ` (صلاة ${prayerNames[a.prayerIndex] || a.prayerIndex}، إزاحة ${Math.round(a.offsetSeconds / 60)} دقيقة`;
+          if (a.dayOfWeek !== undefined && a.dayOfWeek >= 0) {
+            info += `، أيام: ${formatDays(a.dayOfWeek)}`;
+          }
+          info += `)`;
         }
         if (a.type !== 'prayer_relative' || a.repeatInterval <= 0) {
           info += ` الساعة ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
@@ -1995,9 +2029,10 @@ function playSingleFile() {
   const file = $('playlistFileSelect')?.value || '';
   if (!file) return toast('اختر ملفاً أولاً');
   const volume = $('playlistVolume')?.value || 15;
-  apiPost('/api/audio/play', { file: file, priority: 1, volume: volume })
+  apiPost('/api/audio/play', { file: file, priority: 0, volume: volume })
     .then(() => {
       if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
+      if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'block';
     })
     .catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
@@ -2028,6 +2063,7 @@ function playPlaylist() {
     respectAdhan: $('playlistAdhanRespect')?.checked ? '1' : '0'
   }).then(() => {
     if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
+    if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'block';
   }).catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
 

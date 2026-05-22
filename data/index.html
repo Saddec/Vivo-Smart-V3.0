@@ -77,8 +77,21 @@
           <p id="playingStatus">متوقف</p>
           <input type="range" id="volumeSlider" min="0" max="30" value="15" oninput="if($('mainVolVal')) $('mainVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
           <span id="mainVolVal" style="display:block; text-align:center; font-weight:bold; margin-bottom:10px;">15</span>
-          <div style="display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap;">
-            <button class="btn btn-danger" id="dashStopBtn" onclick="stopAudio()" style="display:none;" title="إيقاف"><i class="fas fa-stop"></i></button>
+          <!-- Mirrored Dashboard Player Controls -->
+          <div id="dashPlayerControlsContainer" class="player-container" style="display:none; border:none; background:transparent; padding:0; margin-top:10px;">
+            <div class="player-controls-group" style="margin-top:0;">
+              <button class="player-ctrl-btn btn-stop-ctrl" id="dashStopBtn" onclick="stopAudio()" title="إيقاف"><i class="fas fa-stop"></i> إيقاف</button>
+              <button class="player-ctrl-btn" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> رجوع</button>
+              <button class="player-ctrl-btn btn-play-pause" id="dashPlayPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i> تشغيل</button>
+              <button class="player-ctrl-btn" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> تقديم</button>
+            </div>
+            <div id="dashPlayerControls" style="display:none; margin-top:5px;">
+              <div class="player-progress-row" style="margin-top:5px;">
+                <span class="player-time" id="dashTrackPosition">00:00</span>
+                <input type="range" id="dashTrackProgress" class="player-progress" min="0" max="100" value="0" onchange="setTrackProgress(this.value)">
+                <span class="player-time" id="dashTrackDuration">00:00</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -568,11 +581,11 @@
 
         <!-- Professional Player Controls -->
         <div id="playerControlsContainer" class="player-container" style="display:none;">
-          <div class="player-btn-row">
-            <button class="btn btn-danger" id="stopBtn" onclick="stopAudio()" style="display:none;" title="إيقاف"><i class="fas fa-stop"></i></button>
-            <button class="btn btn-seek" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> -10</button>
-            <button class="btn btn-play" id="playPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i></button>
-            <button class="btn btn-seek" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> +10</button>
+          <div class="player-controls-group">
+            <button class="player-ctrl-btn btn-stop-ctrl" id="stopBtn" onclick="stopAudio()" title="إيقاف"><i class="fas fa-stop"></i> إيقاف</button>
+            <button class="player-ctrl-btn" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> رجوع</button>
+            <button class="player-ctrl-btn btn-play-pause" id="playPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i> تشغيل</button>
+            <button class="player-ctrl-btn" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> تقديم</button>
           </div>
           <div id="playerControls" style="display:none;">
             <div class="player-progress-row">
@@ -589,7 +602,7 @@
           <button class="btn" onclick="playPlaylist()"><i class="fas fa-play-circle"></i> تشغيل القائمة</button>
           <button class="btn" onclick="clearPlaylist()"><i class="fas fa-trash"></i> مسح القائمة</button>
           <label style="display:block; margin-top:10px;">مستوى الصوت <span id="playlistVolVal">15</span></label>
-          <input type="range" id="playlistVolume" min="0" max="30" value="15" oninput="if($('playlistVolVal')) $('playlistVolVal').textContent=this.value" style="width:100%">
+          <input type="range" id="playlistVolume" min="0" max="30" value="15" oninput="if($('playlistVolVal')) $('playlistVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
           <label class="switch" style="margin-top:10px;"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> إيقاف عند الأذان
         </div>
       </div>

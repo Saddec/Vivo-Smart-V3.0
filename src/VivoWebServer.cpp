@@ -114,13 +114,16 @@ static void applyWifiIpConfig(AsyncWebServerRequest *request) {
 static String cleanPath(const String &name) {
     String path = name;
     path.replace("\\", "/");
+    while (path.indexOf("//") >= 0) {
+        path.replace("//", "/");
+    }
     while (path.startsWith("/")) path.remove(0, 1);
     int prevLen;
     do {
         prevLen = path.length();
         path.replace("..", "");
     } while (path.length() < prevLen);
-    if (path.indexOf("..") >= 0 || !path.startsWith("/")) {
+    if (path.length() == 0) {
         return "/";
     }
     return "/" + path;
@@ -661,7 +664,7 @@ void startWebServer() {
         }
         extern String currentAudioDescription;
         currentAudioDescription = "تشغيل يدوي: " + file;
-        sendPlayCommand(file.c_str(), postValue(request, "priority", "1").toInt(), 0, postValue(request, "volume", "0").toInt(), 0);
+        sendPlayCommand(file.c_str(), postValue(request, "priority", "0").toInt(), 0, postValue(request, "volume", "0").toInt(), 0);
         sendOk(request);
     });
 

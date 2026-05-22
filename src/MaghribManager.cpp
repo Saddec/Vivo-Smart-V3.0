@@ -174,8 +174,10 @@ void MaghribManager::checkAndTrigger() {
     PrayerTimesResult times = PrayerTimesEngine::calculate(now, currentPrayerConfig);
     if (!times.valid) return;
 
-    int maghribHour, maghribMin;
-    sscanf(times.maghrib.c_str(), "%d:%d", &maghribHour, &maghribMin);
+    int maghribHour = 0, maghribMin = 0;
+    if (sscanf(times.maghrib.c_str(), "%d:%d", &maghribHour, &maghribMin) != 2) {
+        return;
+    }
     struct tm maghribTm = timeinfo;
     maghribTm.tm_hour = maghribHour;
     maghribTm.tm_min = maghribMin;

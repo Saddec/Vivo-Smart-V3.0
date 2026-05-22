@@ -36,9 +36,10 @@ enum AudioState {
 
 class AudioManager {
 public:
+    AudioManager();
     void begin();
     bool playFile(const char* path, int priority, uint32_t duration = 0, uint8_t volume = 0, uint32_t loopDuration = 0, int repeatCount = 0);
-    bool playPlaylist(const String& list, uint8_t volume, bool respectAdhan, int pauseAfterAdhan);
+    bool playPlaylist(const String& list, uint8_t volume, bool respectAdhan, int pauseAfterAdhan, int priority = 0);
     void advancePlaylist();
     void checkPlaylistResume();
     void setVolume(uint8_t vol);
@@ -50,14 +51,17 @@ public:
     uint32_t getAudioCurrentTime();
     uint8_t getVolume();
     void setRepeatMode(bool enable);
-    bool getRepeatMode() const;
+    bool getRepeatMode();
     AudioState getState();
-    const char* getCurrentFile();
+    String getCurrentFile();
     bool isI2SReady() const;
-    bool isAdhanPlaying() const;
-    int getCurrentPriority() const;
+    bool isAdhanPlaying();
+    int getCurrentPriority();
     void loop();
     static void audioOnStop(void *userData);
+    void suspendManualPlayback();
+    void resumeManualPlayback();
+    void clearSuspendedState();
 private:
     Audio* _audio;
     SemaphoreHandle_t _audioMutex;
@@ -82,6 +86,32 @@ private:
     bool _playlistSuspended = false;
     int _pauseAfterAdhan = 0;
     unsigned long _suspendTime = 0;
+    int _playlistPriority = 0;
+
+    // Suspension tracking variables
+    bool _manualSuspended = false;
+    String _suspendedFile = "";
+    uint32_t _suspendedPosition = 0;
+    uint8_t _suspendedVolume = 0;
+    uint32_t _suspendedLoopDuration = 0;
+    int _suspendedRepeatCount = 0;
+    int _suspendedPriority = 0;
+    std::vector<String> _suspendedPlaylist;
+    int _suspendedPlaylistIndex = 0;
+    uint8_t _suspendedPlaylistVolume = 15;
+    bool _suspendedRespectAdhan = false;
+    int _suspendedPauseAfterAdhan = 0;
+    bool _isPlaylistSuspendedState = false;
+
+    unsigned long _alertEndTime = 0;
+    bool _waitingForResumption = false;
+    uint32_t _pendingSeekTime = 0;
+
+    // Cache fields for thread-safe cross-core reads
+    uint32_t _cachedDuration = 0;
+    uint32_t _cachedCurrentTime = 0;
+    uint8_t _cachedVolume = 0;
+    bool _cachedIsRunning = false;
 };
 
 void audioTask(void *pvParameters);

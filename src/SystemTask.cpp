@@ -379,6 +379,29 @@ void checkPrayerTimes() {
     static int activePrayerIndex = -1;
     const String prayerNames[5] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
 
+    // Stop playing audio 15 seconds before any upcoming Adhan
+    for (int i = 0; i < 5; i++) {
+        if (prayers[i].length() >= 5) {
+            int hh = prayers[i].substring(0, 2).toInt();
+            int mm = prayers[i].substring(3, 5).toInt();
+            struct tm t_prayer = t_now;
+            t_prayer.tm_hour = hh;
+            t_prayer.tm_min = mm;
+            t_prayer.tm_sec = 0;
+            time_t prayer_ts = mktime(&t_prayer);
+            if (!adhanPlayed[i]) {
+                time_t diff = prayer_ts - now_ts;
+                if (diff > 0 && diff <= 15) {
+                    if (audioManager.getState() != AUDIO_IDLE) {
+                        Serial.printf("[System] Stopping audio playback 15s before Adhan %d\n", i);
+                        AudioMessage msgCmd = {CMD_STOP, 0, 0, 0, 0, 0, 0};
+                        xQueueSend(audioQueue, &msgCmd, 0);
+                    }
+                }
+            }
+        }
+    }
+
     for (int i=0; i<5; i++) {
         int hh = prayers[i].substring(0, 2).toInt();
         int mm = prayers[i].substring(3, 5).toInt();

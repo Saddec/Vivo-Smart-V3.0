@@ -59,6 +59,54 @@ void Scheduler::checkAndTrigger() {
                       curHour, curMin, timeinfo.tm_sec, curYear, curMon, curMday, curWday, eidActive, todayPrayer.valid);
     }
 
+    // Check if Adhan is playing or if we are in the Adhan-to-Iqama block period
+    extern AudioManager audioManager;
+    bool isBlockPeriod = false;
+    String blockReason = "";
+
+    if (audioManager.isAdhanPlaying()) {
+        isBlockPeriod = true;
+        blockReason = "Adhan is playing";
+    } else if (todayPrayer.valid) {
+        const char* pNames[] = {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"};
+        String pTimes[5] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
+        int curTimeMin = curHour * 60 + curMin;
+
+        for (int i = 0; i < 5; i++) {
+            int pH = 0, pM = 0;
+            if (sscanf(pTimes[i].c_str(), "%d:%d", &pH, &pM) == 2) {
+                int prayerStartMin = pH * 60 + pM;
+                int prayerEndMin = 0;
+                if (currentIqamaConfig.enabled[i]) {
+                    prayerEndMin = prayerStartMin + currentIqamaConfig.delayMin[i] + 3; // +3 minutes after Iqama
+                } else {
+                    prayerEndMin = prayerStartMin + 10; // Default 10 minutes window if Iqama is disabled
+                }
+                
+                // Normalize current time relative to prayerStartMin to handle midnight wrap-around
+                int relCur = curTimeMin - prayerStartMin;
+                if (relCur < -120) relCur += 1440;
+                if (relCur > 1320) relCur -= 1440;
+                
+                int duration = prayerEndMin - prayerStartMin;
+                if (relCur >= 0 && relCur <= duration) {
+                    isBlockPeriod = true;
+                    blockReason = String("Inside Adhan-to-Iqama window for ") + pNames[i];
+                    break;
+                }
+            }
+        }
+    }
+
+    if (isBlockPeriod) {
+        static time_t lastLogTime = 0;
+        if (now - lastLogTime >= 60 || shouldLog) {
+            lastLogTime = now;
+            Serial.printf("[Scheduler] Alert blocking active: %s. Skipping all alert triggers.\n", blockReason.c_str());
+        }
+        return; // Prevent scheduled alerts from running and overwriting currentAudioDescription
+    }
+
     for(auto& alert : alerts) {
         if(!alert.enabled) continue;
         if(alert.eidOnly && !eidActive) continue;
@@ -141,7 +189,13 @@ void Scheduler::checkAndTrigger() {
             }
             String pStr;
             switch(alert.prayerIndex){ case 0:pStr=todayPrayer.fajr;break; case 1:pStr=todayPrayer.dhuhr;break; case 2:pStr=todayPrayer.asr;break; case 3:pStr=todayPrayer.maghrib;break; case 4:pStr=todayPrayer.isha;break; }
-            int pH,pM; sscanf(pStr.c_str(),"%d:%d",&pH,&pM);
+            int pH = 0, pM = 0;
+            if (sscanf(pStr.c_str(), "%d:%d", &pH, &pM) != 2) {
+                if (shouldLog) {
+                    Serial.printf("  - Alert '%s' (prayer_relative): skipped (Invalid prayer time string '%s')\n", alert.name.c_str(), pStr.c_str());
+                }
+                continue;
+            }
             int pMin=pH*60+pM + alert.offsetSeconds/60;
             while(pMin<0)pMin+=1440; pMin%=1440;
             int aH=pMin/60, aM=pMin%60;
@@ -158,14 +212,27 @@ void Scheduler::checkAndTrigger() {
             } else {
                 timeMatch = (curHour==aH && curMin==aM);
             }
-            match=(inPeriod && timeMatch);
+
+            bool dayMatch = true;
+            if (alert.dayOfWeek >= 0) {
+                if (alert.dayOfWeek >= 128) {
+                    int mask = alert.dayOfWeek & 0x7F;
+                    dayMatch = ((mask & (1 << curWday)) != 0);
+                } else if (alert.dayOfWeek <= 6) {
+                    dayMatch = (curWday == alert.dayOfWeek);
+                } else {
+                    dayMatch = ((alert.dayOfWeek & (1 << curWday)) != 0);
+                }
+            }
+
+            match=(inPeriod && timeMatch && dayMatch);
             targetHour = aH;
             targetMin = aM;
             if (shouldLog) {
                 const char* prayerNames[] = {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"};
                 const char* pName = (alert.prayerIndex >= 0 && alert.prayerIndex < 5) ? prayerNames[alert.prayerIndex] : "Unknown";
-                Serial.printf("  - Alert '%s' (prayer_relative): prayer=%s (%s), offset=%d min, target=%02d:%02d, inPeriod=%d, match=%d\n",
-                              alert.name.c_str(), pName, pStr.c_str(), alert.offsetSeconds/60, aH, aM, inPeriod, match);
+                Serial.printf("  - Alert '%s' (prayer_relative): prayer=%s (%s), offset=%d min, target=%02d:%02d, dayOfWeek=%d, inPeriod=%d, dayMatch=%d, match=%d\n",
+                              alert.name.c_str(), pName, pStr.c_str(), alert.offsetSeconds/60, aH, aM, alert.dayOfWeek, inPeriod, dayMatch, match);
             }
         }
 
@@ -182,8 +249,8 @@ void Scheduler::checkAndTrigger() {
                     extern QueueHandle_t audioQueue;
                     extern char fileBuffer[128];
                     strlcpy(fileBuffer, alert.fileName.c_str(), sizeof(fileBuffer));
-                    // format: CMD_PLAY_PLAYLIST, priority=0, duration=0, param3=0, param4(volume)=alert.volume, param5(packed respectAdhan)=0
-                    AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 0, alert.volume, 0, 0};
+                    // format: CMD_PLAY_PLAYLIST, priority=1, duration=0, param3=0, param4(volume)=alert.volume, param5(packed respectAdhan)=0
+                    AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 1, alert.volume, 0, 0};
                     xQueueSend(audioQueue, &msg, 0);
                 } else {
                     sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
