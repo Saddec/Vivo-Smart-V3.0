@@ -257,11 +257,18 @@ void Scheduler::checkAndTrigger() {
                 LOG_SCH("SCHEDULER", "Triggering alert: '%s' (file: %s, vol: %d)", alert.name.c_str(), alert.fileName.c_str(), alert.volume);
                 if (alert.fileName.indexOf(',') != -1) {
                     extern QueueHandle_t audioQueue;
-                    extern char fileBuffer[128];
-                    strlcpy(fileBuffer, alert.fileName.c_str(), sizeof(fileBuffer));
-                    // format: CMD_PLAY_PLAYLIST, priority=1, duration=0, param3=0, param4(volume)=alert.volume, param5(packed respectAdhan)=0
-                    AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 1, alert.volume, 0, 0};
-                    xQueueSend(audioQueue, &msg, 0);
+                    extern SemaphoreHandle_t fileBufferMutex;
+                    extern char fileBuffer[256];
+                    if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                        strlcpy(fileBuffer, alert.fileName.c_str(), sizeof(fileBuffer));
+                        xSemaphoreGive(fileBufferMutex);
+                        AudioMessage msg = {CMD_PLAY_PLAYLIST, 0, 0, 1, alert.volume, 0, 0};
+                        if (xQueueSend(audioQueue, &msg, pdMS_TO_TICKS(100)) == pdFALSE) {
+                            Serial.printf("[Scheduler] audioQueue full, dropping playlist alert '%s'\n", alert.name.c_str());
+                        }
+                    } else {
+                        Serial.printf("[Scheduler] fileBufferMutex timeout for playlist alert '%s'\n", alert.name.c_str());
+                    }
                 } else {
                     sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
                 }

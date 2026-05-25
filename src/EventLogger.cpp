@@ -4,6 +4,7 @@
 #include <time.h>
 #include <Preferences.h>
 #include <algorithm>
+#include <esp_system.h>
 
 // Background task function
 static void loggerTask(void *pvParameters) {
@@ -65,6 +66,22 @@ EventLogger& EventLogger::getInstance() {
     return instance;
 }
 
+static const char* resetReasonToString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON: return "POWERON";
+        case ESP_RST_EXT: return "EXTERNAL_RESET";
+        case ESP_RST_SW: return "SOFTWARE_RESET";
+        case ESP_RST_PANIC: return "PANIC_EXCEPTION";
+        case ESP_RST_INT_WDT: return "INTERRUPT_WATCHDOG";
+        case ESP_RST_TASK_WDT: return "TASK_WATCHDOG";
+        case ESP_RST_WDT: return "OTHER_WATCHDOG";
+        case ESP_RST_DEEPSLEEP: return "DEEP_SLEEP_WAKE";
+        case ESP_RST_BROWNOUT: return "BROWNOUT_POWER_DROP";
+        case ESP_RST_SDIO: return "SDIO_RESET";
+        default: return "UNKNOWN";
+    }
+}
+
 void EventLogger::begin() {
     if (_initialized) return;
 
@@ -93,6 +110,11 @@ void EventLogger::begin() {
     );
 
     log(LOG_LEVEL_SYSTEM, "SYSTEM", "EventLogger initialized successfully");
+    esp_reset_reason_t reason = esp_reset_reason();
+    LogLevel level = (reason == ESP_RST_BROWNOUT || reason == ESP_RST_PANIC ||
+                      reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT ||
+                      reason == ESP_RST_WDT) ? LOG_LEVEL_CRITICAL : LOG_LEVEL_SYSTEM;
+    log(level, "SYSTEM", "Boot reset reason: %s (%d)", resetReasonToString(reason), (int)reason);
 }
 
 void EventLogger::log(LogLevel level, const char* category, const char* format, ...) {

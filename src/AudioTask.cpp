@@ -7,6 +7,8 @@
 #define I2S_BCLK 16
 #define I2S_LRCK 17
 #define I2S_DOUT 18
+static const uint8_t AUDIO_UI_MAX_VOLUME = 30;
+static const uint8_t AUDIO_POWER_SAFE_MAX_VOLUME = 27;
 
 static String normalizeAudioPath(const char* path) {
     String fullPath = String(path);
@@ -14,6 +16,12 @@ static String normalizeAudioPath(const char* path) {
     if (!fullPath.startsWith("/")) fullPath = "/" + fullPath;
     fullPath.replace("//", "/");
     return fullPath;
+}
+
+static uint8_t clampPowerSafeVolume(uint8_t volume) {
+    if (volume > AUDIO_UI_MAX_VOLUME) volume = AUDIO_UI_MAX_VOLUME;
+    if (volume > AUDIO_POWER_SAFE_MAX_VOLUME) return AUDIO_POWER_SAFE_MAX_VOLUME;
+    return volume;
 }
 
 AudioManager audioManager;
@@ -135,6 +143,11 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     if (volume > 0) targetVol = volume;
     else if (priority == 3) targetVol = 25;
     else if (priority == 2) targetVol = 22;
+    uint8_t requestedVol = targetVol;
+    targetVol = clampPowerSafeVolume(targetVol);
+    if (requestedVol != targetVol) {
+        LOG_W("AUDIO", "Requested volume %d limited to %d for power stability", requestedVol, targetVol);
+    }
     _audio->setVolume((targetVol * 21) / 30);
     
     // Immediately update cache under mutex
@@ -222,8 +235,13 @@ void AudioManager::setVolume(uint8_t vol) {
     }
     if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio) {
+        uint8_t requestedVol = vol;
+        vol = clampPowerSafeVolume(vol);
         _audio->setVolume((vol * 21) / 30);
         _cachedVolume = vol;
+        if (requestedVol != vol) {
+            LOG_W("AUDIO", "Requested volume %d limited to %d for power stability", requestedVol, vol);
+        }
         LOG_AUD("AUDIO", "Volume set to %d", vol);
     }
     xSemaphoreGiveRecursive(_audioMutex);
@@ -608,7 +626,7 @@ void audioTask(void *pvParameters) {
                 case CMD_PLAY_FILE: {
                     const char* path;
                     if (msg.param1 == 0) {
-                        static char localPath[128];
+                        static char localPath[256];
                         if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
                             strlcpy(localPath, fileBuffer, sizeof(localPath));
                             xSemaphoreGive(fileBufferMutex);

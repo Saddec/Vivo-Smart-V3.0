@@ -253,8 +253,9 @@ void setOutputForAlert(const String& alertName, int durationSec) {
         if (alertName.indexOf(out.alertFile) >= 0) {
             digitalWrite(out.pin, HIGH);
             unsigned long endTime = millis() + (durationSec > 0 ? durationSec * 1000UL : out.durationSec * 1000UL);
+            uint8_t outputPin = out.pin;
             outputTimers.erase(std::remove_if(outputTimers.begin(), outputTimers.end(),
-                [pin = out.pin](const std::pair<uint8_t, unsigned long>& t) { return t.first == pin; }), outputTimers.end());
+                [outputPin](const std::pair<uint8_t, unsigned long>& t) { return t.first == outputPin; }), outputTimers.end());
             if (outputTimers.size() < 50) {
                 outputTimers.push_back({out.pin, endTime});
             } else {

@@ -38,6 +38,8 @@ void DDNSManager::loop() {
 }
 
 void DDNSManager::performUpdate() {
+    _lastUpdate = millis();
+
     if (_domain.length() == 0 || _user.length() == 0) {
         Serial.println("[DDNS] Update skipped: Domain or Username is empty.");
         return;
@@ -62,6 +64,7 @@ void DDNSManager::performUpdate() {
         
         HTTPClient http;
         String url = "https://dynupdate.no-ip.com/nic/update?hostname=" + _domain;
+        http.setTimeout(5000);
         http.begin(secureClient, url);
         
         http.addHeader("Authorization", "Basic " + authEncoded);
@@ -81,5 +84,4 @@ void DDNSManager::performUpdate() {
         Serial.println("[DDNS] HTTPS failed, will retry later");
     }
     
-    _lastUpdate = millis();
 }

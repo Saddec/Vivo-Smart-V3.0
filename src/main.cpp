@@ -12,7 +12,7 @@ QueueHandle_t audioQueue;
 SemaphoreHandle_t fileBufferMutex;
 Preferences prefs;
 
-char fileBuffer[128] = {0};
+char fileBuffer[256] = {0};
 
 void setup() {
     Serial.begin(115200);

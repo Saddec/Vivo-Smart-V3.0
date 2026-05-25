@@ -63,11 +63,17 @@ function apiGet(url, fallback = {}, retries = 3) {
 }
 
 function apiPost(url, data = {}) {
+  const payload = { ...data };
+  if (appState.sessionToken && !payload.token) payload.token = appState.sessionToken;
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-    body: formBody(data)
+    body: formBody(payload)
   }).then((response) => {
+    if (response.status === 401) {
+      doLogout();
+      throw new Error(`unauthorized ${url}`);
+    }
     if (!response.ok) throw new Error(`${response.status} ${url}`);
     return response.json().catch(() => ({}));
   });
@@ -2152,8 +2158,14 @@ function startOTA() {
   if (!input?.files?.length) return toast('اختر ملف التحديث');
   const body = new FormData();
   body.append('update', input.files[0]);
-  fetch('/api/ota', { method: 'POST', body })
+  if (appState.sessionToken) body.append('token', appState.sessionToken);
+  const otaUrl = appState.sessionToken ? `/api/ota?token=${encodeURIComponent(appState.sessionToken)}` : '/api/ota';
+  fetch(otaUrl, { method: 'POST', body })
     .then((r) => {
+      if (r.status === 401) {
+        doLogout();
+        throw new Error('unauthorized');
+      }
       if (!r.ok) throw new Error('ota failed');
       toast('تم رفع التحديث. سيعاد تشغيل الجهاز.');
     })

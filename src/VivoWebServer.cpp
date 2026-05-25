@@ -23,7 +23,7 @@ AsyncWebServer server(80);
 extern QueueHandle_t audioQueue;
 extern AudioManager audioManager;
 extern SemaphoreHandle_t fileBufferMutex;
-extern char fileBuffer[128];
+extern char fileBuffer[256];
 
 static File uploadFile;
 static File chunkUploadFile;
@@ -31,6 +31,7 @@ static bool chunkUploadOk = false;
 static String chunkUploadPath;
 static String calendarDownloadError;
 static bool uploadBusy = false;
+static SemaphoreHandle_t uploadMutex = NULL;
 static String sessionToken = "";
 static String generateSessionToken() {
     uint32_t r1 = esp_random();
@@ -55,6 +56,7 @@ struct CalendarDownloadJob {
     String error;
 };
 static CalendarDownloadJob calendarJob;
+static SemaphoreHandle_t calendarJobMutex = NULL;
 static const uint8_t I2S_BCLK_PIN = 16;
 static const uint8_t I2S_LRCK_PIN = 17;
 static const uint8_t I2S_DOUT_PIN = 18;
@@ -63,10 +65,33 @@ static bool sdReady() {
     return isSDReady();
 }
 
+static void initWebServerLocks() {
+    if (uploadMutex == NULL) uploadMutex = xSemaphoreCreateMutex();
+    if (calendarJobMutex == NULL) calendarJobMutex = xSemaphoreCreateMutex();
+}
+
+static bool lockUpload(uint32_t timeoutMs = 200) {
+    return uploadMutex && xSemaphoreTake(uploadMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
+}
+
+static void unlockUpload() {
+    if (uploadMutex) xSemaphoreGive(uploadMutex);
+}
+
 static String postValue(AsyncWebServerRequest *request, const char *name, const String &fallback = "") {
     if (request->hasParam(name, true)) return request->getParam(name, true)->value();
     if (request->hasParam(name)) return request->getParam(name)->value();
     return fallback;
+}
+
+static bool requireSession(AsyncWebServerRequest *request) {
+    String token = postValue(request, "token", "");
+    if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
+        token = request->getHeader("X-Session-Token")->value();
+    }
+    if (sessionValid() && token == sessionToken) return true;
+    request->send(401, "application/json", "{\"ok\":false,\"error\":\"unauthorized\"}");
+    return false;
 }
 
 static bool postBool(AsyncWebServerRequest *request, const char *name, bool fallback = false) {
@@ -398,12 +423,26 @@ static String calendarMonthPath(int year, int month) {
 }
 
 static void calendarDownloadTask(void *pvParameters) {
-    bool ok = downloadCalendarMonth(calendarJob.year, calendarJob.month, calendarJob.country, calendarJob.city, calendarJob.method);
-    calendarJob.ok = ok;
-    calendarJob.error = ok ? "" : calendarDownloadError;
+    int year = 0, month = 0, method = 0;
+    String country, city;
+    if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        year = calendarJob.year;
+        month = calendarJob.month;
+        method = calendarJob.method;
+        country = calendarJob.country;
+        city = calendarJob.city;
+        xSemaphoreGive(calendarJobMutex);
+    }
+
+    bool ok = downloadCalendarMonth(year, month, country, city, method);
+    if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+        calendarJob.ok = ok;
+        calendarJob.error = ok ? "" : calendarDownloadError;
+        calendarJob.done = true;
+        calendarJob.busy = false;
+        xSemaphoreGive(calendarJobMutex);
+    }
     forcePrayerRecalc();
-    calendarJob.done = true;
-    calendarJob.busy = false;
     vTaskDelete(NULL);
 }
 
@@ -449,8 +488,9 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
 
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!sdReady()) return;
+    if (!lockUpload()) return;
     if (!index) {
-        if (uploadBusy) { Serial.println("[Upload] Busy, rejecting"); return; }
+        if (uploadBusy) { Serial.println("[Upload] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
         String folder = "/";
         if (request->hasHeader("X-Folder")) {
@@ -462,11 +502,18 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
         unlockSD();
+        if (!uploadFile) uploadBusy = false;
     }
     if (uploadFile && len) {
         lockSD();
-        uploadFile.write(data, len);
+        size_t written = uploadFile.write(data, len);
         unlockSD();
+        if (written != len) {
+            lockSD();
+            uploadFile.close();
+            unlockSD();
+            uploadBusy = false;
+        }
     }
     if (final && uploadFile) {
         lockSD();
@@ -474,6 +521,7 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
         unlockSD();
         uploadBusy = false;
     }
+    unlockUpload();
 }
 
 static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -482,8 +530,13 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         return;
     }
 
+    if (!lockUpload()) {
+        chunkUploadOk = false;
+        return;
+    }
+
     if (index == 0) {
-        if (uploadBusy) { chunkUploadOk = false; return; }
+        if (uploadBusy) { chunkUploadOk = false; unlockUpload(); return; }
         uploadBusy = true;
         String name = request->hasParam("name") ? request->getParam("name")->value() : "";
         String folder = request->hasParam("folder") ? request->getParam("folder")->value() : "/";
@@ -512,6 +565,12 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         unlockSD();
         if (written != len) {
             chunkUploadOk = false;
+            if (chunkUploadFile) {
+                lockSD();
+                chunkUploadFile.close();
+                unlockSD();
+            }
+            uploadBusy = false;
             Serial.printf("[Files] Chunk write failed: wrote=%u expected=%u\n", (unsigned)written, (unsigned)len);
         }
     }
@@ -523,6 +582,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         unlockSD();
         uploadBusy = false;
     }
+    unlockUpload();
 }
 
 static void handleCsvUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -530,18 +590,26 @@ static void handleCsvUpload(AsyncWebServerRequest *request, String filename, siz
     int month = postValue(request, "month", "1").toInt();
     if (month < 1 || month > 12) month = 1;
     String path = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    if (!lockUpload()) return;
     if (!index) {
-        if (uploadBusy) { Serial.println("[CSV] Busy, rejecting"); return; }
+        if (uploadBusy) { Serial.println("[CSV] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
         lockSD();
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
         unlockSD();
+        if (!uploadFile) uploadBusy = false;
     }
     if (uploadFile && len) {
         lockSD();
-        uploadFile.write(data, len);
+        size_t written = uploadFile.write(data, len);
         unlockSD();
+        if (written != len) {
+            lockSD();
+            uploadFile.close();
+            unlockSD();
+            uploadBusy = false;
+        }
     }
     if (final && uploadFile) {
         lockSD();
@@ -550,16 +618,21 @@ static void handleCsvUpload(AsyncWebServerRequest *request, String filename, siz
         uploadBusy = false;
         CSVManager::loadMonth(month, path);
     }
+    unlockUpload();
 }
 
 static void handleOtaUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+    String token = postValue(request, "token", "");
+    if (!(sessionValid() && token == sessionToken)) return;
+    if (!lockUpload()) return;
     if (!index) {
-        if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); return; }
+        if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
         size_t maxSize = 8388608;
         if (!Update.begin(maxSize)) {
             Serial.println("[OTA] Begin failed, not enough space");
             uploadBusy = false;
+            unlockUpload();
             return;
         }
         if (request->hasHeader("X-MD5")) {
@@ -577,9 +650,12 @@ static void handleOtaUpload(AsyncWebServerRequest *request, String filename, siz
         }
         uploadBusy = false;
     }
+    unlockUpload();
 }
 
 void startWebServer() {
+    initWebServerLocks();
+
     if (!LittleFS.begin(true)) {
         Serial.println("LittleFS Mount Failed");
         return;
@@ -1126,15 +1202,24 @@ void startWebServer() {
         size_t totalSize = request->hasParam("total") ? (size_t)request->getParam("total")->value().toInt() : 0;
         bool finalChunk = postBool(request, "final", false);
         size_t actualSize = 0;
-        if (SD.exists(chunkUploadPath)) {
-            File f = SD.open(chunkUploadPath);
+        String path;
+        bool okState = false;
+        if (lockUpload()) {
+            path = chunkUploadPath;
+            okState = chunkUploadOk;
+            unlockUpload();
+        }
+        lockSD();
+        if (SD.exists(path)) {
+            File f = SD.open(path);
             if (f) {
                 actualSize = f.size();
                 f.close();
             }
         }
-        if (!chunkUploadOk || (finalChunk && totalSize > 0 && actualSize != totalSize)) {
-            Serial.printf("[Files] Chunk upload failed: path=%s size=%u expected=%u\n", chunkUploadPath.c_str(), (unsigned)actualSize, (unsigned)totalSize);
+        unlockSD();
+        if (!okState || (finalChunk && totalSize > 0 && actualSize != totalSize)) {
+            Serial.printf("[Files] Chunk upload failed: path=%s size=%u expected=%u\n", path.c_str(), (unsigned)actualSize, (unsigned)totalSize);
             request->send(500, "application/json", "{\"ok\":false,\"error\":\"write_failed\"}");
             return;
         }
@@ -1406,26 +1491,40 @@ void startWebServer() {
             return;
         }
 
-        if (calendarJob.busy) {
+        bool busy = false;
+        if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            busy = calendarJob.busy;
+            xSemaphoreGive(calendarJobMutex);
+        }
+        if (busy) {
             request->send(409, "application/json", "{\"ok\":false,\"error\":\"calendar_download_busy\"}");
             return;
         }
 
-        calendarJob.busy = true;
-        calendarJob.done = false;
-        calendarJob.ok = false;
-        calendarJob.error = "";
-        calendarJob.year = year;
-        calendarJob.month = month;
-        calendarJob.country = country;
-        calendarJob.city = city;
-        calendarJob.method = method;
+        if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            calendarJob.busy = true;
+            calendarJob.done = false;
+            calendarJob.ok = false;
+            calendarJob.error = "";
+            calendarJob.year = year;
+            calendarJob.month = month;
+            calendarJob.country = country;
+            calendarJob.city = city;
+            calendarJob.method = method;
+            xSemaphoreGive(calendarJobMutex);
+        } else {
+            request->send(500, "application/json", "{\"ok\":false,\"error\":\"calendar_lock_failed\"}");
+            return;
+        }
 
         BaseType_t created = xTaskCreatePinnedToCore(calendarDownloadTask, "CalendarDownload", 8192, NULL, 1, NULL, 1);
         if (created != pdPASS) {
-            calendarJob.busy = false;
-            calendarJob.done = true;
-            calendarJob.error = "task_create_failed";
+            if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                calendarJob.busy = false;
+                calendarJob.done = true;
+                calendarJob.error = "task_create_failed";
+                xSemaphoreGive(calendarJobMutex);
+            }
             request->send(500, "application/json", "{\"ok\":false,\"error\":\"task_create_failed\"}");
             return;
         }
@@ -1439,11 +1538,19 @@ void startWebServer() {
     server.on("/api/calendar/download_status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(256);
         doc["ok"] = true;
-        doc["busy"] = calendarJob.busy;
-        doc["done"] = calendarJob.done;
-        doc["success"] = calendarJob.ok;
-        doc["month"] = calendarJob.month;
-        if (calendarJob.error.length() > 0) doc["error"] = calendarJob.error;
+        if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+            doc["busy"] = calendarJob.busy;
+            doc["done"] = calendarJob.done;
+            doc["success"] = calendarJob.ok;
+            doc["month"] = calendarJob.month;
+            if (calendarJob.error.length() > 0) doc["error"] = calendarJob.error;
+            xSemaphoreGive(calendarJobMutex);
+        } else {
+            doc["busy"] = true;
+            doc["done"] = false;
+            doc["success"] = false;
+            doc["error"] = "calendar_lock_failed";
+        }
         sendJson(request, doc);
     });
     server.on("/api/calendar/delete_year", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1727,12 +1834,14 @@ void startWebServer() {
     });
 
     server.on("/api/system/reboot", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
         delay(1000);
         ESP.restart();
     });
 
     server.on("/api/system/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
         delay(1000);
         // مسح مساحات التخزين للإعدادات
@@ -1755,12 +1864,14 @@ void startWebServer() {
     });
 
     server.on("/api/system/shutdown", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
         delay(1000);
         esp_deep_sleep_start();
     });
 
     server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {
+        if (!requireSession(request)) return;
         bool ok = !Update.hasError();
         request->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
         if (ok) {

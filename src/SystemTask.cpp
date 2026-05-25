@@ -19,7 +19,7 @@
 
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
-extern char fileBuffer[128];
+extern char fileBuffer[256];
 
 static const char* defaultSSID = "HONOR X9d";
 static const char* defaultPass = "123456789";
