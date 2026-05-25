@@ -4,6 +4,7 @@
 #include "PrayerTimesEngine.h"
 #include "AudioTask.h"              
 #include <SD.h>
+#include "SDManager.h"
 #include <ArduinoJson.h>
 #include <time.h>
 #include <Preferences.h>
@@ -78,17 +79,26 @@ static MP3FrameInfo readFirstFrameHeader(File &file) {
 
 int MaghribManager::getMP3Duration(const String& path) {
     String fullPath = "/" + path;
-    if (!SD.exists(fullPath)) return 0;
+    lockSD();
+    if (!SD.exists(fullPath)) {
+        unlockSD();
+        return 0;
+    }
     File f = SD.open(fullPath);
-    if (!f) return 0;
+    if (!f) {
+        unlockSD();
+        return 0;
+    }
 
     MP3FrameInfo fi = readFirstFrameHeader(f);
     if (!fi.valid) {
         f.close();
+        unlockSD();
         return 0;
     }
     unsigned long fileSize = f.size();
     f.close();
+    unlockSD();
     return (int)((fileSize * 8.0) / (fi.bitrate * 1000.0) + 0.5);
 }
 

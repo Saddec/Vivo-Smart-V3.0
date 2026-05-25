@@ -20,4 +20,7 @@ uint8_t getActiveSDSckPin();
 uint8_t getActiveSDMisoPin();
 uint8_t getActiveSDMosiPin();
 
+void lockSD();
+void unlockSD();
+
 #endif

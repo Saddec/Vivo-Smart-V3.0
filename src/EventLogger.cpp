@@ -69,9 +69,11 @@ void EventLogger::begin() {
     if (_initialized) return;
 
     if (isSDReady()) {
+        lockSD();
         if (!SD.exists("/logs")) {
             SD.mkdir("/logs");
         }
+        unlockSD();
     }
 
     _initialized = true;
@@ -167,6 +169,7 @@ void EventLogger::flush() {
         return;
     }
 
+    lockSD();
     if (!SD.exists("/logs")) {
         SD.mkdir("/logs");
     }
@@ -174,6 +177,7 @@ void EventLogger::flush() {
     String path = getLogFilePath();
     File file = SD.open(path, FILE_APPEND);
     if (!file) {
+        unlockSD();
         Serial.printf("[EventLogger] Failed to open log file %s for append\n", path.c_str());
         // Put back in buffer
         if (xSemaphoreTakeRecursive(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -191,6 +195,7 @@ void EventLogger::flush() {
         file.println(entry);
     }
     file.close();
+    unlockSD();
     _lastFlushTime = millis();
 }
 
@@ -211,6 +216,7 @@ bool EventLogger::clearLogs(const String& password) {
     xSemaphoreGiveRecursive(_mutex);
 
     if (isSDReady()) {
+        lockSD();
         File root = SD.open("/logs");
         if (root) {
             std::vector<String> filesToDelete;
@@ -236,6 +242,7 @@ bool EventLogger::clearLogs(const String& password) {
                 SD.remove(path.c_str());
             }
         }
+        unlockSD();
     }
 
     log(LOG_LEVEL_SYSTEM, "SYSTEM", "Logs cleared successfully by administrator");
@@ -278,13 +285,16 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
 
     // Fall back to reading daily file on SD card if RAM cache is empty
     String filePath = getLogFilePath();
+    lockSD();
     if (!SD.exists(filePath)) {
+        unlockSD();
         std::reverse(memMatches.begin(), memMatches.end());
         return memMatches;
     }
 
     File file = SD.open(filePath, FILE_READ);
     if (!file) {
+        unlockSD();
         std::reverse(memMatches.begin(), memMatches.end());
         return memMatches;
     }
@@ -301,6 +311,7 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
     uint8_t* buffer = (uint8_t*)malloc(readSize + 1);
     if (!buffer) {
         file.close();
+        unlockSD();
         std::reverse(memMatches.begin(), memMatches.end());
         return memMatches;
     }
@@ -308,6 +319,7 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
     size_t bytesRead = file.read(buffer, readSize);
     buffer[bytesRead] = '\0';
     file.close();
+    unlockSD();
 
     String content = String((char*)buffer);
     free(buffer);
@@ -361,13 +373,16 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
 void EventLogger::checkCircularLogLimit() {
     if (!isSDReady()) return;
 
+    lockSD();
     File root = SD.open("/logs");
     if (!root) {
         SD.mkdir("/logs");
+        unlockSD();
         return;
     }
     if (!root.isDirectory()) {
         root.close();
+        unlockSD();
         return;
     }
 
@@ -421,6 +436,7 @@ void EventLogger::checkCircularLogLimit() {
             }
         }
     }
+    unlockSD();
 }
 
 uint32_t EventLogger::getUptimeSeconds() const {

@@ -1206,7 +1206,8 @@ function saveSingleAlert() {
     gpioPin: $('singleAlertGpioPin')?.value || 0,
     gpioMode: $('singleAlertGpioMode')?.value || 'continuous',
     gpioDurationMode: $('singleAlertGpioDurationMode')?.value || 'audio_duration',
-    gpioDurationSec: Number($('singleAlertGpioDurationSec')?.value || 5)
+    gpioDurationSec: Number($('singleAlertGpioDurationSec')?.value || 5),
+    important: $('singleAlertImportant')?.checked ? 1 : 0
   };
 
   apiPost('/api/scheduler/add', data).then(() => {
@@ -1246,6 +1247,7 @@ function cancelEditSingleAlert() {
     toggleAlertGpioDurationFields('singleAlert');
   }
   if ($('singleAlertGpioDurationSec')) $('singleAlertGpioDurationSec').value = 5;
+  if ($('singleAlertImportant')) $('singleAlertImportant').checked = true;
 
   if ($('singleAlertSaveBtn')) $('singleAlertSaveBtn').innerHTML = '<i class="fas fa-save"></i> حفظ التنبيه';
   if ($('singleAlertCancelEditBtn')) $('singleAlertCancelEditBtn').style.display = 'none';
@@ -1295,6 +1297,9 @@ function editSingleAlert(index) {
   if ($('singleAlertGpioActive')) {
     $('singleAlertGpioActive').checked = alert.gpioActive === true || alert.gpioActive === 1;
     toggleAlertGpioFields('singleAlert');
+  }
+  if ($('singleAlertImportant')) {
+    $('singleAlertImportant').checked = (alert.important !== false && alert.important !== 0);
   }
   if ($('singleAlertGpioPin') && alert.gpioPin !== undefined) $('singleAlertGpioPin').value = alert.gpioPin;
   if ($('singleAlertGpioMode') && alert.gpioMode !== undefined) $('singleAlertGpioMode').value = alert.gpioMode;
@@ -1363,7 +1368,8 @@ function savePlaylistSched() {
     gpioPin: $('playlistSchedGpioPin')?.value || 0,
     gpioMode: $('playlistSchedGpioMode')?.value || 'continuous',
     gpioDurationMode: $('playlistSchedGpioDurationMode')?.value || 'audio_duration',
-    gpioDurationSec: Number($('playlistSchedGpioDurationSec')?.value || 5)
+    gpioDurationSec: Number($('playlistSchedGpioDurationSec')?.value || 5),
+    important: $('playlistSchedImportant')?.checked ? 1 : 0
   };
 
   apiPost('/api/scheduler/add', data).then(() => {
@@ -1403,6 +1409,7 @@ function cancelEditPlaylistSched() {
     toggleAlertGpioDurationFields('playlistSched');
   }
   if ($('playlistSchedGpioDurationSec')) $('playlistSchedGpioDurationSec').value = 5;
+  if ($('playlistSchedImportant')) $('playlistSchedImportant').checked = true;
 
   if ($('playlistSchedSaveBtn')) $('playlistSchedSaveBtn').innerHTML = '<i class="fas fa-plus-circle"></i> إضافة القائمة للجدولة';
   if ($('playlistSchedCancelEditBtn')) $('playlistSchedCancelEditBtn').style.display = 'none';
@@ -1460,6 +1467,9 @@ function editPlaylistSched(index) {
   if ($('playlistSchedGpioActive')) {
     $('playlistSchedGpioActive').checked = alert.gpioActive === true || alert.gpioActive === 1;
     toggleAlertGpioFields('playlistSched');
+  }
+  if ($('playlistSchedImportant')) {
+    $('playlistSchedImportant').checked = (alert.important !== false && alert.important !== 0);
   }
   if ($('playlistSchedGpioPin') && alert.gpioPin !== undefined) $('playlistSchedGpioPin').value = alert.gpioPin;
   if ($('playlistSchedGpioMode') && alert.gpioMode !== undefined) $('playlistSchedGpioMode').value = alert.gpioMode;
@@ -1538,6 +1548,8 @@ function loadSchedules() {
             info += ` (حتى ${eh}:${em})`;
           }
         }
+        const impText = (a.important === false || a.important === 0) ? 'غير مهم' : 'مهم';
+        info += ` | ⚠️ ${impText}`;
         if (a.gpioActive) {
           const modeArabic = a.gpioMode === 'flasher' ? 'متقطع فلاشر' : a.gpioMode === 'pulse' ? 'نبضة' : 'مستمر';
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
@@ -1585,6 +1597,8 @@ function loadSchedules() {
             info += ` (حتى ${eh}:${em})`;
           }
         }
+        const impText = (a.important === false || a.important === 0) ? 'غير مهم' : 'مهم';
+        info += ` | ⚠️ ${impText}`;
         if (a.gpioActive) {
           const modeArabic = a.gpioMode === 'flasher' ? 'متقطع فلاشر' : a.gpioMode === 'pulse' ? 'نبضة' : 'مستمر';
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
@@ -2387,7 +2401,8 @@ function addEidSchedule() {
     loop: $('eidScheduleLoopToggle')?.value === 'yes' ? $('eidScheduleLoopDuration')?.value || 0 : 0,
     prayerIndex: $('eidSchedulePrayer')?.value || 0,
     offsetSeconds,
-    eidOnly: '1'
+    eidOnly: '1',
+    important: 1
   }).then(() => {
     toast('تم إضافة تنبيه العيد');
     loadEidSchedules();

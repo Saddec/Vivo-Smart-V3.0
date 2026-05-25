@@ -126,3 +126,18 @@ uint8_t getActiveSDCsPin()   { return activePins.cs; }
 uint8_t getActiveSDSckPin()  { return activePins.sck; }
 uint8_t getActiveSDMisoPin() { return activePins.miso; }
 uint8_t getActiveSDMosiPin() { return activePins.mosi; }
+
+static SemaphoreHandle_t sdMutex = NULL;
+
+void lockSD() {
+    if (sdMutex == NULL) {
+        sdMutex = xSemaphoreCreateRecursiveMutex();
+    }
+    xSemaphoreTakeRecursive(sdMutex, portMAX_DELAY);
+}
+
+void unlockSD() {
+    if (sdMutex != NULL) {
+        xSemaphoreGiveRecursive(sdMutex);
+    }
+}

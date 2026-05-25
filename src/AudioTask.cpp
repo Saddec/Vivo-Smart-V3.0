@@ -76,8 +76,9 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
         clearSuspendedState();
     }
 
-    if ((_state == AUDIO_PLAYING || _state == AUDIO_PAUSED) && _currentPriority == 0 && priority == 1) {
-        suspendManualPlayback();
+    if ((_state == AUDIO_PLAYING || _state == AUDIO_PAUSED) && _currentPriority == 0 && priority > 0) {
+        _playlist.clear();
+        clearSuspendedState();
     }
 
     if (_respectAdhan && !_playlist.empty() && priority == 3 && _state == AUDIO_PLAYING) {
@@ -417,11 +418,14 @@ void AudioManager::audioOnStop(void *userData) {
         xSemaphoreGiveRecursive(self->_audioMutex);
         return;
     }
+    // Manual resumption disabled: do not trigger waiting for resumption on alert end.
+    /*
     if (self->_currentPriority == 1 && self->_manualSuspended) {
         self->_alertEndTime = millis();
         self->_waitingForResumption = true;
         Serial.println("[Audio] Priority 1 alert finished. Scheduled resumption in 30s.");
     }
+    */
     self->_state = AUDIO_IDLE;
     self->_currentPriority = 0;
     self->_currentFile = "";
@@ -439,7 +443,9 @@ void AudioManager::audioOnStop(void *userData) {
 
 void AudioManager::loop() {
     if (!_audio) return;
+    lockSD();
     _audio->loop();
+    unlockSD();
 
     if (xSemaphoreTakeRecursive(_audioMutex, 0) == pdTRUE) {
         _cachedIsRunning = _audio->isRunning();
@@ -460,6 +466,8 @@ void AudioManager::loop() {
             _pendingSeekTime = 0;
         }
 
+        // Manual resumption disabled: check for waitingForResumption removed.
+        /*
         if (_waitingForResumption && _manualSuspended && _state == AUDIO_IDLE) {
             if (millis() - _alertEndTime >= 30000) {
                 Serial.println("[Audio] 30 seconds passed. Triggering resumption of manual playback.");
@@ -467,6 +475,7 @@ void AudioManager::loop() {
                 resumeManualPlayback();
             }
         }
+        */
 
         if (_state == AUDIO_PLAYING && !_cachedIsRunning) {
             audioOnStop(this);

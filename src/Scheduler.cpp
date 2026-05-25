@@ -38,6 +38,7 @@ String Scheduler::getAlertsJson() {
         obj["gpioMode"]=a.gpioMode;
         obj["gpioDurationMode"]=a.gpioDurationMode;
         obj["gpioDurationSec"]=a.gpioDurationSec;
+        obj["important"]=a.important;
     }
     String json; serializeJson(doc, json); return json;
 }
@@ -245,6 +246,13 @@ void Scheduler::checkAndTrigger() {
         if(match) {
             time_t triggerMinute = now - timeinfo.tm_sec;
             if (alert.lastTriggered != triggerMinute) {
+                if (audioManager.getState() != AUDIO_IDLE) {
+                    if (!alert.important) {
+                        Serial.printf("[Scheduler] Alert '%s' is not important and audio is playing. Skipping alert.\n", alert.name.c_str());
+                        alert.lastTriggered = triggerMinute;
+                        continue;
+                    }
+                }
                 currentAudioDescription = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
                 LOG_SCH("SCHEDULER", "Triggering alert: '%s' (file: %s, vol: %d)", alert.name.c_str(), alert.fileName.c_str(), alert.volume);
                 if (alert.fileName.indexOf(',') != -1) {
@@ -292,6 +300,7 @@ void Scheduler::loadFromNVS() {
             a.gpioMode=obj["gpioMode"]|"continuous";
             a.gpioDurationMode=obj["gpioDurationMode"]|"audio_duration";
             a.gpioDurationSec=obj["gpioDurationSec"]|5;
+            a.important=obj["important"]|true;
             a.lastTriggered = 0;
             alerts.push_back(a);
         }
@@ -316,6 +325,7 @@ void Scheduler::saveToNVS() {
         obj["gpioMode"]=a.gpioMode;
         obj["gpioDurationMode"]=a.gpioDurationMode;
         obj["gpioDurationSec"]=a.gpioDurationSec;
+        obj["important"]=a.important;
     }
     String json; serializeJson(doc,json);
     Preferences prefs; prefs.begin("scheduler",false); prefs.putString("alerts",json); prefs.end();

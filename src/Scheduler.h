@@ -29,6 +29,7 @@ struct ScheduledAlert {
     String gpioMode = "continuous"; // "continuous", "flasher", "pulse"
     String gpioDurationMode = "audio_duration"; // "audio_duration", "custom"
     int gpioDurationSec = 5;
+    bool important = true;
 };
 
 class Scheduler {

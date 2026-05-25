@@ -232,6 +232,7 @@ static void listFilesRecursively(String dirPath, JsonArray &arr, int depth) {
 }
 
 static void ensureDirExists(String path) {
+    lockSD();
     int pos = 0;
     while ((pos = path.indexOf('/', pos + 1)) > 0) {
         String dir = path.substring(0, pos);
@@ -239,11 +240,16 @@ static void ensureDirExists(String path) {
             SD.mkdir(dir);
         }
     }
+    unlockSD();
 }
 
 static bool deleteRecursively(String path) {
+    lockSD();
     File f = SD.open(path);
-    if (!f) return false;
+    if (!f) {
+        unlockSD();
+        return false;
+    }
     bool isDir = f.isDirectory();
     f.close();
 
@@ -264,9 +270,13 @@ static bool deleteRecursively(String path) {
             }
             dir.close();
         }
-        return SD.rmdir(path);
+        bool ok = SD.rmdir(path);
+        unlockSD();
+        return ok;
     } else {
-        return SD.remove(path);
+        bool ok = SD.remove(path);
+        unlockSD();
+        return ok;
     }
 }
 
@@ -351,10 +361,12 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
     }
 
     String path = CSVManager::getCalendarPath(year, month, country, city);
+    lockSD();
     ensureDirExists(path);
     if (SD.exists(path)) SD.remove(path);
     File f = SD.open(path, FILE_WRITE);
     if (!f) {
+        unlockSD();
         calendarDownloadError = "file_open_failed";
         return false;
     }
@@ -376,6 +388,7 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
         f.println(String((const char*)hijri["year"]).toInt());
     }
     f.close();
+    unlockSD();
     Serial.printf("[Calendar] Saved %s\n", path.c_str());
     return true;
 }
@@ -408,7 +421,9 @@ void handleFileList(AsyncWebServerRequest *request) {
     doc["i2s"]["ready"] = audioManager.isI2SReady();
 
     if (mounted) {
+        lockSD();
         listFilesRecursively("/", arr, 0);
+        unlockSD();
     }
 
     sendJson(request, doc);
@@ -442,12 +457,23 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
             folder = urlDecode(request->getHeader("X-Folder")->value());
         }
         String path = cleanPath(folder + "/" + filename);
+        lockSD();
         ensureDirExists(path);
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
+        unlockSD();
     }
-    if (uploadFile && len) uploadFile.write(data, len);
-    if (final && uploadFile) { uploadFile.close(); uploadBusy = false; }
+    if (uploadFile && len) {
+        lockSD();
+        uploadFile.write(data, len);
+        unlockSD();
+    }
+    if (final && uploadFile) {
+        lockSD();
+        uploadFile.close();
+        unlockSD();
+        uploadBusy = false;
+    }
 }
 
 static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -464,6 +490,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         size_t offset = request->hasParam("offset") ? (size_t)request->getParam("offset")->value().toInt() : 0;
 
         chunkUploadPath = cleanPath(folder + "/" + name);
+        lockSD();
         ensureDirExists(chunkUploadPath);
         if (offset == 0 && SD.exists(chunkUploadPath)) SD.remove(chunkUploadPath);
 
@@ -474,12 +501,15 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         }
         chunkUploadOk = chunkUploadFile;
         if (chunkUploadOk && offset > 0) chunkUploadFile.seek(offset);
+        unlockSD();
         if (!chunkUploadOk) uploadBusy = false;
         Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
     }
 
     if (chunkUploadOk && chunkUploadFile && len) {
+        lockSD();
         size_t written = chunkUploadFile.write(data, len);
+        unlockSD();
         if (written != len) {
             chunkUploadOk = false;
             Serial.printf("[Files] Chunk write failed: wrote=%u expected=%u\n", (unsigned)written, (unsigned)len);
@@ -487,8 +517,10 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
     }
 
     if (index + len == total && chunkUploadFile) {
+        lockSD();
         chunkUploadFile.flush();
         chunkUploadFile.close();
+        unlockSD();
         uploadBusy = false;
     }
 }
@@ -501,12 +533,20 @@ static void handleCsvUpload(AsyncWebServerRequest *request, String filename, siz
     if (!index) {
         if (uploadBusy) { Serial.println("[CSV] Busy, rejecting"); return; }
         uploadBusy = true;
+        lockSD();
         if (SD.exists(path)) SD.remove(path);
         uploadFile = SD.open(path, FILE_WRITE);
+        unlockSD();
     }
-    if (uploadFile && len) uploadFile.write(data, len);
+    if (uploadFile && len) {
+        lockSD();
+        uploadFile.write(data, len);
+        unlockSD();
+    }
     if (final && uploadFile) {
+        lockSD();
         uploadFile.close();
+        unlockSD();
         uploadBusy = false;
         CSVManager::loadMonth(month, path);
     }
@@ -1118,7 +1158,9 @@ void startWebServer() {
             return;
         }
         String path = cleanPath(postValue(request, "name", ""));
+        lockSD();
         bool ok = SD.mkdir(path);
+        unlockSD();
         request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
     server.on("/api/files/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1132,7 +1174,9 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false}");
             return;
         }
+        lockSD();
         bool ok = SD.rename(oldName, newName);
+        unlockSD();
         request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
 
@@ -1163,7 +1207,10 @@ void startWebServer() {
                 subFile.trim();
                 if (subFile.length() > 0) {
                     String subFilePath = cleanPath(subFile);
-                    if (!SD.exists(subFilePath)) {
+                    lockSD();
+                    bool fileExists = SD.exists(subFilePath);
+                    unlockSD();
+                    if (!fileExists) {
                         allExist = false;
                         break;
                     }
@@ -1196,6 +1243,7 @@ void startWebServer() {
         alert.gpioMode = postValue(request, "gpioMode", "continuous");
         alert.gpioDurationMode = postValue(request, "gpioDurationMode", "audio_duration");
         alert.gpioDurationSec = postValue(request, "gpioDurationSec", "5").toInt();
+        alert.important = postBool(request, "important", true);
         
         int index = postValue(request, "index", "-1").toInt();
         scheduler.addAlert(alert, index);
@@ -1409,7 +1457,9 @@ void startWebServer() {
             return;
         }
         String path = CSVManager::getCalendarPath(year, 0);
+        lockSD();
         bool ok = !SD.exists(path) || deleteRecursively(path);
+        unlockSD();
         forcePrayerRecalc();
         DynamicJsonDocument doc(128);
         doc["ok"] = ok;
@@ -1427,17 +1477,21 @@ void startWebServer() {
             return;
         }
         String path = calendarMonthPath(year, month);
+        lockSD();
         if (!SD.exists(path)) {
+            unlockSD();
             request->send(404, "application/json", "{\"ok\":false,\"error\":\"month_not_found\"}");
             return;
         }
         File f = SD.open(path);
         if (!f) {
+            unlockSD();
             request->send(500, "application/json", "{\"ok\":false,\"error\":\"file_open_failed\"}");
             return;
         }
         String csv = f.readString();
         f.close();
+        unlockSD();
         DynamicJsonDocument doc(8192);
         doc["ok"] = true;
         doc["year"] = year;
@@ -1464,15 +1518,18 @@ void startWebServer() {
         }
         String path = calendarMonthPath(year, month);
         ensureDirExists(path);
+        lockSD();
         if (SD.exists(path)) SD.remove(path);
         File f = SD.open(path, FILE_WRITE);
         if (!f) {
+            unlockSD();
             request->send(500, "application/json", "{\"ok\":false,\"error\":\"file_open_failed\"}");
             return;
         }
         f.print(csv);
         if (!csv.endsWith("\n")) f.println();
         f.close();
+        unlockSD();
         CSVManager::invalidateCalendarMonth(year, month);
         forcePrayerRecalc();
         Serial.printf("[Calendar] Edited %s\n", path.c_str());

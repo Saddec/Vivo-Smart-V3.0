@@ -1,5 +1,6 @@
 // CSVManager.cpp
 #include "CSVManager.h"
+#include "SDManager.h"
 #include <SD.h>
 #include <Preferences.h>
 #include <time.h>
@@ -56,9 +57,16 @@ static void parseCsvLine(const String& line, DailyData& d) {
 
 static std::vector<DailyData> loadCsvFile(const String& filename) {
     std::vector<DailyData> data;
-    if (!SD.exists(filename)) return data;
+    lockSD();
+    if (!SD.exists(filename)) {
+        unlockSD();
+        return data;
+    }
     File f = SD.open(filename);
-    if (!f) return data;
+    if (!f) {
+        unlockSD();
+        return data;
+    }
     f.readStringUntil('\n');
     while (f.available()) {
         String line = f.readStringUntil('\n');
@@ -69,6 +77,7 @@ static std::vector<DailyData> loadCsvFile(const String& filename) {
         if (d.day >= 1 && d.day <= 31) data.push_back(d);
     }
     f.close();
+    unlockSD();
     return data;
 }
 
@@ -81,7 +90,9 @@ std::vector<DailyData> CSVManager::loadMonth(int month, const String& filename) 
 void CSVManager::clearMonth(int month) {
     monthData[month].clear();
     String fname = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    lockSD();
     if (SD.exists(fname)) SD.remove(fname);
+    unlockSD();
 }
 
 DailyData CSVManager::getTodayData() {
@@ -184,11 +195,16 @@ void CSVManager::setEnabled(bool enable) {
 
 bool CSVManager::saveUploadedCSV(int month, File file) {
     String fname = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
+    lockSD();
     if (SD.exists(fname)) SD.remove(fname);
     File dest = SD.open(fname, FILE_WRITE);
-    if (!dest) return false;
+    if (!dest) {
+        unlockSD();
+        return false;
+    }
     while (file.available()) dest.write(file.read());
     dest.close();
+    unlockSD();
     monthData[month].clear();
     loadMonth(month, fname);
     return true;
@@ -216,9 +232,16 @@ std::vector<int> CSVManager::getCalendarMonths(int year) {
 
 bool CSVManager::isCalendarMonthValid(int year, int month) {
     String fname = getCalendarPath(year, month);
-    if (!SD.exists(fname)) return false;
+    lockSD();
+    if (!SD.exists(fname)) {
+        unlockSD();
+        return false;
+    }
     File f = SD.open(fname);
-    if (!f) return false;
+    if (!f) {
+        unlockSD();
+        return false;
+    }
     size_t size = f.size();
     int lines = 0;
     while (f.available() && lines < 3) {
@@ -227,6 +250,7 @@ bool CSVManager::isCalendarMonthValid(int year, int month) {
         if (!line.isEmpty()) lines++;
     }
     f.close();
+    unlockSD();
     return size > 120 && lines >= 2;
 }
 
