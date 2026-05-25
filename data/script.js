@@ -3,7 +3,10 @@ const appState = {
   countries: [],
   cities: [],
   playlist: [],
-  sessionToken: localStorage.getItem('vivoSessionToken') || ''
+  sessionToken: localStorage.getItem('vivoSessionToken') || '',
+  activeTab: 'dashboard',
+  prayerUiLoaded: false,
+  csvStatusLoaded: false
 };
 
 const $ = (id) => document.getElementById(id);
@@ -80,6 +83,8 @@ function apiPost(url, data = {}) {
 }
 
 function showTab(tabName) {
+  const previousTab = appState.activeTab;
+  appState.activeTab = tabName;
   document.querySelectorAll('.tab').forEach((tab) => tab.classList.remove('active'));
   document.querySelectorAll('.sidebar a').forEach((link) => link.classList.remove('active'));
 
@@ -109,7 +114,7 @@ function showTab(tabName) {
   if (tabName === 'gpio') { loadGpioMappings(); loadGpioSchedules(); }
   if (tabName === 'maghrib') { loadMaghribAlerts(); }
   if (tabName === 'network') { loadWifiStatus(); }
-  if (tabName === 'prayer') { loadCountries(); loadManualSettings(); loadCsvStatus(); loadDailyOffsetStatus(); }
+  if (tabName === 'prayer') { loadPrayerTab(previousTab !== 'prayer'); }
   if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
   if (tabName === 'logs') { fetchLogs(); }
@@ -255,7 +260,6 @@ function initDashboard() {
     loadMaghribAlerts,
     loadStartupSettings,
     loadSessionTimeout,
-    loadCsvStatus,
     loadWifiStatus,
     loadEidSchedules,
     loadEidTakbeerConfig,
@@ -263,6 +267,7 @@ function initDashboard() {
     loadDDNS
   ];
   startupJobs.forEach((job, index) => setTimeout(job, 150 + (index * 180)));
+  if (appState.activeTab === 'prayer') setTimeout(loadCsvStatus, 3000);
   setTimeout(loadFileList, 3000);
 }
 
@@ -570,6 +575,18 @@ function defaultPrayerMethod(country) {
   if (country === 'Egypt') return '0';
   if (country === 'Saudi Arabia') return '2';
   return '1';
+}
+
+function loadPrayerTab(force = false) {
+  if (!appState.prayerUiLoaded || force) {
+    appState.prayerUiLoaded = true;
+    loadCountries();
+    loadManualSettings();
+    loadDailyOffsetStatus();
+  } else {
+    fetchPrayerTimes();
+  }
+  if (!appState.csvStatusLoaded || force) loadCsvStatus();
 }
 
 function loadCountries() {
@@ -2355,6 +2372,11 @@ function loadCsvStatus() {
     if ($('calendarOnlyToggle')) $('calendarOnlyToggle').checked = !!data.calendarOnly;
     if ($('calendarFallbackToggle')) $('calendarFallbackToggle').checked = data.calendarFallback !== false;
     if ($('calendarYearInput') && data.calendarYear) $('calendarYearInput').value = data.calendarYear;
+    if (data.deferred) {
+      appState.csvStatusLoaded = false;
+      return;
+    }
+    appState.csvStatusLoaded = true;
     if ($('calendarStatus')) {
       const months = data.calendarMonths || [];
       calendarMissingMonths = data.missingCalendarMonths || [];
@@ -2645,7 +2667,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchTrackInfo();
       checkSessionTimeout();
       prayerFetchCounter++;
-      if (!calendarDownloadActive && prayerFetchCounter % 6 === 0) fetchPrayerTimes();
+      if (!calendarDownloadActive && prayerFetchCounter % 6 === 0 && appState.activeTab === 'dashboard') fetchPrayerTimes();
     }
   }, 2000);
 });

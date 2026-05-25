@@ -934,8 +934,14 @@ void startWebServer() {
         String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
         bool changed = false;
 
-        if (audioManager.getState() != AUDIO_IDLE && todayPrayer.valid) {
-            writePrayerJson(request, todayPrayer);
+        if (audioManager.getState() != AUDIO_IDLE) {
+            if (todayPrayer.valid) {
+                writePrayerJson(request, todayPrayer);
+            } else {
+                PrayerTimesResult result = PrayerTimesEngine::calculate(time(nullptr), config);
+                PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
+                writePrayerJson(request, result);
+            }
             return;
         }
 
@@ -1466,7 +1472,6 @@ void startWebServer() {
     server.on("/api/csv/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(512);
         doc["enabled"] = CSVManager::isEnabled();
-        doc["available"] = CSVManager::isAvailable();
         doc["calendarOnly"] = CSVManager::isCalendarOnly();
         doc["calendarFallback"] = CSVManager::isCalendarFallback();
         time_t now = time(nullptr);
@@ -1475,6 +1480,16 @@ void startWebServer() {
         int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : (tinfo.tm_year + 1900);
         if (year < 2024) year = tinfo.tm_year + 1900;
         doc["calendarYear"] = year;
+        if (audioManager.getState() != AUDIO_IDLE) {
+            doc["available"] = false;
+            doc["deferred"] = true;
+            doc.createNestedArray("months");
+            doc.createNestedArray("calendarMonths");
+            doc.createNestedArray("missingCalendarMonths");
+            sendJson(request, doc);
+            return;
+        }
+        doc["available"] = CSVManager::isAvailable();
         JsonArray months = doc.createNestedArray("months");
         for (int month : CSVManager::getLoadedMonths()) months.add(month);
         JsonArray calendarMonths = doc.createNestedArray("calendarMonths");
