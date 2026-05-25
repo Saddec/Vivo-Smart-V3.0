@@ -69,15 +69,35 @@
       <div class="row">
         <div class="col glass-card dashboard-clock-card">
           <h3><i class="far fa-clock"></i> الوقت والتاريخ</h3>
-          <div class="dashboard-location" id="locationDisplay" style="font-size: 1.1rem; color: #f1c40f; margin-bottom: 5px; text-align: center;"><i class="fas fa-map-marker-alt"></i> --, --</div>
-          <div class="dashboard-clock" id="timeDisplay">--:--</div>
-          <div class="dashboard-date"><span id="hijriDate"></span> | <span id="gregDate"></span></div>
+          <div class="dashboard-location" id="locationDisplay"><i class="fas fa-map-marker-alt"></i> --, --</div>
+          <div class="dashboard-clock-wrap">
+            <div class="dashboard-clock" id="timeDisplay">--:--</div>
+          </div>
+          <div class="dashboard-date-grid">
+            <div class="date-pill">
+              <span class="date-label">هجري</span>
+              <span id="hijriDate">--</span>
+            </div>
+            <div class="date-pill">
+              <span class="date-label">ميلادي</span>
+              <span id="gregDate">--</span>
+            </div>
+          </div>
         </div>
-        <div class="col glass-card">
+        <div class="col glass-card dashboard-player-card">
           <h3><i class="fas fa-volume-up"></i> حالة المشغل</h3>
-          <p id="playingStatus">متوقف</p>
-          <input type="range" id="volumeSlider" min="0" max="30" value="15" oninput="if($('mainVolVal')) $('mainVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
-          <span id="mainVolVal" style="display:block; text-align:center; font-weight:bold; margin-bottom:10px;">15</span>
+          <div class="playback-status-card" id="playbackStatusCard">
+            <div class="playback-status-icon" id="playbackStatusIcon"><i class="fas fa-stop"></i></div>
+            <div class="playback-status-text">
+              <span class="status-label">الحالة الحالية</span>
+              <p id="playingStatus">متوقف</p>
+            </div>
+          </div>
+          <div class="dashboard-volume-row">
+            <span><i class="fas fa-volume-down"></i> مستوى الصوت</span>
+            <strong id="mainVolVal">15</strong>
+          </div>
+          <input type="range" id="volumeSlider" min="0" max="30" value="15" oninput="if($('mainVolVal')) $('mainVolVal').textContent=this.value" onchange="setVolume(this.value)">
           <!-- Mirrored Dashboard Player Controls -->
           <div id="dashPlayerControlsContainer" class="player-container" style="display:none; border:none; background:transparent; padding:0; margin-top:10px;">
             <div class="player-controls-group" style="margin-top:0;">

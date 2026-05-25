@@ -292,10 +292,19 @@ function updateClock() {
 function fetchStatus() {
   apiGet('/api/status', {}).then((data) => {
     const isAdhan = data.adhan === true;
+    const statusCard = $('playbackStatusCard');
+    const statusIcon = $('playbackStatusIcon');
+    if (statusCard) {
+      statusCard.classList.toggle('is-playing', !!data.playing && !isAdhan);
+      statusCard.classList.toggle('is-adhan', isAdhan);
+    }
+    if (statusIcon) {
+      if (isAdhan) statusIcon.innerHTML = '<i class="fas fa-mosque"></i>';
+      else if (data.playing) statusIcon.innerHTML = '<i class="fas fa-play"></i>';
+      else statusIcon.innerHTML = '<i class="fas fa-stop"></i>';
+    }
     if ($('playingStatus')) {
       $('playingStatus').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'متوقف';
-      if (isAdhan) $('playingStatus').style.color = '#f39c12';
-      else $('playingStatus').style.color = '';
     }
     if ($('volumeSlider') && data.volume !== undefined) {
       $('volumeSlider').value = data.volume;
