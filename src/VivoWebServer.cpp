@@ -32,6 +32,8 @@ static String chunkUploadPath;
 static String calendarDownloadError;
 static bool uploadBusy = false;
 static SemaphoreHandle_t uploadMutex = NULL;
+static String cachedFileListJson;
+static unsigned long cachedFileListAt = 0;
 static String sessionToken = "";
 static String generateSessionToken() {
     uint32_t r1 = esp_random();
@@ -448,6 +450,25 @@ static void calendarDownloadTask(void *pvParameters) {
 
 
 void handleFileList(AsyncWebServerRequest *request) {
+    if (audioManager.getState() != AUDIO_IDLE) {
+        if (cachedFileListJson.length() > 0) {
+            request->send(200, "application/json", cachedFileListJson);
+            return;
+        }
+        DynamicJsonDocument doc(512);
+        JsonArray arr = doc.createNestedArray("files");
+        (void)arr;
+        bool mounted = sdReady();
+        doc["sd"]["connected"] = mounted;
+        doc["sd"]["cardType"] = mounted ? getSDCardTypeName() : "NONE";
+        doc["sd"]["totalMB"] = mounted ? getSDTotalMB() : 0;
+        doc["sd"]["usedMB"] = mounted ? getSDUsedMB() : 0;
+        doc["sd"]["error"] = "deferred_while_audio_playing";
+        doc["i2s"]["ready"] = audioManager.isI2SReady();
+        sendJson(request, doc);
+        return;
+    }
+
     DynamicJsonDocument doc(16384);
     JsonArray arr = doc.createNestedArray("files");
 
@@ -465,7 +486,11 @@ void handleFileList(AsyncWebServerRequest *request) {
         unlockSD();
     }
 
-    sendJson(request, doc);
+    String json;
+    serializeJson(doc, json);
+    cachedFileListJson = json;
+    cachedFileListAt = millis();
+    request->send(200, "application/json", json);
 }
 
 static void handleSdDownload(AsyncWebServerRequest *request) {
@@ -681,7 +706,8 @@ void startWebServer() {
 
     server.on("/api/time/sync_browser", HTTP_POST, [](AsyncWebServerRequest *request) {
         bool applied = false;
-        if (request->hasParam("timestamp", true)) {
+        bool skipped = audioManager.getState() != AUDIO_IDLE;
+        if (!skipped && request->hasParam("timestamp", true)) {
             String tsStr = request->getParam("timestamp", true)->value();
             time_t epoch = (time_t) tsStr.toDouble();
             applied = syncTimeFromBrowser(epoch);
@@ -689,6 +715,7 @@ void startWebServer() {
         DynamicJsonDocument doc(128);
         doc["ok"] = true;
         doc["applied"] = applied;
+        doc["skipped"] = skipped;
         sendJson(request, doc);
     });
 
@@ -906,6 +933,11 @@ void startWebServer() {
         String reqCountry = request->hasParam("country") ? request->getParam("country")->value() : "";
         String reqCity = request->hasParam("city") ? request->getParam("city")->value() : "";
         bool changed = false;
+
+        if (audioManager.getState() != AUDIO_IDLE && todayPrayer.valid) {
+            writePrayerJson(request, todayPrayer);
+            return;
+        }
 
         Preferences prefs;
         prefs.begin("prayer_cfg", true);

@@ -112,6 +112,7 @@ private:
     uint32_t _cachedCurrentTime = 0;
     uint8_t _cachedVolume = 0;
     bool _cachedIsRunning = false;
+    unsigned long _lastInfoCacheUpdate = 0;
 };
 
 void audioTask(void *pvParameters);

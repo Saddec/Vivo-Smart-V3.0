@@ -243,24 +243,27 @@ function initDashboard() {
   const epochSecs = Math.floor(Date.now() / 1000);
   apiPost('/api/time/sync_browser', { timestamp: epochSecs }).then(() => {
     updateClock();
-    fetchPrayerTimes();
+    setTimeout(fetchPrayerTimes, 700);
   });
-  
-  fetchStatus();
-  loadCountries();
-  loadManualSettings();
-  loadDailyOffsetStatus();
-  loadFileList();
-  loadSchedules();
-  loadMaghribAlerts();
-  loadStartupSettings();
-  loadSessionTimeout();
-  loadCsvStatus();
-  loadWifiStatus();
-  loadEidSchedules();
-  loadEidTakbeerConfig();
-  populateGpioPins();
-  loadDDNS();
+
+  const startupJobs = [
+    fetchStatus,
+    loadCountries,
+    loadManualSettings,
+    loadDailyOffsetStatus,
+    loadSchedules,
+    loadMaghribAlerts,
+    loadStartupSettings,
+    loadSessionTimeout,
+    loadCsvStatus,
+    loadWifiStatus,
+    loadEidSchedules,
+    loadEidTakbeerConfig,
+    populateGpioPins,
+    loadDDNS
+  ];
+  startupJobs.forEach((job, index) => setTimeout(job, 150 + (index * 180)));
+  setTimeout(loadFileList, 3000);
 }
 
 function format12Hour(time24) {

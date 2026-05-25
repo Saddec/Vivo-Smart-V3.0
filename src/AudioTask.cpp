@@ -38,7 +38,8 @@ AudioManager::AudioManager()
       _suspendedPlaylistIndex(0), _suspendedPlaylistVolume(15), _suspendedRespectAdhan(false),
       _suspendedPauseAfterAdhan(0), _isPlaylistSuspendedState(false),
       _alertEndTime(0), _waitingForResumption(false), _pendingSeekTime(0),
-      _cachedDuration(0), _cachedCurrentTime(0), _cachedVolume(0), _cachedIsRunning(false)
+      _cachedDuration(0), _cachedCurrentTime(0), _cachedVolume(0), _cachedIsRunning(false),
+      _lastInfoCacheUpdate(0)
 {
     _audioMutex = xSemaphoreCreateRecursiveMutex();
 }
@@ -65,6 +66,7 @@ void AudioManager::begin() {
         _cachedCurrentTime = 0;
         _cachedVolume = 15;
         _cachedIsRunning = false;
+        _lastInfoCacheUpdate = 0;
         xSemaphoreGiveRecursive(_audioMutex);
     }
 }
@@ -155,6 +157,7 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
     _cachedIsRunning = true;
     _cachedDuration = 0;
     _cachedCurrentTime = 0;
+    _lastInfoCacheUpdate = 0;
 
     LOG_AUD("AUDIO", "Started playing file: %s (Priority: %d, Vol: %d)", fullPath.c_str(), priority, targetVol);
 
@@ -467,12 +470,15 @@ void AudioManager::loop() {
 
     if (xSemaphoreTakeRecursive(_audioMutex, 0) == pdTRUE) {
         _cachedIsRunning = _audio->isRunning();
-        if (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED) {
+        unsigned long nowMs = millis();
+        if ((_state == AUDIO_PLAYING || _state == AUDIO_PAUSED) && (nowMs - _lastInfoCacheUpdate >= 500 || _lastInfoCacheUpdate == 0)) {
             _cachedDuration = _audio->getAudioFileDuration();
             _cachedCurrentTime = _audio->getAudioCurrentTime();
-        } else {
+            _lastInfoCacheUpdate = nowMs;
+        } else if (_state != AUDIO_PLAYING && _state != AUDIO_PAUSED) {
             _cachedDuration = 0;
             _cachedCurrentTime = 0;
+            _lastInfoCacheUpdate = 0;
         }
         // _cachedVolume is maintained in the 0-30 scale; do not overwrite with library 0-21 volume.
 

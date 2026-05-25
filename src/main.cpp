@@ -26,7 +26,7 @@ void setup() {
     );
 
     xTaskCreatePinnedToCore(
-        audioTask, "AudioTask", 16384, NULL, 6, NULL, 1
+        audioTask, "AudioTask", 16384, NULL, 8, NULL, 1
     );
 }
 
