@@ -42,6 +42,10 @@ static bool lastWifiConnected = false;
 static unsigned long wifiDisconnectedAt = 0;
 static unsigned long wifiConnectedAt = 0;
 static unsigned long lastReconnectAttempt = 0;
+static bool startupAlertQueued = false;
+static unsigned long systemReadyAtMs = 0;
+static const unsigned long startupAlertDelayMs = 3000;
+static const unsigned long onlinePrayerStartupDelayMs = 20000;
 
 void forcePrayerRecalc() {
     lastPrayerCalc = 0;
@@ -247,7 +251,7 @@ void syncTimeFromNTP() {
     Serial.println("[Time] NTP sync requested");
     LOG_SYS("SYSTEM", "NTP time synchronization requested");
     struct tm tinfo;
-    if (getLocalTime(&tinfo, 6000)) {
+    if (getLocalTime(&tinfo, 3000)) {
         Serial.printf("[Time] NTP time valid: %04d-%02d-%02d %02d:%02d\n",
                       tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
                       tinfo.tm_hour, tinfo.tm_min);
@@ -391,7 +395,8 @@ void checkPrayerTimes() {
             prefs.end();
 
             PrayerTimesResult online;
-            if (PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
+            bool allowOnlineFetch = millis() > onlinePrayerStartupDelayMs && WiFi.status() == WL_CONNECTED;
+            if (allowOnlineFetch && PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
                 PrayerTimesEngine::applyDailyOffsets(online, now);
                 todayPrayer = online;
                 todayHijri = "";
@@ -408,7 +413,11 @@ void checkPrayerTimes() {
                     PrayerTimesEngine::applyDailyOffsets(todayPrayer, now);
                     todayHijri = "";
                     Serial.println("[Prayer] System task using local calculated timings");
-                    LOG_PR("PRAYER", "Online and SD timing failed. Using locally calculated timings");
+                    if (allowOnlineFetch) {
+                        LOG_PR("PRAYER", "Online and SD timing failed. Using locally calculated timings");
+                    } else {
+                        LOG_PR("PRAYER", "Startup grace period active. Using locally calculated timings");
+                    }
                 }
             }
             lastPrayerCalc = now;
@@ -538,7 +547,7 @@ void systemTask(void *pvParameters) {
     initGPIO();
     loadGpioSchedules();
 
-    playStartupAlert();
+    systemReadyAtMs = millis();
 
     for (;;) {
         updateLEDTask();
@@ -557,6 +566,10 @@ void systemTask(void *pvParameters) {
         checkEidSchedule();
         checkGPIOInputs();
         ddnsManager.loop();
+        if (!startupAlertQueued && millis() - systemReadyAtMs >= startupAlertDelayMs) {
+            startupAlertQueued = true;
+            playStartupAlert();
+        }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

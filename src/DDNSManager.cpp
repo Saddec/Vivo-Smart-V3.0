@@ -11,7 +11,7 @@ DDNSManager ddnsManager;
 
 void DDNSManager::begin() {
     loadConfig();
-    _lastUpdate = 0;
+    _lastUpdate = millis();
 }
 
 void DDNSManager::loadConfig() {

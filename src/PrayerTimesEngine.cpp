@@ -278,7 +278,7 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
     client.setInsecure();
 
     HTTPClient http;
-    http.setTimeout(6000);
+    http.setTimeout(3500);
     http.begin(client, url);
     int code = http.GET();
     if (code != 200) {
