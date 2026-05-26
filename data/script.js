@@ -334,13 +334,45 @@ function fetchStatus() {
     const statusCard = $('playbackStatusCard');
     const statusIcon = $('playbackStatusIcon');
     if (statusCard) {
-      statusCard.classList.toggle('is-playing', !!data.playing && !isAdhan);
-      statusCard.classList.toggle('is-adhan', isAdhan);
+      statusCard.className = 'playback-status-card';
+      if (!data.playing) {
+        statusCard.classList.add('status-stopped');
+      } else {
+        const text = data.status_text || '';
+        if (isAdhan || text.includes('أذان') || text.includes('الاذان')) {
+          statusCard.classList.add('status-adhan');
+        } else if (text.includes('إقامة') || text.includes('اقامة') || text.includes('صلاة') || text.includes('تقام')) {
+          statusCard.classList.add('status-iqama');
+        } else if (text.includes('تكبيرات') || text.includes('التكبيرات') || text.includes('تكبير')) {
+          statusCard.classList.add('status-takbeer');
+        } else if (text.includes('قائمة') || text.includes('قوائم') || text.includes('تشغيل قائمة')) {
+          statusCard.classList.add('status-playlist');
+        } else if (text.includes('قبل المغرب') || text.includes('تنبيه قبل المغرب')) {
+          statusCard.classList.add('status-maghrib');
+        } else if (text.includes('تنبيهات العيد') || text.includes('تنبيه عيد') || (!!data.eidMode && text.includes('تنبيه'))) {
+          statusCard.classList.add('status-eid-alert');
+        } else if (text.includes('يدوي') || text.startsWith('تشغيل:')) {
+          statusCard.classList.add('status-manual');
+        } else if (text.includes('مهم') || text.includes('بدء التشغيل')) {
+          statusCard.classList.add('status-alert-important');
+        } else {
+          statusCard.classList.add('status-alert-normal');
+        }
+      }
     }
     if (statusIcon) {
-      if (isAdhan) statusIcon.innerHTML = '<i class="fas fa-mosque"></i>';
-      else if (data.playing) statusIcon.innerHTML = '<i class="fas fa-play"></i>';
-      else statusIcon.innerHTML = '<i class="fas fa-stop"></i>';
+      const text = data.status_text || '';
+      if (!data.playing) {
+        statusIcon.innerHTML = '<i class="fas fa-stop"></i>';
+      } else if (isAdhan || text.includes('أذان') || text.includes('الاذان')) {
+        statusIcon.innerHTML = '<i class="fas fa-mosque"></i>';
+      } else if (text.includes('إقامة') || text.includes('اقامة') || text.includes('صلاة') || text.includes('تقام')) {
+        statusIcon.innerHTML = '<i class="fas fa-mosque"></i>';
+      } else if (text.includes('تكبيرات') || text.includes('التكبيرات') || text.includes('تكبير')) {
+        statusIcon.innerHTML = '<i class="fas fa-star-and-crescent"></i>';
+      } else {
+        statusIcon.innerHTML = '<i class="fas fa-play"></i>';
+      }
     }
     if ($('playingStatus')) {
       $('playingStatus').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'متوقف';
@@ -2913,11 +2945,26 @@ function changePassword() {
     .catch((err) => toast(`فشل التغيير: ${err.message}`));
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-  if (isMobileDevice) {
+function checkResponsive() {
+  if (window.innerWidth <= 992) {
     document.body.classList.add('is-mobile');
+  } else {
+    document.body.classList.remove('is-mobile');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const menuBtnIcon = document.querySelector('#menuToggleBtn i');
+    if (sidebar) sidebar.classList.remove('open');
+    if (overlay) overlay.style.display = 'none';
+    if (menuBtnIcon) {
+      menuBtnIcon.classList.remove('fa-times');
+      menuBtnIcon.classList.add('fa-bars');
+    }
   }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  checkResponsive();
+  window.addEventListener('resize', checkResponsive);
   toggleDHCP();
   toggleScheduleFields();
   toggleLoopFields();

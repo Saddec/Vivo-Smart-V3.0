@@ -435,9 +435,11 @@
             <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
             <input type="time" id="singleAlertEndTime" style="width:100%; margin-bottom:10px;">
           </div>
-          <label>مستوى الصوت (0-30)</label>
+          <div class="dashboard-volume-row">
+            <span><i class="fas fa-volume-down"></i> مستوى الصوت (0-30)</span>
+            <strong id="singleAlertVolumeValue">20</strong>
+          </div>
           <input type="range" id="singleAlertVolume" min="0" max="30" value="20" oninput="$('singleAlertVolumeValue').textContent=this.value">
-          <span id="singleAlertVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
           <label>التكرار</label>
           <select id="singleAlertLoopToggle" onchange="toggleLoopFields('singleAlert')">
             <option value="no">بدون تكرار</option>
@@ -525,9 +527,11 @@
               <label>عدد مرات التكرار</label>
               <input type="number" id="gpioInputRepeatCount" value="1" min="1">
             </div>
-            <label>مستوى الصوت</label>
+            <div class="dashboard-volume-row">
+              <span><i class="fas fa-volume-down"></i> مستوى الصوت</span>
+              <strong id="gpioInputVolVal">20</strong>
+            </div>
             <input type="range" id="gpioInputVolume" min="0" max="30" value="20" oninput="if($('gpioInputVolVal')) $('gpioInputVolVal').textContent=this.value" style="width:100%">
-            <span id="gpioInputVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
           </div>
           <label>المخرج المرتبط (اختياري)</label>
           <select id="gpioInputOutputPin"></select>
@@ -582,9 +586,11 @@
               <label>عدد مرات التكرار</label>
               <input type="number" id="gpioSchedRepeatCount" value="1" min="1">
             </div>
-            <label>مستوى الصوت</label>
+            <div class="dashboard-volume-row">
+              <span><i class="fas fa-volume-down"></i> مستوى الصوت</span>
+              <strong id="gpioSchedVolVal">20</strong>
+            </div>
             <input type="range" id="gpioSchedVolume" min="0" max="30" value="20" oninput="if($('gpioSchedVolVal')) $('gpioSchedVolVal').textContent=this.value" style="width:100%">
-            <span id="gpioSchedVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
           </div>
           <button class="btn" id="gpioSchedSaveBtn" onclick="saveGpioSched()"><i class="fas fa-save"></i> حفظ جدولة GPIO</button>
           <button class="btn btn-secondary" id="gpioSchedCancelEditBtn" onclick="cancelEditGpioSched()" style="display:none; margin-top:10px;"><i class="fas fa-times"></i> إلغاء التعديل</button>
@@ -634,9 +640,11 @@
           <h3><i class="fas fa-volume-up"></i> التكبيرات - جدولة متقدمة</h3>
           <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد قبل/بعد كل صلاة بعدد الدقائق، أو اختر صلوات محددة</p>
           <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
-          <label>مستوى صوت التكبيرات</label>
+          <div class="dashboard-volume-row">
+            <span><i class="fas fa-volume-down"></i> مستوى صوت التكبيرات</span>
+            <strong id="eidTakbeerVolumeValue">15</strong>
+          </div>
           <input type="range" id="eidTakbeerVolume" min="0" max="30" value="15">
-          <span id="eidTakbeerVolumeValue">15</span>
           <div id="eidPrayerConfig"></div>
           <button class="btn" onclick="saveEidTakbeerConfig()"><i class="fas fa-save"></i> حفظ جدولة التكبيرات</button>
           <button class="btn" onclick="triggerTakbeer()"><i class="fas fa-play"></i> تشغيل مرة واحدة</button>
@@ -667,9 +675,11 @@
             <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
             <input type="time" id="eidScheduleEndTime" style="width:100%; margin-bottom:10px;">
           </div>
-          <label>مستوى الصوت (0-30)</label>
+          <div class="dashboard-volume-row">
+            <span><i class="fas fa-volume-down"></i> مستوى الصوت (0-30)</span>
+            <strong id="eidScheduleVolumeValue">20</strong>
+          </div>
           <input type="range" id="eidScheduleVolume" min="0" max="30" value="20" oninput="$('eidScheduleVolumeValue').textContent=this.value">
-          <span id="eidScheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
           <label>التكرار</label>
           <select id="eidScheduleLoopToggle" onchange="toggleEidLoopFields()">
             <option value="no">بدون تكرار</option>
@@ -739,7 +749,7 @@
               <button class="btn btn-danger" onclick="clearPlaylist()" style="margin: 0; background: var(--color-danger);"><i class="fas fa-trash"></i> مسح القائمة</button>
             </div>
             
-            <div class="dashboard-volume-row" style="margin-top:20px; margin-bottom:10px;">
+            <div class="dashboard-volume-row">
               <span><i class="fas fa-volume-down"></i> مستوى الصوت</span>
               <strong id="playlistVolVal">15</strong>
             </div>
@@ -781,9 +791,11 @@
             <input type="time" id="playlistSchedEndTime" style="width:100%; margin-bottom:10px;">
           </div>
           
-          <label>مستوى الصوت (0-30)</label>
+          <div class="dashboard-volume-row">
+            <span><i class="fas fa-volume-down"></i> مستوى الصوت (0-30)</span>
+            <strong id="playlistSchedVolumeValue">20</strong>
+          </div>
           <input type="range" id="playlistSchedVolume" min="0" max="30" value="20" oninput="$('playlistSchedVolumeValue').textContent=this.value">
-          <span id="playlistSchedVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
           
           <label>التكرار</label>
           <select id="playlistSchedLoopToggle" onchange="toggleLoopFields('playlistSched')">
