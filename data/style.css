@@ -769,8 +769,22 @@ body.is-mobile.logged-in .mobile-header {
 .dashboard-clock-card h3 i,
 .dashboard-player-card h3 i,
 .dashboard-prayer-card h3 i {
-  color: var(--accent-gold);
+  color: var(--primary-glow);
 }
+.prayer-source-badge {
+  font-size: 0.6em;
+  padding: 3px 8px;
+  border-radius: 12px;
+  margin-right: 10px;
+  color: #fff;
+  font-weight: bold;
+  vertical-align: middle;
+  background: rgba(255, 255, 255, 0.1);
+}
+.source-internet { background: rgba(0, 255, 204, 0.2); color: var(--primary-glow); box-shadow: 0 0 5px rgba(0, 255, 204, 0.3); border: 1px solid var(--primary-glow); }
+.source-calendar { background: rgba(243, 156, 18, 0.2); color: #f39c12; box-shadow: 0 0 5px rgba(243, 156, 18, 0.3); border: 1px solid #f39c12; }
+.source-manual   { background: rgba(231, 76, 60, 0.2); color: #e74c3c; box-shadow: 0 0 5px rgba(231, 76, 60, 0.3); border: 1px solid #e74c3c; }
+.source-local    { background: rgba(155, 89, 182, 0.2); color: #9b59b6; box-shadow: 0 0 5px rgba(155, 89, 182, 0.3); border: 1px solid #9b59b6; }
 
 .dashboard-location {
   display: inline-flex;

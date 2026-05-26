@@ -187,6 +187,7 @@ static void writePrayerJson(AsyncWebServerRequest *request, const PrayerTimesRes
     doc["asr"] = times.asr;
     doc["maghrib"] = times.maghrib;
     doc["isha"] = times.isha;
+    doc["source"] = times.source;
     doc["next"] = nextPrayerName(times);
     sendJson(request, doc);
 }
@@ -200,6 +201,7 @@ static PrayerTimesResult prayerFromDailyData(const DailyData& data) {
     result.asr = data.asr;
     result.maghrib = data.maghrib;
     result.isha = data.isha;
+    result.source = "روزمانة";
     PrayerTimesEngine::applyOffsets(result, currentPrayerConfig);
     return result;
 }

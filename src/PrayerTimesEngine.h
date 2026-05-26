@@ -9,6 +9,7 @@
 struct PrayerTimesResult {
     bool valid;
     String fajr, sunrise, dhuhr, asr, maghrib, isha;
+    String source;
 };
 
 struct PrayerConfig {

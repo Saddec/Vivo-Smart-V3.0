@@ -304,6 +304,7 @@ bool loadManualPrayerTimes(PrayerTimesResult &result) {
     result.maghrib = prefs.getString("maghrib", "18:00");
     result.isha = prefs.getString("isha", "19:30");
     result.valid = true;
+    result.source = "يدوي";
     prefs.end();
     todayHijri = "";
     return true;
@@ -317,6 +318,7 @@ static void applyDailyData(const DailyData& data) {
     todayPrayer.maghrib = data.maghrib;
     todayPrayer.isha = data.isha;
     todayPrayer.valid = true;
+    todayPrayer.source = "روزمانة";
     PrayerTimesEngine::applyOffsets(todayPrayer, currentPrayerConfig);
     PrayerTimesEngine::applyDailyOffsets(todayPrayer, time(nullptr));
     todayHijri = data.hijri;
@@ -399,6 +401,7 @@ void checkPrayerTimes() {
             bool allowOnlineFetch = millis() > onlinePrayerStartupDelayMs && WiFi.status() == WL_CONNECTED;
             if (allowOnlineFetch && PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
                 PrayerTimesEngine::applyDailyOffsets(online, now);
+                online.source = "انترنت";
                 todayPrayer = online;
                 todayHijri = "";
                 Serial.println("[Prayer] System task using online timings");
@@ -412,6 +415,7 @@ void checkPrayerTimes() {
                 } else {
                     todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
                     PrayerTimesEngine::applyDailyOffsets(todayPrayer, now);
+                    todayPrayer.source = "محلي";
                     todayHijri = "";
                     Serial.println("[Prayer] System task using local calculated timings");
                     if (allowOnlineFetch) {

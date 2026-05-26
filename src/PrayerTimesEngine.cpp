@@ -327,6 +327,7 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
 PrayerTimesResult PrayerTimesEngine::calculate(time_t date, const PrayerConfig& config) {
     PrayerTimesResult res;
     if (config.latitude == 0.0 && config.longitude == 0.0) return res;
+    res.source = "محلي";
 
     PrayTimes pt;
     pt.setCalcMethod(config.method); // 0=Egypt, 1=MWL, 2=Makkah

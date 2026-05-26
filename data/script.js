@@ -761,6 +761,19 @@ function fetchPrayerTimes() {
     if ($('asrTime')) $('asrTime').textContent = format12Hour(data.asr);
     if ($('maghribTime')) $('maghribTime').textContent = format12Hour(data.maghrib);
     if ($('ishaTime')) $('ishaTime').textContent = format12Hour(data.isha);
+
+    const badge = $('prayerSourceBadge');
+    if (badge && data.source) {
+      badge.textContent = data.source;
+      badge.style.display = 'inline-block';
+      badge.className = 'prayer-source-badge';
+      if (data.source.includes('انترنت')) badge.classList.add('source-internet');
+      else if (data.source.includes('روزمانة')) badge.classList.add('source-calendar');
+      else if (data.source.includes('يدوي')) badge.classList.add('source-manual');
+      else badge.classList.add('source-local');
+    } else if (badge) {
+      badge.style.display = 'none';
+    }
     
     if ($('nextPrayer') && data.next) {
        const parts = data.next.split(' ');
