@@ -1963,8 +1963,11 @@ void startWebServer() {
         bool ok = !Update.hasError();
         request->send(ok ? 200 : 500, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
         if (ok) {
-            delay(1000);
-            ESP.restart();
+            xTaskCreate([](void*){
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                ESP.restart();
+                vTaskDelete(NULL);
+            }, "otareboot", 2048, NULL, 1, NULL);
         }
     }, handleOtaUpload);
 

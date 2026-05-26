@@ -805,7 +805,11 @@
       <div class="glass-card">
         <h3><i class="fas fa-upload"></i> تحديث OTA</h3>
         <input type="file" id="otaFile" accept=".bin">
-        <button class="btn" onclick="startOTA()"><i class="fas fa-upload"></i> رفع التحديث</button>
+        <button class="btn" id="otaBtn" onclick="startOTA()"><i class="fas fa-upload"></i> رفع التحديث</button>
+        <div id="otaProgressContainer" style="display:none; margin-top:15px; background:rgba(255,255,255,0.1); border-radius:5px; height:10px; overflow:hidden;">
+            <div id="otaProgressBar" style="background:#3498db; width:0%; height:100%; transition:width 0.1s;"></div>
+        </div>
+        <p id="otaStatusText" style="display:none; margin-top:10px; font-size:13px; text-align:center; color:#bdc3c7;"></p>
       </div>
     </div>
 

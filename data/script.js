@@ -2214,21 +2214,70 @@ function saveMaghribAlerts() {
 
 function startOTA() {
   const input = $('otaFile');
+  const btn = $('otaBtn');
+  const container = $('otaProgressContainer');
+  const bar = $('otaProgressBar');
+  const status = $('otaStatusText');
+
   if (!input?.files?.length) return toast('اختر ملف التحديث');
+  
+  const file = input.files[0];
   const body = new FormData();
-  body.append('update', input.files[0]);
+  body.append('update', file);
   if (appState.sessionToken) body.append('token', appState.sessionToken);
+
   const otaUrl = appState.sessionToken ? `/api/ota?token=${encodeURIComponent(appState.sessionToken)}` : '/api/ota';
-  fetch(otaUrl, { method: 'POST', body })
-    .then((r) => {
-      if (r.status === 401) {
-        doLogout();
-        throw new Error('unauthorized');
-      }
-      if (!r.ok) throw new Error('ota failed');
-      toast('تم رفع التحديث. سيعاد تشغيل الجهاز.');
-    })
-    .catch((err) => toast(`فشل التحديث: ${err.message}`));
+
+  if (btn) btn.disabled = true;
+  if (container) container.style.display = 'block';
+  if (status) {
+    status.style.display = 'block';
+    status.innerHTML = 'جاري بدء التحديث...';
+  }
+  if (bar) bar.style.width = '0%';
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', otaUrl, true);
+
+  xhr.upload.onprogress = function(e) {
+    if (e.lengthComputable) {
+      const pct = Math.round((e.loaded / e.total) * 100);
+      if (bar) bar.style.width = `${pct}%`;
+      if (status) status.innerHTML = `جاري رفع التحديث: ${pct}%`;
+    }
+  };
+
+  xhr.onload = function() {
+    if (xhr.status === 200) {
+      if (bar) bar.style.width = '100%';
+      if (status) status.innerHTML = 'تم رفع التحديث بنجاح! جاري إعادة تشغيل الجهاز...';
+      toast('تم رفع التحديث بنجاح! سيعاد تشغيل الجهاز بعد قليل.');
+      setTimeout(() => {
+        location.reload();
+      }, 5000);
+    } else if (xhr.status === 401) {
+      doLogout();
+      toast('غير مصرح لك بالوصول، يرجى تسجيل الدخول مجدداً.');
+      resetOtaUI();
+    } else {
+      toast('فشل التحديث: حدث خطأ أثناء الرفع.');
+      resetOtaUI();
+    }
+  };
+
+  xhr.onerror = function() {
+    toast('فشل التحديث: خطأ في الاتصال بالشبكة.');
+    resetOtaUI();
+  };
+
+  xhr.send(body);
+
+  function resetOtaUI() {
+    if (btn) btn.disabled = false;
+    if (container) container.style.display = 'none';
+    if (status) status.style.display = 'none';
+    if (input) input.value = '';
+  }
 }
 
 function uploadCSV() {
