@@ -922,7 +922,7 @@ function populateFileSelects() {
 
   [
     'fajrAdhanFileSelect', 'adhanFileSelect', 'iqamaFileSelect', 'singleAlertFile',
-    'eidTakbeerFile', 'eidScheduleFile', 'playlistFileSelect', 'startupFileSelect'
+    'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect'
   ].forEach((id) => { if ($(id)) $(id).innerHTML = options; });
 
   [
@@ -934,6 +934,15 @@ function populateFileSelects() {
       .map((f) => `
         <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;">
           <input type="checkbox" class="playlist-file-cb" value="${safeAttr(f.name)}">
+          <span>${safeText(f.name)}</span>
+        </label>
+      `).join('');
+  }
+  if ($('eidScheduleFilesChecklist')) {
+    $('eidScheduleFilesChecklist').innerHTML = audioFiles
+      .map((f) => `
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;">
+          <input type="checkbox" class="eid-file-cb" value="${safeAttr(f.name)}">
           <span>${safeText(f.name)}</span>
         </label>
       `).join('');
@@ -2502,6 +2511,10 @@ function toggleEidLoopFields() {
 }
 
 function addEidSchedule() {
+  const checkboxes = document.querySelectorAll('.eid-file-cb:checked');
+  if (checkboxes.length === 0) return toast('اختر ملفاً واحداً على الأقل');
+  const fileList = Array.from(checkboxes).map(cb => cb.value).join(',');
+
   const [hour = '0', minute = '0'] = ($('eidScheduleTime')?.value || '00:00').split(':');
   const type = $('eidScheduleType')?.value || 'daily';
   let dayOfWeek = -1, dayOfMonth = -1;
@@ -2514,8 +2527,13 @@ function addEidSchedule() {
   if (type === 'monthly') dayOfMonth = $('eidScheduleDay')?.value || '-1';
   let offsetSeconds = Number($('eidScheduleOffset')?.value || 0) * 60;
   if ($('eidScheduleBeforeAfter')?.value === 'before') offsetSeconds = -Math.abs(offsetSeconds);
+
+  const repeatInterval = Number($('eidScheduleRepeatInterval')?.value || 0);
+  const endHour = $('eidScheduleEndTime')?.value ? Number($('eidScheduleEndTime').value.split(':')[0]) : -1;
+  const endMinute = $('eidScheduleEndTime')?.value ? Number($('eidScheduleEndTime').value.split(':')[1]) : -1;
+
   apiPost('/api/scheduler/add', {
-    file: $('eidScheduleFile')?.value || '',
+    file: fileList,
     type,
     hour,
     minute,
@@ -2527,9 +2545,16 @@ function addEidSchedule() {
     prayerIndex: $('eidSchedulePrayer')?.value || 0,
     offsetSeconds,
     eidOnly: '1',
-    important: 1
+    important: 1,
+    repeatInterval,
+    endHour,
+    endMinute
   }).then(() => {
     toast('تم إضافة تنبيه العيد');
+    document.querySelectorAll('.eid-file-cb').forEach(cb => cb.checked = false);
+    if ($('eidScheduleRepeatInterval')) $('eidScheduleRepeatInterval').value = 0;
+    if ($('eidScheduleEndTime')) $('eidScheduleEndTime').value = '';
+    toggleAlertEndTimeField('eidSchedule');
     loadEidSchedules();
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
@@ -2549,6 +2574,13 @@ function loadEidSchedules() {
             info += ` ${pn} ${a.offsetSeconds >= 0 ? 'بعد' : 'قبل'} (${Math.abs(a.offsetSeconds/60)}د)`;
           } else {
             info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
+          }
+          if (a.repeatInterval > 0) {
+            info += ` (تكرار كل ${a.repeatInterval}د`;
+            if (a.endHour >= 0 && a.endMinute >= 0) {
+              info += ` حتى ${String(a.endHour).padStart(2, '0')}:${String(a.endMinute).padStart(2, '0')}`;
+            }
+            info += `)`;
           }
           info += ` - صوت: ${a.volume || 20}`;
           if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;

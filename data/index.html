@@ -575,7 +575,8 @@
       <div class="glass-card">
         <h3><i class="fas fa-bell"></i> تنبيهات العيد</h3>
         <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">تنبيهات مرنة تعمل فقط عند تفعيل وضع العيد</p>
-        <label>ملف الصوت</label><select id="eidScheduleFile"></select>
+        <label>الملفات (اختر ملف أو أكثر)</label>
+        <div id="eidScheduleFilesChecklist" style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 15px;"></div>
         <label>النوع</label>
         <select id="eidScheduleType" onchange="toggleEidScheduleFields()">
           <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
@@ -586,9 +587,15 @@
         <div id="eidScheduleTimeContainer">
           <label>الوقت</label><input type="time" id="eidScheduleTime">
         </div>
+        <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
+        <input type="number" id="eidScheduleRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('eidSchedule')">
+        <div id="eidScheduleEndTimeContainer" style="display:none;">
+          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+          <input type="time" id="eidScheduleEndTime" style="width:100%; margin-bottom:10px;">
+        </div>
         <label>مستوى الصوت (0-30)</label>
-        <input type="range" id="eidScheduleVolume" min="0" max="30" value="20">
-        <span id="eidScheduleVolumeValue">20</span>
+        <input type="range" id="eidScheduleVolume" min="0" max="30" value="20" oninput="$('eidScheduleVolumeValue').textContent=this.value">
+        <span id="eidScheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
         <label>التكرار</label>
         <select id="eidScheduleLoopToggle" onchange="toggleEidLoopFields()">
           <option value="no">بدون تكرار</option>
