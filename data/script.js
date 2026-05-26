@@ -118,6 +118,44 @@ function showTab(tabName) {
   if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
   if (tabName === 'logs') { fetchLogs(); }
+
+  // Auto-activate first sub-tab when showing a main tab
+  const activeTabEl = $(`tab-${tabName}`);
+  if (activeTabEl) {
+    const firstSubTabBtn = activeTabEl.querySelector('.sub-tabs-nav .sub-tab-btn');
+    if (firstSubTabBtn) {
+      firstSubTabBtn.click();
+    }
+  }
+}
+
+function showSubTab(parentTabId, subTabId, btn) {
+  const parent = document.getElementById(parentTabId);
+  if (!parent) return;
+
+  // Hide all sub-tab contents
+  parent.querySelectorAll('.sub-tab-content').forEach(el => {
+    el.style.display = 'none';
+  });
+
+  // Show active sub-tab content
+  const activeSub = document.getElementById(subTabId);
+  if (activeSub) {
+    activeSub.style.display = 'block';
+  }
+
+  // Manage active classes on buttons
+  parent.querySelectorAll('.sub-tab-btn').forEach(b => {
+    b.classList.remove('active');
+  });
+
+  let activeBtn = btn;
+  if (!activeBtn) {
+    activeBtn = parent.querySelector(`.sub-tab-btn[onclick*="${subTabId}"]`);
+  }
+  if (activeBtn) {
+    activeBtn.classList.add('active');
+  }
 }
 
 function toggleSidebar() {
@@ -320,7 +358,11 @@ function fetchStatus() {
     if ($('stopBtn')) $('stopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('dashStopBtn')) $('dashStopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('playerControlsContainer')) {
-      $('playerControlsContainer').style.display = data.playing ? 'block' : 'none';
+      const isPlaying = !!data.playing;
+      $('playerControlsContainer').style.display = isPlaying ? 'block' : 'none';
+      if ($('quickPlayerPlaceholder')) {
+        $('quickPlayerPlaceholder').style.display = isPlaying ? 'none' : 'block';
+      }
     }
     if ($('dashPlayerControlsContainer')) {
       $('dashPlayerControlsContainer').style.display = data.playing ? 'block' : 'none';
@@ -382,6 +424,7 @@ function stopAudio() {
     .then(() => {
       fetchStatus();
       if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'none';
+      if ($('quickPlayerPlaceholder')) $('quickPlayerPlaceholder').style.display = 'block';
       if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'none';
     })
     .catch((err) => {
@@ -1305,6 +1348,7 @@ function editSingleAlert(index) {
   if (!alert) return;
   
   editingSingleAlertIndex = index;
+  showSubTab('tab-scheduler', 'sub-sched-add');
   
   if ($('singleAlertName')) $('singleAlertName').value = alert.name || '';
   if ($('singleAlertFile')) $('singleAlertFile').value = alert.file || '';
@@ -1467,6 +1511,7 @@ function editPlaylistSched(index) {
   if (!alert) return;
   
   editingPlaylistSchedIndex = index;
+  showSubTab('tab-player', 'sub-player-sched');
   
   if ($('playlistSchedName')) $('playlistSchedName').value = alert.name || '';
   
@@ -1814,6 +1859,7 @@ function editGpioInput(pin) {
   if (!mapping) return;
   
   editingInputPin = mapping.pin;
+  showSubTab('tab-gpio', 'sub-gpio-inputs');
   editingInputOutputPin = mapping.outputPin !== undefined ? mapping.outputPin : '0';
   
   populateGpioPins();
@@ -1990,6 +2036,7 @@ function editGpioSched(index) {
   if (!sched) return;
   
   editingGpioSchedIndex = index;
+  showSubTab('tab-gpio', 'sub-gpio-schedules');
   
   if ($('gpioSchedName')) $('gpioSchedName').value = sched.name || '';
   if ($('gpioSchedPin')) $('gpioSchedPin').value = sched.pin;
@@ -2135,6 +2182,7 @@ function playSingleFile() {
   apiPost('/api/audio/play', { file: file, priority: 0, volume: volume })
     .then(() => {
       if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
+      if ($('quickPlayerPlaceholder')) $('quickPlayerPlaceholder').style.display = 'none';
       if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'block';
     })
     .catch((err) => toast(`فشل التشغيل: ${err.message}`));
@@ -2166,6 +2214,7 @@ function playPlaylist() {
     respectAdhan: $('playlistAdhanRespect')?.checked ? '1' : '0'
   }).then(() => {
     if ($('playerControlsContainer')) $('playerControlsContainer').style.display = 'block';
+    if ($('quickPlayerPlaceholder')) $('quickPlayerPlaceholder').style.display = 'none';
     if ($('dashPlayerControlsContainer')) $('dashPlayerControlsContainer').style.display = 'block';
   }).catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
@@ -2510,11 +2559,116 @@ function toggleEidLoopFields() {
   if ($('eidLoopFields')) $('eidLoopFields').style.display = $('eidScheduleLoopToggle')?.value === 'yes' ? 'block' : 'none';
 }
 
+let editingEidAlertIndex = -1;
+
+function cancelEditEidSchedule() {
+  editingEidAlertIndex = -1;
+  if ($('eidScheduleName')) $('eidScheduleName').value = '';
+  document.querySelectorAll('.eid-file-cb').forEach(cb => cb.checked = false);
+  if ($('eidScheduleType')) {
+    $('eidScheduleType').value = 'daily';
+    toggleEidScheduleFields();
+  }
+  if ($('eidScheduleTime')) $('eidScheduleTime').value = '00:00';
+  if ($('eidScheduleRepeatInterval')) $('eidScheduleRepeatInterval').value = 0;
+  if ($('eidScheduleEndTime')) $('eidScheduleEndTime').value = '';
+  toggleAlertEndTimeField('eidSchedule');
+  if ($('eidScheduleVolume')) {
+    $('eidScheduleVolume').value = 20;
+    if ($('eidScheduleVolumeValue')) $('eidScheduleVolumeValue').textContent = 20;
+  }
+  if ($('eidScheduleLoopToggle')) {
+    $('eidScheduleLoopToggle').value = 'no';
+    toggleEidLoopFields();
+  }
+  if ($('eidScheduleLoopDuration')) $('eidScheduleLoopDuration').value = 0;
+  
+  if ($('eidScheduleSaveBtn')) {
+    $('eidScheduleSaveBtn').innerHTML = '<i class="fas fa-save"></i> إضافة تنبيه عيد';
+  }
+  if ($('eidScheduleCancelEditBtn')) {
+    $('eidScheduleCancelEditBtn').style.display = 'none';
+  }
+}
+
+function editEidSchedule(index) {
+  const alert = appState.alerts[index];
+  if (!alert) return;
+  
+  editingEidAlertIndex = index;
+  showSubTab('tab-eid', 'sub-eid-alerts');
+  
+  if ($('eidScheduleName')) $('eidScheduleName').value = alert.name || '';
+  
+  const files = (alert.file || '').split(',');
+  document.querySelectorAll('.eid-file-cb').forEach(cb => {
+    cb.checked = files.includes(cb.value);
+  });
+  
+  if ($('eidScheduleType')) {
+    $('eidScheduleType').value = alert.type || 'daily';
+    toggleEidScheduleFields();
+  }
+  
+  if (alert.type === 'prayer_relative') {
+    if ($('eidSchedulePrayer')) $('eidSchedulePrayer').value = alert.prayerIndex || 0;
+    if ($('eidScheduleOffset')) $('eidScheduleOffset').value = Math.abs(alert.offsetSeconds / 60);
+    if ($('eidScheduleBeforeAfter')) $('eidScheduleBeforeAfter').value = alert.offsetSeconds < 0 ? 'before' : 'after';
+  } else {
+    if ($('eidScheduleTime')) {
+      $('eidScheduleTime').value = `${String(alert.hour).padStart(2, '0')}:${String(alert.minute).padStart(2, '0')}`;
+    }
+  }
+  
+  if (alert.type === 'weekly') {
+    document.querySelectorAll('.eid-weekly-day-cb').forEach(cb => {
+      cb.checked = (alert.dayOfWeek & (1 << parseInt(cb.value))) !== 0;
+    });
+  } else if (alert.type === 'monthly') {
+    if ($('eidScheduleDay')) $('eidScheduleDay').value = alert.dayOfMonth;
+  } else if (alert.type === 'specific') {
+    if ($('eidScheduleDate')) $('eidScheduleDate').value = alert.specificDate || '';
+  }
+  
+  if ($('eidScheduleRepeatInterval')) {
+    $('eidScheduleRepeatInterval').value = alert.repeatInterval !== undefined ? alert.repeatInterval : 0;
+    toggleAlertEndTimeField('eidSchedule');
+  }
+  if ($('eidScheduleEndTime') && alert.endHour !== undefined && alert.endHour >= 0) {
+    const eh = String(alert.endHour).padStart(2, '0');
+    const em = String(alert.endMinute).padStart(2, '0');
+    $('eidScheduleEndTime').value = eh + ':' + em;
+  } else {
+    if ($('eidScheduleEndTime')) $('eidScheduleEndTime').value = '';
+  }
+  
+  if ($('eidScheduleVolume')) {
+    $('eidScheduleVolume').value = alert.volume !== undefined ? alert.volume : 20;
+    if ($('eidScheduleVolumeValue')) $('eidScheduleVolumeValue').textContent = alert.volume !== undefined ? alert.volume : 20;
+  }
+  
+  if ($('eidScheduleLoopToggle')) {
+    $('eidScheduleLoopToggle').value = (alert.loop && alert.loop > 0) ? 'yes' : 'no';
+    toggleEidLoopFields();
+  }
+  if ($('eidScheduleLoopDuration') && alert.loop) {
+    $('eidScheduleLoopDuration').value = Math.round(alert.loop / 60);
+  }
+  
+  if ($('eidScheduleSaveBtn')) {
+    $('eidScheduleSaveBtn').innerHTML = '<i class="fas fa-save"></i> حفظ التعديلات';
+  }
+  if ($('eidScheduleCancelEditBtn')) {
+    $('eidScheduleCancelEditBtn').style.display = 'block';
+  }
+}
+
 function addEidSchedule() {
   const checkboxes = document.querySelectorAll('.eid-file-cb:checked');
   if (checkboxes.length === 0) return toast('اختر ملفاً واحداً على الأقل');
   const fileList = Array.from(checkboxes).map(cb => cb.value).join(',');
 
+  const name = $('eidScheduleName')?.value || '';
   const [hour = '0', minute = '0'] = ($('eidScheduleTime')?.value || '00:00').split(':');
   const type = $('eidScheduleType')?.value || 'daily';
   let dayOfWeek = -1, dayOfMonth = -1;
@@ -2533,6 +2687,7 @@ function addEidSchedule() {
   const endMinute = $('eidScheduleEndTime')?.value ? Number($('eidScheduleEndTime').value.split(':')[1]) : -1;
 
   apiPost('/api/scheduler/add', {
+    name,
     file: fileList,
     type,
     hour,
@@ -2548,13 +2703,11 @@ function addEidSchedule() {
     important: 1,
     repeatInterval,
     endHour,
-    endMinute
+    endMinute,
+    index: editingEidAlertIndex
   }).then(() => {
-    toast('تم إضافة تنبيه العيد');
-    document.querySelectorAll('.eid-file-cb').forEach(cb => cb.checked = false);
-    if ($('eidScheduleRepeatInterval')) $('eidScheduleRepeatInterval').value = 0;
-    if ($('eidScheduleEndTime')) $('eidScheduleEndTime').value = '';
-    toggleAlertEndTimeField('eidSchedule');
+    toast(editingEidAlertIndex >= 0 ? 'تم تعديل تنبيه العيد' : 'تم إضافة تنبيه العيد');
+    cancelEditEidSchedule();
     loadEidSchedules();
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
@@ -2562,12 +2715,17 @@ function addEidSchedule() {
 function loadEidSchedules() {
   apiGet('/api/scheduler/list', []).then((data) => {
     const alerts = Array.isArray(data) ? data : (data.alerts || []);
+    appState.alerts = alerts;
+    alerts.forEach((alert, index) => {
+      alert.originalIndex = index;
+    });
     const eidAlerts = alerts.filter(a => a.eidOnly);
     if (!$('eidScheduleList')) return;
     $('eidScheduleList').innerHTML = eidAlerts.length
       ? eidAlerts.map((a, i) => {
           const realIndex = alerts.indexOf(a);
-          let info = `${safeText(a.file)} - ${safeText(a.type)}`;
+          let namePrefix = a.name ? `<strong>${safeText(a.name)}</strong>: ` : '';
+          let info = `${namePrefix}${safeText(a.file)} - ${safeText(a.type)}`;
           if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
           if (a.type === 'prayer_relative') {
             const pn = prayerNames[a.prayerIndex] || '';
@@ -2584,7 +2742,13 @@ function loadEidSchedules() {
           }
           info += ` - صوت: ${a.volume || 20}`;
           if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
-          return `<li class="file-item"><span>${info}</span><button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})">حذف</button></li>`;
+          return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center;">
+            <span>${info}</span>
+            <div style="display:flex; gap:5px;">
+              <button class="btn btn-secondary" onclick="editEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
+              <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px;">حذف</button>
+            </div>
+          </li>`;
         }).join('')
       : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات عيد. أضف تنبيهاً أعلاه.</p>';
   });
@@ -2593,6 +2757,7 @@ function loadEidSchedules() {
 function deleteEidSchedule(index) {
   apiPost('/api/scheduler/delete', { index }).then(() => {
     toast('تم حذف تنبيه العيد');
+    cancelEditEidSchedule();
     loadEidSchedules();
   }).catch((err) => toast(`فشل الحذف: ${err.message}`));
 }

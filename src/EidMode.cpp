@@ -4,6 +4,7 @@
 #include "PrayerTimesEngine.h"
 #include "SDManager.h"
 #include "EventLogger.h"
+#include "MaghribManager.h"
 #include <SD.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
@@ -11,10 +12,11 @@
 
 static bool eidModeEnabled = false;
 static time_t lastTakbeer = 0;
-static int lastTakbeerDay = -1;
-static int lastTakbeerWindow = -1;
+static int lastTakbeerDayForWindow[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 static String takbeerFile = "takbeer.mp3";
 static uint8_t takbeerVolume = 15;
+static int takbeerDurationSec = -1;
+static String lastLoadedTakbeerFile = "";
 
 static bool eidTakbeerFileExists(const String& fileName) {
     if (fileName.length() == 0 || !isSDReady()) return false;
@@ -85,32 +87,48 @@ static void loadEidSettings() {
 }
 
 // ---- helper: check if current time falls in a window around a prayer ----
-static int prayerWindowPhase(int pHour, int pMin, int beforeMin, int afterMin,
+static int prayerWindowPhase(int prayerIndex, int pHour, int pMin, int beforeMin, int afterMin,
                              int curHour, int curMin) {
     int prayerTotal = pHour * 60 + pMin;
-    int beforeStart = prayerTotal - beforeMin;
-    if (beforeStart < 0) beforeStart += 1440;
     int curTotal = curHour * 60 + curMin;
+
     if (beforeMin > 0) {
-        if (beforeStart > prayerTotal) {
-            if (curTotal >= beforeStart || curTotal < prayerTotal) return 0;
-        } else {
-            if (curTotal >= beforeStart && curTotal < prayerTotal) return 0;
+        if (takbeerFile != lastLoadedTakbeerFile || takbeerDurationSec < 0) {
+            takbeerDurationSec = MaghribManager::getMP3Duration(takbeerFile);
+            lastLoadedTakbeerFile = takbeerFile;
+            LOG_SYS("EID", "Cached Takbeer file duration: %d seconds", takbeerDurationSec);
+        }
+        int durationSec = takbeerDurationSec;
+        int durationMin = (durationSec + 59) / 60; // ceiling division
+        
+        int targetBeforeMin = prayerTotal - beforeMin;
+        if (targetBeforeMin < 0) targetBeforeMin += 1440;
+        
+        int startBeforeMin = targetBeforeMin - durationMin;
+        if (startBeforeMin < 0) startBeforeMin += 1440;
+        
+        int diffBefore = (curTotal - startBeforeMin + 1440) % 1440;
+        if (diffBefore >= 0 && diffBefore < 5) {
+            return 0;
         }
     }
+
     if (afterMin > 0) {
-        int afterStart = prayerTotal + 1;
-        int afterEnd = prayerTotal + afterMin;
-        if (afterEnd >= 1440) {
-            if (afterStart >= 1440) {
-                if (curTotal < afterEnd - 1440) return 1;
-            } else {
-                if (curTotal >= afterStart || curTotal < afterEnd - 1440) return 1;
+        int iqamaDelay = 0;
+        if (prayerIndex >= 0 && prayerIndex < 5) {
+            if (currentIqamaConfig.enabled[prayerIndex]) {
+                iqamaDelay = currentIqamaConfig.delayMin[prayerIndex];
             }
-        } else {
-            if (curTotal >= afterStart && curTotal < afterEnd) return 1;
+        }
+        int targetAfterMin = prayerTotal + iqamaDelay + afterMin;
+        if (targetAfterMin >= 1440) targetAfterMin %= 1440;
+
+        int diffAfter = (curTotal - targetAfterMin + 1440) % 1440;
+        if (diffAfter >= 0 && diffAfter < 5) {
+            return 1;
         }
     }
+
     return -1;
 }
 
@@ -178,10 +196,10 @@ void checkEidSchedule() {
         if (prayerTakbeer[i].beforeMin == 0 && prayerTakbeer[i].afterMin == 0) continue;
         int pHour = 0, pMin = 0;
         if (sscanf(prayers[i].c_str(), "%d:%d", &pHour, &pMin) != 2) continue;
-        int phase = prayerWindowPhase(pHour, pMin, prayerTakbeer[i].beforeMin, prayerTakbeer[i].afterMin, curHour, curMin);
+        int phase = prayerWindowPhase(i, pHour, pMin, prayerTakbeer[i].beforeMin, prayerTakbeer[i].afterMin, curHour, curMin);
         if (phase >= 0) {
             int windowId = (i * 2) + phase;
-            if (lastTakbeerDay == curDay && lastTakbeerWindow == windowId) continue;
+            if (lastTakbeerDayForWindow[windowId] == curDay) continue;
             if (audioManager.getState() != AUDIO_IDLE && audioManager.getCurrentPriority() > 0) continue;
             if (!eidTakbeerFileExists(takbeerFile)) {
                 LOG_E("EID", "Eid takbeer file is missing: %s", takbeerFile.c_str());
@@ -191,16 +209,16 @@ void checkEidSchedule() {
             currentAudioDescription = "تشغيل تكبيرات العيد";
             sendPlayCommand(takbeerFile.c_str(), 1, 0, takbeerVolume);
             lastTakbeer = now;
-            lastTakbeerDay = curDay;
-            lastTakbeerWindow = windowId;
+            lastTakbeerDayForWindow[windowId] = curDay;
             break;
         }
     }
 }
 
 void resetEidTakbeerWindow() {
-    lastTakbeerWindow = -1;
-    lastTakbeerDay = -1;
+    for (int w = 0; w < 10; w++) {
+        lastTakbeerDayForWindow[w] = -1;
+    }
     lastTakbeer = 0;
 }
 

@@ -8,7 +8,7 @@
 #define I2S_LRCK 17
 #define I2S_DOUT 18
 static const uint8_t AUDIO_UI_MAX_VOLUME = 30;
-static const uint8_t AUDIO_POWER_SAFE_MAX_VOLUME = 27;
+static const uint8_t AUDIO_POWER_SAFE_MAX_VOLUME = 30;
 
 static String normalizeAudioPath(const char* path) {
     String fullPath = String(path);
@@ -143,8 +143,8 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
 
     uint8_t targetVol = 15;
     if (volume > 0) targetVol = volume;
-    else if (priority == 3) targetVol = 25;
-    else if (priority == 2) targetVol = 22;
+    else if (priority == 3) targetVol = 30;
+    else if (priority == 2) targetVol = 30;
     uint8_t requestedVol = targetVol;
     targetVol = clampPowerSafeVolume(targetVol);
     if (requestedVol != targetVol) {

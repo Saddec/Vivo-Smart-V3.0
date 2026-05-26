@@ -173,384 +173,446 @@
     <!-- Prayer -->
     <div id="tab-prayer" class="tab">
       <h1><i class="fas fa-mosque"></i> إعدادات الصلاة</h1>
-      <div class="row">
-        <div class="col glass-card">
-          <h3>حساب المواقيت</h3>
-          <label>الدولة</label>
-          <select id="countrySelect" onchange="onCountryChange()"><option value="">اختر الدولة</option></select>
-          <label>المدينة</label>
-          <select id="citySelect" onchange="fetchPrayerTimes()"><option value="">اختر المدينة</option></select>
-          <label>طريقة الحساب</label>
-          <select id="methodSelect"><option value="0">الهيئة المصرية</option><option value="1">رابطة العالم الإسلامي</option><option value="2">أم القرى</option></select>
-          <div id="egyptDstContainer" style="margin-top: 15px; margin-bottom: 15px; display: none; align-items: center; gap: 10px;">
-            <label class="switch"><input type="checkbox" id="egyptDstToggle" onchange="fetchPrayerTimes()"><span class="slider"></span></label>
-            <span>التوقيت الصيفي التلقائي في مصر</span>
+
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-prayer', 'sub-prayer-calc', this)"><i class="fas fa-calculator"></i> حساب المواقيت والإزاحات</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-prayer', 'sub-prayer-daily', this)"><i class="fas fa-calendar-day"></i> تصحيح يوم محدد</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-prayer', 'sub-prayer-manual', this)"><i class="fas fa-edit"></i> الضبط اليدوي</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-prayer', 'sub-prayer-csv', this)"><i class="fas fa-file-csv"></i> الرزنامة و CSV</button>
+      </div>
+
+      <div id="sub-prayer-calc" class="sub-tab-content">
+        <div class="row">
+          <div class="col glass-card">
+            <h3>حساب المواقيت</h3>
+            <label>الدولة</label>
+            <select id="countrySelect" onchange="onCountryChange()"><option value="">اختر الدولة</option></select>
+            <label>المدينة</label>
+            <select id="citySelect" onchange="fetchPrayerTimes()"><option value="">اختر المدينة</option></select>
+            <label>طريقة الحساب</label>
+            <select id="methodSelect"><option value="0">الهيئة المصرية</option><option value="1">رابطة العالم الإسلامي</option><option value="2">أم القرى</option></select>
+            <div id="egyptDstContainer" style="margin-top: 15px; margin-bottom: 15px; display: none; align-items: center; gap: 10px;">
+              <label class="switch"><input type="checkbox" id="egyptDstToggle" onchange="fetchPrayerTimes()"><span class="slider"></span></label>
+              <span>التوقيت الصيفي التلقائي في مصر</span>
+            </div>
+            <button class="btn" onclick="fetchPrayerTimes()">حساب المواقيت</button>
           </div>
-          <button class="btn" onclick="fetchPrayerTimes()">حساب المواقيت</button>
-        </div>
-        <div class="col glass-card">
-          <h3>الإزاحات (دقائق)</h3>
-          <label>الفجر</label><input type="number" id="offsetFajr" value="0">
-          <label>الظهر</label><input type="number" id="offsetDhuhr" value="0">
-          <label>العصر</label><input type="number" id="offsetAsr" value="0">
-          <label>المغرب</label><input type="number" id="offsetMaghrib" value="0">
-          <label>العشاء</label><input type="number" id="offsetIsha" value="0">
-          <label style="color:#f1c40f; margin-top:10px;">تعديل التاريخ الهجري (أيام)</label><input type="number" id="offsetHijri" value="0" min="-5" max="5">
-          <button class="btn" onclick="saveOffsets()">حفظ الإزاحات والتاريخ</button>
+          <div class="col glass-card">
+            <h3>الإزاحات (دقائق)</h3>
+            <label>الفجر</label><input type="number" id="offsetFajr" value="0">
+            <label>الظهر</label><input type="number" id="offsetDhuhr" value="0">
+            <label>العصر</label><input type="number" id="offsetAsr" value="0">
+            <label>المغرب</label><input type="number" id="offsetMaghrib" value="0">
+            <label>العشاء</label><input type="number" id="offsetIsha" value="0">
+            <label style="color:#f1c40f; margin-top:10px;">تعديل التاريخ الهجري (أيام)</label><input type="number" id="offsetHijri" value="0" min="-5" max="5">
+            <button class="btn" onclick="saveOffsets()">حفظ الإزاحات والتاريخ</button>
+          </div>
         </div>
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-calendar-day"></i> تصحيح يوم محدد (دقائق)</h3>
-        <label>التاريخ</label><input type="date" id="dailyOffsetDate" onchange="loadDailyOffsetStatus()">
-        <div class="row" style="margin-top:15px">
-          <div class="col"><label>الفجر</label><input type="number" id="dailyOffsetFajr" value="0"></div>
-          <div class="col"><label>الظهر</label><input type="number" id="dailyOffsetDhuhr" value="0"></div>
-          <div class="col"><label>العصر</label><input type="number" id="dailyOffsetAsr" value="0"></div>
-          <div class="col"><label>المغرب</label><input type="number" id="dailyOffsetMaghrib" value="0"></div>
-          <div class="col"><label>العشاء</label><input type="number" id="dailyOffsetIsha" value="0"></div>
+
+      <div id="sub-prayer-daily" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-calendar-day"></i> تصحيح يوم محدد (دقائق)</h3>
+          <label>التاريخ</label><input type="date" id="dailyOffsetDate" onchange="loadDailyOffsetStatus()">
+          <div class="row" style="margin-top:15px">
+            <div class="col"><label>الفجر</label><input type="number" id="dailyOffsetFajr" value="0"></div>
+            <div class="col"><label>الظهر</label><input type="number" id="dailyOffsetDhuhr" value="0"></div>
+            <div class="col"><label>العصر</label><input type="number" id="dailyOffsetAsr" value="0"></div>
+            <div class="col"><label>المغرب</label><input type="number" id="dailyOffsetMaghrib" value="0"></div>
+            <div class="col"><label>العشاء</label><input type="number" id="dailyOffsetIsha" value="0"></div>
+          </div>
+          <button class="btn" onclick="saveDailyOffset()">حفظ تصحيح هذا اليوم فقط</button>
+          <button class="btn btn-danger" onclick="deleteDailyOffset()">حذف تصحيح هذا اليوم</button>
+          <div id="dailyOffsetStatus" style="margin-top:10px; font-weight:bold;"></div>
         </div>
-        <button class="btn" onclick="saveDailyOffset()">حفظ تصحيح هذا اليوم فقط</button>
-        <button class="btn btn-danger" onclick="deleteDailyOffset()">حذف تصحيح هذا اليوم</button>
-        <div id="dailyOffsetStatus" style="margin-top:10px; font-weight:bold;"></div>
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-edit"></i> الضبط اليدوي</h3>
-        <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> تفعيل الوضع اليدوي
-        <div class="row" style="margin-top:15px">
-          <div class="col"><label>الفجر</label><input type="time" id="manFajr" value="04:30"></div>
-          <div class="col"><label>الظهر</label><input type="time" id="manDhuhr" value="12:00"></div>
-          <div class="col"><label>العصر</label><input type="time" id="manAsr" value="15:30"></div>
-          <div class="col"><label>المغرب</label><input type="time" id="manMaghrib" value="18:00"></div>
-          <div class="col"><label>العشاء</label><input type="time" id="manIsha" value="19:30"></div>
+
+      <div id="sub-prayer-manual" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-edit"></i> الضبط اليدوي</h3>
+          <label class="switch"><input type="checkbox" id="manualModeToggle" onchange="toggleManualMode()"><span class="slider"></span></label> تفعيل الوضع اليدوي
+          <div class="row" style="margin-top:15px">
+            <div class="col"><label>الفجر</label><input type="time" id="manFajr" value="04:30"></div>
+            <div class="col"><label>الظهر</label><input type="time" id="manDhuhr" value="12:00"></div>
+            <div class="col"><label>العصر</label><input type="time" id="manAsr" value="15:30"></div>
+            <div class="col"><label>المغرب</label><input type="time" id="manMaghrib" value="18:00"></div>
+            <div class="col"><label>العشاء</label><input type="time" id="manIsha" value="19:30"></div>
+          </div>
+          <button class="btn" onclick="saveManualPrayerTimes()">حفظ المواقيت اليدوية</button>
         </div>
-        <button class="btn" onclick="saveManualPrayerTimes()">حفظ المواقيت اليدوية</button>
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-file-csv"></i> رفع CSV</h3>
-        <label>الشهر</label>
-        <select id="csvMonthSelect">
-          <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option><option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option><option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
-        </select>
-        <input type="file" id="csvFileInput" accept=".csv">
-        <button class="btn" onclick="uploadCSV()"><i class="fas fa-upload"></i> رفع CSV</button>
-        <label class="switch" style="margin-top:15px"><input type="checkbox" id="csvModeToggle" onchange="toggleCSVMode()"><span class="slider"></span></label> تفعيل CSV
-        <hr style="border-color:rgba(255,255,255,0.15); margin:20px 0;">
-        <h3><i class="fas fa-calendar-check"></i> رزنامة SD السنوية</h3>
-        <label class="switch"><input type="checkbox" id="calendarOnlyToggle" onchange="toggleCalendarOnly()"><span class="slider"></span></label> استخدام رزنامة SD فقط
-        <label class="switch" style="margin-top:10px"><input type="checkbox" id="calendarFallbackToggle" onchange="toggleCalendarFallback()"><span class="slider"></span></label> استخدام رزنامة SD عند فشل الإنترنت
-        <label>السنة</label><input type="number" id="calendarYearInput" value="2026" min="2024" max="2035">
-        <button class="btn" onclick="downloadYearCalendar()"><i class="fas fa-download"></i> تحميل رزنامة السنة إلى SD</button>
-        <button class="btn" onclick="downloadMissingCalendarMonths()"><i class="fas fa-cloud-download-alt"></i> استكمال الشهور الناقصة</button>
-        <button class="btn btn-danger" onclick="deleteYearCalendar()"><i class="fas fa-trash"></i> حذف رزنامة السنة من SD</button>
-        <div id="calendarStatus" style="margin-top:10px; font-weight:bold;"></div>
-        <div id="calendarMonthsView" style="margin-top:10px; font-size:var(--fs-small); line-height:1.8;"></div>
-        <div id="calendarMonthEditor" style="display:none; margin-top:15px;">
-          <h3 id="calendarMonthEditorTitle">محتوى الشهر</h3>
-          <textarea id="calendarMonthCsv" rows="12" style="width:100%; direction:ltr; text-align:left; font-family:monospace;"></textarea>
-          <button class="btn" onclick="saveCalendarMonthCsv()"><i class="fas fa-save"></i> حفظ تعديل الشهر</button>
-          <button class="btn" onclick="closeCalendarMonthEditor()">إغلاق</button>
+
+      <div id="sub-prayer-csv" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-file-csv"></i> رفع CSV</h3>
+          <label>الشهر</label>
+          <select id="csvMonthSelect">
+            <option value="1">يناير</option><option value="2">فبراير</option><option value="3">مارس</option><option value="4">أبريل</option><option value="5">مايو</option><option value="6">يونيو</option><option value="7">يوليو</option><option value="8">أغسطس</option><option value="9">سبتمبر</option><option value="10">أكتوبر</option><option value="11">نوفمبر</option><option value="12">ديسمبر</option>
+          </select>
+          <input type="file" id="csvFileInput" accept=".csv">
+          <button class="btn" onclick="uploadCSV()"><i class="fas fa-upload"></i> رفع CSV</button>
+          <label class="switch" style="margin-top:15px"><input type="checkbox" id="csvModeToggle" onchange="toggleCSVMode()"><span class="slider"></span></label> تفعيل CSV
+          <hr style="border-color:rgba(255,255,255,0.15); margin:20px 0;">
+          <h3><i class="fas fa-calendar-check"></i> رزنامة SD السنوية</h3>
+          <label class="switch"><input type="checkbox" id="calendarOnlyToggle" onchange="toggleCalendarOnly()"><span class="slider"></span></label> استخدام رزنامة SD فقط
+          <label class="switch" style="margin-top:10px"><input type="checkbox" id="calendarFallbackToggle" onchange="toggleCalendarFallback()"><span class="slider"></span></label> استخدام رزنامة SD عند فشل الإنترنت
+          <label>السنة</label><input type="number" id="calendarYearInput" value="2026" min="2024" max="2035">
+          <button class="btn" onclick="downloadYearCalendar()"><i class="fas fa-download"></i> تحميل رزنامة السنة إلى SD</button>
+          <button class="btn" onclick="downloadMissingCalendarMonths()"><i class="fas fa-cloud-download-alt"></i> استكمال الشهور الناقصة</button>
+          <button class="btn btn-danger" onclick="deleteYearCalendar()"><i class="fas fa-trash"></i> حذف رزنامة السنة من SD</button>
+          <div id="calendarStatus" style="margin-top:10px; font-weight:bold;"></div>
+          <div id="calendarMonthsView" style="margin-top:10px; font-size:var(--fs-small); line-height:1.8;"></div>
+          <div id="calendarMonthEditor" style="display:none; margin-top:15px;">
+            <h3 id="calendarMonthEditorTitle">محتوى الشهر</h3>
+            <textarea id="calendarMonthCsv" rows="12" style="width:100%; direction:ltr; text-align:left; font-family:monospace;"></textarea>
+            <button class="btn" onclick="saveCalendarMonthCsv()"><i class="fas fa-save"></i> حفظ تعديل الشهر</button>
+            <button class="btn" onclick="closeCalendarMonthEditor()">إغلاق</button>
+          </div>
         </div>
       </div>
     </div>
     <!-- Files + Player merged -->
     <div id="tab-files" class="tab">
       <h1><i class="fas fa-folder-open"></i> الملفات والصوت</h1>
-      <div class="row">
-        <div class="col glass-card">
-          <h3>حالة بطاقة SD</h3>
-          <div id="sdStatus">جاري الفحص...</div>
-          <h3 style="margin-top: 20px;"><i class="fas fa-volume-up"></i> حالة وحدة الصوت (I2S)</h3>
-          <div id="i2sStatus">جاري الفحص...</div>
-        </div>
-        <div class="col glass-card">
-          <h3>رفع ملف</h3>
-          <label>المجلد الوجهة</label>
-          <select id="uploadFolderSelect"><option value="/">الرئيسي (Root)</option></select>
-          <input type="file" id="fileInput" accept=".mp3,.wav,.bin,.csv">
-          <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
-          <progress id="uploadProgressBar" value="0" max="100" style="display:none; width:100%; height:20px;"></progress>
-          <div id="uploadStatus" style="margin-top:5px; font-weight:bold;"></div>
+      
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-files', 'sub-files-status', this)"><i class="fas fa-info-circle"></i> حالة النظام والرفع</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-files', 'sub-files-manager', this)"><i class="fas fa-folder-open"></i> مدير الملفات</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-files', 'sub-files-adhan', this)"><i class="fas fa-mosque"></i> الأذان والإقامة</button>
+      </div>
+
+      <div id="sub-files-status" class="sub-tab-content">
+        <div class="row">
+          <div class="col glass-card">
+            <h3>حالة بطاقة SD</h3>
+            <div id="sdStatus">جاري الفحص...</div>
+            <h3 style="margin-top: 20px;"><i class="fas fa-volume-up"></i> حالة وحدة الصوت (I2S)</h3>
+            <div id="i2sStatus">جاري الفحص...</div>
+          </div>
+          <div class="col glass-card">
+            <h3>رفع ملف</h3>
+            <label>المجلد الوجهة</label>
+            <select id="uploadFolderSelect"><option value="/">الرئيسي (Root)</option></select>
+            <input type="file" id="fileInput" accept=".mp3,.wav,.bin,.csv">
+            <button class="btn" onclick="uploadFile()"><i class="fas fa-upload"></i> رفع</button>
+            <progress id="uploadProgressBar" value="0" max="100" style="display:none; width:100%; height:20px;"></progress>
+            <div id="uploadStatus" style="margin-top:5px; font-weight:bold;"></div>
+          </div>
         </div>
       </div>
-      <div class="glass-card">
-        <h3>مدير الملفات</h3>
-        <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> إنشاء مجلد</button>
-        <input type="text" id="newFolderName" placeholder="اسم المجلد الجديد">
-        <button class="btn" id="btnToggleFiles" onclick="toggleFileList()"><i class="fas fa-eye"></i> عرض الملفات</button>
-        <div id="fileListContainer" style="display:none; margin-top:15px; max-height:400px; overflow-y:auto;">
-          <div class="file-list" id="fileList"></div>
-        </div>
-      </div>
-      <div class="glass-card" id="previewCard" style="display:none">
-        <h3>معاينة: <span id="previewName"></span></h3>
-        <audio id="audioPlayer" controls style="width:100%"></audio>
-        <button class="btn" onclick="closePreview()">إغلاق</button>
-      </div>
-      <div class="glass-card">
-        <h3>تعيين ملفات الأذان والإقامة</h3>
-        <div style="display:flex; flex-direction:column; gap:12px;">
-          <div>
-            <label>أذان الفجر</label>
-            <select id="fajrAdhanFileSelect" style="width:100%; margin-top:5px;"></select>
-          </div>
-          <div>
-            <label>باقي الصلوات</label>
-            <select id="adhanFileSelect" style="width:100%; margin-top:5px;"></select>
-          </div>
-          <div>
-            <label>ملف الإقامة</label>
-            <select id="iqamaFileSelect" style="width:100%; margin-top:5px;"></select>
+
+      <div id="sub-files-manager" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3>مدير الملفات</h3>
+          <button class="btn" onclick="createFolder()"><i class="fas fa-folder-plus"></i> إنشاء مجلد</button>
+          <input type="text" id="newFolderName" placeholder="اسم المجلد الجديد">
+          <button class="btn" id="btnToggleFiles" onclick="toggleFileList()"><i class="fas fa-eye"></i> عرض الملفات</button>
+          <div id="fileListContainer" style="display:none; margin-top:15px; max-height:400px; overflow-y:auto;">
+            <div class="file-list" id="fileList"></div>
           </div>
         </div>
-        
-        <h4 style="margin-top:20px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;"><i class="fas fa-clock"></i> ضبط أوقات وتفعيل الإقامة</h4>
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
-          <!-- Fajr -->
-          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
-            <span style="font-weight:bold; min-width:60px;">الفجر</span>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
-              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_0"><span class="slider"></span></label>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
-              <input type="number" id="iqama_del_0" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
-            </div>
-          </div>
-          <!-- Dhuhr -->
-          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
-            <span style="font-weight:bold; min-width:60px;">الظهر</span>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
-              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_1"><span class="slider"></span></label>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
-              <input type="number" id="iqama_del_1" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
-            </div>
-          </div>
-          <!-- Asr -->
-          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
-            <span style="font-weight:bold; min-width:60px;">العصر</span>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
-              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_2"><span class="slider"></span></label>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
-              <input type="number" id="iqama_del_2" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
-            </div>
-          </div>
-          <!-- Maghrib -->
-          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
-            <span style="font-weight:bold; min-width:60px;">المغرب</span>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
-              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_3"><span class="slider"></span></label>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
-              <input type="number" id="iqama_del_3" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
-            </div>
-          </div>
-          <!-- Isha -->
-          <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
-            <span style="font-weight:bold; min-width:60px;">العشاء</span>
-            <div style="display:flex; align-items:center; gap:8px;">
-              <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
-              <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_4"><span class="slider"></span></label>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px;">
-              <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
-              <input type="number" id="iqama_del_4" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
-            </div>
-          </div>
+        <div class="glass-card" id="previewCard" style="display:none">
+          <h3>معاينة: <span id="previewName"></span></h3>
+          <audio id="audioPlayer" controls style="width:100%"></audio>
+          <button class="btn" onclick="closePreview()">إغلاق</button>
         </div>
-        
-        <button class="btn" onclick="saveAdhanAssignments()" style="margin-top:20px; width:100%;"><i class="fas fa-save"></i> حفظ الإعدادات</button>
       </div>
+
+      <div id="sub-files-adhan" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3>تعيين ملفات الأذان والإقامة</h3>
+          <div style="display:flex; flex-direction:column; gap:12px;">
+            <div>
+              <label>أذان الفجر</label>
+              <select id="fajrAdhanFileSelect" style="width:100%; margin-top:5px;"></select>
+            </div>
+            <div>
+              <label>باقي الصلوات</label>
+              <select id="adhanFileSelect" style="width:100%; margin-top:5px;"></select>
+            </div>
+            <div>
+              <label>ملف الإقامة</label>
+              <select id="iqamaFileSelect" style="width:100%; margin-top:5px;"></select>
+            </div>
+          </div>
+          
+          <h4 style="margin-top:20px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:8px;"><i class="fas fa-clock"></i> ضبط أوقات وتفعيل الإقامة</h4>
+          <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+            <!-- Fajr -->
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+              <span style="font-weight:bold; min-width:60px;">الفجر</span>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+                <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_0"><span class="slider"></span></label>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+                <input type="number" id="iqama_del_0" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+              </div>
+            </div>
+            <!-- Dhuhr -->
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+              <span style="font-weight:bold; min-width:60px;">الظهر</span>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+                <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_1"><span class="slider"></span></label>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+                <input type="number" id="iqama_del_1" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+              </div>
+            </div>
+            <!-- Asr -->
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+              <span style="font-weight:bold; min-width:60px;">العصر</span>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+                <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_2"><span class="slider"></span></label>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+                <input type="number" id="iqama_del_2" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+              </div>
+            </div>
+            <!-- Maghrib -->
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+              <span style="font-weight:bold; min-width:60px;">المغرب</span>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+                <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_3"><span class="slider"></span></label>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+                <input type="number" id="iqama_del_3" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+              </div>
+            </div>
+            <!-- Isha -->
+            <div style="display:flex; align-items:center; justify-content:space-between; background:rgba(255,255,255,0.05); padding:8px 12px; border-radius:6px; flex-wrap:wrap; gap:10px;">
+              <span style="font-weight:bold; min-width:60px;">العشاء</span>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:0.85em; opacity:0.8;">تفعيل</span>
+                <label class="switch" style="margin:0;"><input type="checkbox" id="iqama_en_4"><span class="slider"></span></label>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:0.85em; opacity:0.8;">الانتظار (دقيقة)</span>
+                <input type="number" id="iqama_del_4" min="0" max="60" style="width:60px; text-align:center; padding:3px; border-radius:4px; border:1px solid rgba(255,255,255,0.2); background:rgba(0,0,0,0.2); color:#fff;">
+              </div>
+            </div>
+          </div>
+          
+          <button class="btn" onclick="saveAdhanAssignments()" style="margin-top:20px; width:100%;"><i class="fas fa-save"></i> حفظ الإعدادات</button>
+        </div>
+      </div>
+    </div>
     </div>
     <!-- Scheduler + GPIO Schedule merged -->
     <div id="tab-scheduler" class="tab">
       <h1><i class="fas fa-calendar-alt"></i> التنبيهات والجدولة</h1>
-      <div class="glass-card">
-        <h3><i class="fas fa-music"></i> تنبيه صوتي (لملف واحد)</h3>
-        <label>اسم التنبيه</label><input type="text" id="singleAlertName" placeholder="مثال: تنبيه سورة الكهف" style="width:100%; margin-bottom:10px;">
-        <label>ملف الصوت</label><select id="singleAlertFile"></select>
-        <label>النوع</label>
-        <select id="singleAlertType" onchange="toggleScheduleFields('singleAlert')">
-          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
-          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
-          <option value="prayer_relative">مرتبط بالصلاة</option>
-        </select>
-        <div id="singleAlertExtraFields"></div>
-        <div id="singleAlertTimeContainer">
-          <label>الوقت</label><input type="time" id="singleAlertTime">
-        </div>
-        <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
-        <input type="number" id="singleAlertRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('singleAlert')">
-        <div id="singleAlertEndTimeContainer" style="display:none;">
-          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
-          <input type="time" id="singleAlertEndTime" style="width:100%; margin-bottom:10px;">
-        </div>
-        <label>مستوى الصوت (0-30)</label>
-        <input type="range" id="singleAlertVolume" min="0" max="30" value="20" oninput="$('singleAlertVolumeValue').textContent=this.value">
-        <span id="singleAlertVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
-        <label>التكرار</label>
-        <select id="singleAlertLoopToggle" onchange="toggleLoopFields('singleAlert')">
-          <option value="no">بدون تكرار</option>
-          <option value="yes">بتكرار</option>
-        </select>
-        <div id="singleAlertLoopFields" style="display:none">
-          <label>مدة التكرار (دقائق)</label><input type="number" id="singleAlertLoopDuration" value="0" min="0">
-        </div>
-        
-        <div style="margin-top:10px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-          <label class="switch"><input type="checkbox" id="singleAlertImportant" checked><span class="slider"></span></label>
-          <span>تنبيه مهم (يوقف التشغيل اليدوي الحالي ويعمل)</span>
-        </div>
-        
-        <!-- GPIO Activation Feature -->
-        <div style="margin-top:15px; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:15px;">
-          <label style="display:inline-flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="singleAlertGpioActive" onchange="toggleAlertGpioFields('singleAlert')"> تفعيل مخرج GPIO عند التنبيه
-          </label>
-          <div id="singleAlertGpioFields" style="display:none; margin-top:10px;">
-            <label>المخرج (Pin)</label>
-            <select id="singleAlertGpioPin">
-              <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
-              <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-              <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="19">19</option><option value="47">47</option>
-            </select>
-            <label>طريقة عمل المخرج</label>
-            <select id="singleAlertGpioMode">
-              <option value="continuous">مستمر (Continuous HIGH)</option>
-              <option value="flasher">متقطع فلاشر (Flasher)</option>
-              <option value="pulse">نبضة امبلس (Pulse)</option>
-            </select>
-            <label>مدة تفعيل المخرج</label>
-            <select id="singleAlertGpioDurationMode" onchange="toggleAlertGpioDurationFields('singleAlert')">
-              <option value="audio_duration">لحين انتهاء ملف الصوت</option>
-              <option value="custom">لوقت معين (ثواني)</option>
-            </select>
-            <div id="singleAlertGpioDurationContainer" style="display:none; margin-top:10px;">
-              <label>المدة بالثواني</label>
-              <input type="number" id="singleAlertGpioDurationSec" value="5" min="1">
+
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-scheduler', 'sub-sched-add', this)"><i class="fas fa-plus-circle"></i> إضافة تنبيه</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-scheduler', 'sub-sched-list', this)"><i class="fas fa-list"></i> التنبيهات المضافة</button>
+      </div>
+
+      <div id="sub-sched-add" class="sub-tab-content">
+        <div class="glass-card">
+          <h3><i class="fas fa-music"></i> تنبيه صوتي (لملف واحد)</h3>
+          <label>اسم التنبيه</label><input type="text" id="singleAlertName" placeholder="مثال: تنبيه سورة الكهف" style="width:100%; margin-bottom:10px;">
+          <label>ملف الصوت</label><select id="singleAlertFile"></select>
+          <label>النوع</label>
+          <select id="singleAlertType" onchange="toggleScheduleFields('singleAlert')">
+            <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+            <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+            <option value="prayer_relative">مرتبط بالصلاة</option>
+          </select>
+          <div id="singleAlertExtraFields"></div>
+          <div id="singleAlertTimeContainer">
+            <label>الوقت</label><input type="time" id="singleAlertTime">
+          </div>
+          <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
+          <input type="number" id="singleAlertRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('singleAlert')">
+          <div id="singleAlertEndTimeContainer" style="display:none;">
+            <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+            <input type="time" id="singleAlertEndTime" style="width:100%; margin-bottom:10px;">
+          </div>
+          <label>مستوى الصوت (0-30)</label>
+          <input type="range" id="singleAlertVolume" min="0" max="30" value="20" oninput="$('singleAlertVolumeValue').textContent=this.value">
+          <span id="singleAlertVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
+          <label>التكرار</label>
+          <select id="singleAlertLoopToggle" onchange="toggleLoopFields('singleAlert')">
+            <option value="no">بدون تكرار</option>
+            <option value="yes">بتكرار</option>
+          </select>
+          <div id="singleAlertLoopFields" style="display:none">
+            <label>مدة التكرار (دقائق)</label><input type="number" id="singleAlertLoopDuration" value="0" min="0">
+          </div>
+          
+          <div style="margin-top:10px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+            <label class="switch"><input type="checkbox" id="singleAlertImportant" checked><span class="slider"></span></label>
+            <span>تنبيه مهم (يوقف التشغيل اليدوي الحالي ويعمل)</span>
+          </div>
+          
+          <!-- GPIO Activation Feature -->
+          <div style="margin-top:15px; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:15px;">
+            <label style="display:inline-flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="singleAlertGpioActive" onchange="toggleAlertGpioFields('singleAlert')"> تفعيل مخرج GPIO عند التنبيه
+            </label>
+            <div id="singleAlertGpioFields" style="display:none; margin-top:10px;">
+              <label>المخرج (Pin)</label>
+              <select id="singleAlertGpioPin">
+                <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+                <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="19">19</option><option value="47">47</option>
+              </select>
+              <label>طريقة عمل المخرج</label>
+              <select id="singleAlertGpioMode">
+                <option value="continuous">مستمر (Continuous HIGH)</option>
+                <option value="flasher">متقطع فلاشر (Flasher)</option>
+                <option value="pulse">نبضة امبلس (Pulse)</option>
+              </select>
+              <label>مدة تفعيل المخرج</label>
+              <select id="singleAlertGpioDurationMode" onchange="toggleAlertGpioDurationFields('singleAlert')">
+                <option value="audio_duration">لحين انتهاء ملف الصوت</option>
+                <option value="custom">لوقت معين (ثواني)</option>
+              </select>
+              <div id="singleAlertGpioDurationContainer" style="display:none; margin-top:10px;">
+                <label>المدة بالثواني</label>
+                <input type="number" id="singleAlertGpioDurationSec" value="5" min="1">
+              </div>
             </div>
           </div>
-        </div>
 
-        <button class="btn" id="singleAlertSaveBtn" onclick="saveSingleAlert()"><i class="fas fa-save"></i> حفظ التنبيه</button>
-        <button class="btn btn-secondary" id="singleAlertCancelEditBtn" onclick="cancelEditSingleAlert()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+          <button class="btn" id="singleAlertSaveBtn" onclick="saveSingleAlert()"><i class="fas fa-save"></i> حفظ التنبيه</button>
+          <button class="btn btn-secondary" id="singleAlertCancelEditBtn" onclick="cancelEditSingleAlert()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+        </div>
       </div>
-      <div class="glass-card" style="margin-top: 20px;">
-        <h3><i class="fas fa-list"></i> قائمة التنبيهات الصوتية الفردية</h3>
-        <ul id="singleAlertsList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+
+      <div id="sub-sched-list" class="sub-tab-content" style="display:none">
+        <div class="glass-card" style="margin-top: 20px;">
+          <h3><i class="fas fa-list"></i> قائمة التنبيهات الصوتية الفردية</h3>
+          <ul id="singleAlertsList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+        </div>
       </div>
     </div>
     <!-- GPIO -->
     <div id="tab-gpio" class="tab">
       <h1><i class="fas fa-microchip"></i> GPIO</h1>
-      <div class="glass-card">
-        <h3><i class="fas fa-sign-in-alt"></i> ربط مدخل ذكي (Smart Inputs)</h3>
-        <label>اسم المدخل</label><input type="text" id="gpioInputName" placeholder="مثال: حساس الحريق / حساس المطر" style="width:100%; margin-bottom:10px;">
-        <label>الدبوس (Input Pin)</label>
-        <select id="gpioInputPin"></select>
-        <label>الملف الصوتي عند التفعيل (اختياري)</label>
-        <select id="gpioInputFile" onchange="toggleGpioFileSelected('gpioInput')">
-          <option value="">بدون صوت</option>
-        </select>
-        <div id="gpioInputAudioFields" style="display:none; margin-top:10px; border:1px solid rgba(255,255,255,0.05); padding:8px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:10px;">
-          <label>طريقة تشغيل الصوت</label>
-          <select id="gpioInputAudioMode" onchange="toggleGpioAudioModeFields('gpioInput')">
-            <option value="original">المدة الأصلية للملف</option>
-            <option value="repeat">تكرار بعدد مرات محددة</option>
+
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-gpio', 'sub-gpio-inputs', this)"><i class="fas fa-sign-in-alt"></i> المدخلات الذكية</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-gpio', 'sub-gpio-schedules', this)"><i class="fas fa-clock"></i> جدولة المخارج</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-gpio', 'sub-gpio-mapping', this)"><i class="fas fa-link"></i> ربط المخرج بالتنبيه</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-gpio', 'sub-gpio-active', this)"><i class="fas fa-list"></i> المنافذ النشطة</button>
+      </div>
+
+      <div id="sub-gpio-inputs" class="sub-tab-content">
+        <div class="glass-card">
+          <h3><i class="fas fa-sign-in-alt"></i> ربط مدخل ذكي (Smart Inputs)</h3>
+          <label>اسم المدخل</label><input type="text" id="gpioInputName" placeholder="مثال: حساس الحريق / حساس المطر" style="width:100%; margin-bottom:10px;">
+          <label>الدبوس (Input Pin)</label>
+          <select id="gpioInputPin"></select>
+          <label>الملف الصوتي عند التفعيل (اختياري)</label>
+          <select id="gpioInputFile" onchange="toggleGpioFileSelected('gpioInput')">
+            <option value="">بدون صوت</option>
           </select>
-          <div id="gpioInputRepeatCountContainer" style="display:none; margin-top:10px;">
-            <label>عدد مرات التكرار</label>
-            <input type="number" id="gpioInputRepeatCount" value="1" min="1">
+          <div id="gpioInputAudioFields" style="display:none; margin-top:10px; border:1px solid rgba(255,255,255,0.05); padding:8px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:10px;">
+            <label>طريقة تشغيل الصوت</label>
+            <select id="gpioInputAudioMode" onchange="toggleGpioAudioModeFields('gpioInput')">
+              <option value="original">المدة الأصلية للملف</option>
+              <option value="repeat">تكرار بعدد مرات محددة</option>
+            </select>
+            <div id="gpioInputRepeatCountContainer" style="display:none; margin-top:10px;">
+              <label>عدد مرات التكرار</label>
+              <input type="number" id="gpioInputRepeatCount" value="1" min="1">
+            </div>
+            <label>مستوى الصوت</label>
+            <input type="range" id="gpioInputVolume" min="0" max="30" value="20" oninput="if($('gpioInputVolVal')) $('gpioInputVolVal').textContent=this.value" style="width:100%">
+            <span id="gpioInputVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
           </div>
-          <label>مستوى الصوت</label>
-          <input type="range" id="gpioInputVolume" min="0" max="30" value="20" oninput="if($('gpioInputVolVal')) $('gpioInputVolVal').textContent=this.value" style="width:100%">
-          <span id="gpioInputVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
-        </div>
-        <label>المخرج المرتبط (اختياري)</label>
-        <select id="gpioInputOutputPin"></select>
-        <label>وضع تفعيل المخرج</label>
-        <select id="gpioInputOutputMode" onchange="toggleGpioOutputModeFields()">
-          <option value="0">مستمر طالما المدخل نشط (Level-Active)</option>
-          <option value="pulse">نبضة مؤقتة (Pulse Timer)</option>
-          <option value="-1">تبديل الحالة عند كل نبضة (Toggle)</option>
-        </select>
-        <div id="gpioInputPulseContainer" style="display:none; margin-top:10px;">
-          <label>مدة تفعيل النبضة بالثواني</label>
-          <input type="number" id="gpioInputOutputDuration" value="5" min="1">
-        </div>
-        <div style="display:flex; gap:10px; margin-top:15px;">
-          <button id="gpioInputSaveBtn" class="btn" onclick="saveSmartInput()"><i class="fas fa-save"></i> حفظ المدخل الذكي</button>
-          <button id="gpioInputCancelBtn" class="btn btn-secondary" onclick="cancelEditGpioInput()" style="display:none;"><i class="fas fa-times"></i> إلغاء التعديل</button>
-        </div>
-      </div>
-
-      <!-- GPIO Schedules moved to GPIO Page -->
-      <div class="glass-card">
-        <h3><i class="fas fa-clock"></i> جدولة المخارج (GPIO)</h3>
-        <label>اسم الجدولة</label><input type="text" id="gpioSchedName" placeholder="مثال: تشغيل الإنارة الخارجية" style="width:100%; margin-bottom:10px;">
-        <label>الدبوس</label><select id="gpioSchedPin"></select>
-        <label>الحالة عند البدء</label>
-        <select id="gpioSchedState">
-          <option value="1">تشغيل (HIGH)</option>
-          <option value="0">إيقاف (LOW)</option>
-        </select>
-        <label>النوع</label>
-        <select id="gpioSchedType" onchange="toggleScheduleFields('gpioSched')">
-          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
-          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
-          <option value="yearly">سنوي</option>
-        </select>
-        <div id="gpioSchedExtraFields"></div>
-        <label>وقت البدء</label><input type="time" id="gpioSchedStart">
-        <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
-        <label>ملف صوتي مرتبط (اختياري)</label>
-        <select id="gpioSchedAlertFile" onchange="toggleGpioFileSelected('gpioSched')">
-          <option value="">بدون صوت</option>
-        </select>
-        <div id="gpioSchedAudioFields" style="display:none; margin-top:10px; border:1px solid rgba(255,255,255,0.05); padding:8px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:10px;">
-          <label>طريقة تشغيل الصوت</label>
-          <select id="gpioSchedAudioMode" onchange="toggleGpioAudioModeFields('gpioSched')">
-            <option value="original">المدة الأصلية للملف</option>
-            <option value="repeat">تكرار بعدد مرات محددة</option>
+          <label>المخرج المرتبط (اختياري)</label>
+          <select id="gpioInputOutputPin"></select>
+          <label>وضع تفعيل المخرج</label>
+          <select id="gpioInputOutputMode" onchange="toggleGpioOutputModeFields()">
+            <option value="0">مستمر طالما المدخل نشط (Level-Active)</option>
+            <option value="pulse">نبضة مؤقتة (Pulse Timer)</option>
+            <option value="-1">تبديل الحالة عند كل نبضة (Toggle)</option>
           </select>
-          <div id="gpioSchedRepeatCountContainer" style="display:none; margin-top:10px;">
-            <label>عدد مرات التكرار</label>
-            <input type="number" id="gpioSchedRepeatCount" value="1" min="1">
+          <div id="gpioInputPulseContainer" style="display:none; margin-top:10px;">
+            <label>مدة تفعيل النبضة بالثواني</label>
+            <input type="number" id="gpioInputOutputDuration" value="5" min="1">
           </div>
-          <label>مستوى الصوت</label>
-          <input type="range" id="gpioSchedVolume" min="0" max="30" value="20" oninput="if($('gpioSchedVolVal')) $('gpioSchedVolVal').textContent=this.value" style="width:100%">
-          <span id="gpioSchedVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
+          <div style="display:flex; gap:10px; margin-top:15px;">
+            <button id="gpioInputSaveBtn" class="btn" onclick="saveSmartInput()"><i class="fas fa-save"></i> حفظ المدخل الذكي</button>
+            <button id="gpioInputCancelBtn" class="btn btn-secondary" onclick="cancelEditGpioInput()" style="display:none;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+          </div>
         </div>
-        <button class="btn" id="gpioSchedSaveBtn" onclick="saveGpioSched()"><i class="fas fa-save"></i> حفظ جدولة GPIO</button>
-        <button class="btn btn-secondary" id="gpioSchedCancelEditBtn" onclick="cancelEditGpioSched()" style="display:none; margin-top:10px;"><i class="fas fa-times"></i> إلغاء التعديل</button>
       </div>
 
-      <div class="glass-card">
-        <h3>ربط مخرج تلقائي مع تنبيه</h3>
-        <label>الدبوس</label>
-        <select id="outputPin"></select>
-        <label>اسم التنبيه المرتبط</label>
-        <input type="text" id="outputAlert" placeholder="مثال: alert.mp3">
-        <label>المدة (ثواني)</label><input type="number" id="outputDuration" value="5">
-        <button class="btn" onclick="saveOutputMapping()"><i class="fas fa-save"></i> حفظ</button>
+      <div id="sub-gpio-schedules" class="sub-tab-content" style="display:none">
+        <!-- GPIO Schedules moved to GPIO Page -->
+        <div class="glass-card">
+          <h3><i class="fas fa-clock"></i> جدولة المخارج (GPIO)</h3>
+          <label>اسم الجدولة</label><input type="text" id="gpioSchedName" placeholder="مثال: تشغيل الإنارة الخارجية" style="width:100%; margin-bottom:10px;">
+          <label>الدبوس</label><select id="gpioSchedPin"></select>
+          <label>الحالة عند البدء</label>
+          <select id="gpioSchedState">
+            <option value="1">تشغيل (HIGH)</option>
+            <option value="0">إيقاف (LOW)</option>
+          </select>
+          <label>النوع</label>
+          <select id="gpioSchedType" onchange="toggleScheduleFields('gpioSched')">
+            <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+            <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+            <option value="yearly">سنوي</option>
+          </select>
+          <div id="gpioSchedExtraFields"></div>
+          <label>وقت البدء</label><input type="time" id="gpioSchedStart">
+          <label>وقت الانتهاء</label><input type="time" id="gpioSchedEnd">
+          <label>ملف صوتي مرتبط (اختياري)</label>
+          <select id="gpioSchedAlertFile" onchange="toggleGpioFileSelected('gpioSched')">
+            <option value="">بدون صوت</option>
+          </select>
+          <div id="gpioSchedAudioFields" style="display:none; margin-top:10px; border:1px solid rgba(255,255,255,0.05); padding:8px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:10px;">
+            <label>طريقة تشغيل الصوت</label>
+            <select id="gpioSchedAudioMode" onchange="toggleGpioAudioModeFields('gpioSched')">
+              <option value="original">المدة الأصلية للملف</option>
+              <option value="repeat">تكرار بعدد مرات محددة</option>
+            </select>
+            <div id="gpioSchedRepeatCountContainer" style="display:none; margin-top:10px;">
+              <label>عدد مرات التكرار</label>
+              <input type="number" id="gpioSchedRepeatCount" value="1" min="1">
+            </div>
+            <label>مستوى الصوت</label>
+            <input type="range" id="gpioSchedVolume" min="0" max="30" value="20" oninput="if($('gpioSchedVolVal')) $('gpioSchedVolVal').textContent=this.value" style="width:100%">
+            <span id="gpioSchedVolVal" style="display:block; text-align:center; font-weight:bold;">20</span>
+          </div>
+          <button class="btn" id="gpioSchedSaveBtn" onclick="saveGpioSched()"><i class="fas fa-save"></i> حفظ جدولة GPIO</button>
+          <button class="btn btn-secondary" id="gpioSchedCancelEditBtn" onclick="cancelEditGpioSched()" style="display:none; margin-top:10px;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+        </div>
       </div>
 
-      <div class="glass-card" style="margin-top: 20px;">
-        <h3><i class="fas fa-list"></i> المدخلات الذكية المضافة</h3>
-        <ul id="gpioInputsList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+      <div id="sub-gpio-mapping" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3>ربط مخرج تلقائي مع تنبيه</h3>
+          <label>الدبوس</label>
+          <select id="outputPin"></select>
+          <label>اسم التنبيه المرتبط</label>
+          <input type="text" id="outputAlert" placeholder="مثال: alert.mp3">
+          <label>المدة (ثواني)</label><input type="number" id="outputDuration" value="5">
+          <button class="btn" onclick="saveOutputMapping()"><i class="fas fa-save"></i> حفظ</button>
+        </div>
       </div>
 
-      <div class="glass-card" style="margin-top: 20px;">
-        <h3><i class="fas fa-list"></i> قائمة جدولة المخارج (GPIO)</h3>
-        <ul id="gpioSchedulesList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+      <div id="sub-gpio-active" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-list"></i> المدخلات الذكية المضافة</h3>
+          <ul id="gpioInputsList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+        </div>
+
+        <div class="glass-card" style="margin-top: 20px;">
+          <h3><i class="fas fa-list"></i> قائمة جدولة المخارج (GPIO)</h3>
+          <ul id="gpioSchedulesList" style="list-style:none; padding:0; margin-bottom:15px;"></ul>
+        </div>
       </div>
     </div>
     <!-- GPIO Schedule (merged into scheduler) -->
@@ -561,176 +623,222 @@
       <div class="glass-card">
         <label class="switch"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label> تفعيل وضع العيد
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-volume-up"></i> التكبيرات - جدولة متقدمة</h3>
-        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد قبل/بعد كل صلاة بعدد الدقائق، أو اختر صلوات محددة</p>
-        <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
-        <label>مستوى صوت التكبيرات</label>
-        <input type="range" id="eidTakbeerVolume" min="0" max="30" value="15">
-        <span id="eidTakbeerVolumeValue">15</span>
-        <div id="eidPrayerConfig"></div>
-        <button class="btn" onclick="saveEidTakbeerConfig()"><i class="fas fa-save"></i> حفظ جدولة التكبيرات</button>
-        <button class="btn" onclick="triggerTakbeer()"><i class="fas fa-play"></i> تشغيل مرة واحدة</button>
+
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-eid', 'sub-eid-takbeer', this)"><i class="fas fa-volume-up"></i> جدولة التكبيرات</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-eid', 'sub-eid-alerts', this)"><i class="fas fa-bell"></i> تنبيهات العيد</button>
       </div>
-      <div class="glass-card">
-        <h3><i class="fas fa-bell"></i> تنبيهات العيد</h3>
-        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">تنبيهات مرنة تعمل فقط عند تفعيل وضع العيد</p>
-        <label>الملفات (اختر ملف أو أكثر)</label>
-        <div id="eidScheduleFilesChecklist" style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 15px;"></div>
-        <label>النوع</label>
-        <select id="eidScheduleType" onchange="toggleEidScheduleFields()">
-          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
-          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
-          <option value="prayer_relative">مرتبط بالصلاة</option>
-        </select>
-        <div id="eidScheduleExtraFields"></div>
-        <div id="eidScheduleTimeContainer">
-          <label>الوقت</label><input type="time" id="eidScheduleTime">
+
+      <div id="sub-eid-takbeer" class="sub-tab-content">
+        <div class="glass-card">
+          <h3><i class="fas fa-volume-up"></i> التكبيرات - جدولة متقدمة</h3>
+          <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد قبل/بعد كل صلاة بعدد الدقائق، أو اختر صلوات محددة</p>
+          <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
+          <label>مستوى صوت التكبيرات</label>
+          <input type="range" id="eidTakbeerVolume" min="0" max="30" value="15">
+          <span id="eidTakbeerVolumeValue">15</span>
+          <div id="eidPrayerConfig"></div>
+          <button class="btn" onclick="saveEidTakbeerConfig()"><i class="fas fa-save"></i> حفظ جدولة التكبيرات</button>
+          <button class="btn" onclick="triggerTakbeer()"><i class="fas fa-play"></i> تشغيل مرة واحدة</button>
         </div>
-        <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
-        <input type="number" id="eidScheduleRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('eidSchedule')">
-        <div id="eidScheduleEndTimeContainer" style="display:none;">
-          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
-          <input type="time" id="eidScheduleEndTime" style="width:100%; margin-bottom:10px;">
+      </div>
+
+      <div id="sub-eid-alerts" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-bell"></i> تنبيهات العيد</h3>
+          <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">تنبيهات مرنة تعمل فقط عند تفعيل وضع العيد</p>
+          <label>اسم التنبيه</label>
+          <input type="text" id="eidScheduleName" placeholder="مثال: تكبيرات العيد الصباحية" style="width:100%; margin-bottom:10px;">
+          <label>الملفات (اختر ملف أو أكثر)</label>
+          <div id="eidScheduleFilesChecklist" style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 15px;"></div>
+          <label>النوع</label>
+          <select id="eidScheduleType" onchange="toggleEidScheduleFields()">
+            <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+            <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+            <option value="prayer_relative">مرتبط بالصلاة</option>
+          </select>
+          <div id="eidScheduleExtraFields"></div>
+          <div id="eidScheduleTimeContainer">
+            <label>الوقت</label><input type="time" id="eidScheduleTime">
+          </div>
+          <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
+          <input type="number" id="eidScheduleRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('eidSchedule')">
+          <div id="eidScheduleEndTimeContainer" style="display:none;">
+            <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+            <input type="time" id="eidScheduleEndTime" style="width:100%; margin-bottom:10px;">
+          </div>
+          <label>مستوى الصوت (0-30)</label>
+          <input type="range" id="eidScheduleVolume" min="0" max="30" value="20" oninput="$('eidScheduleVolumeValue').textContent=this.value">
+          <span id="eidScheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
+          <label>التكرار</label>
+          <select id="eidScheduleLoopToggle" onchange="toggleEidLoopFields()">
+            <option value="no">بدون تكرار</option>
+            <option value="yes">بتكرار</option>
+          </select>
+          <div id="eidLoopFields" style="display:none">
+            <label>مدة التكرار (دقائق)</label><input type="number" id="eidScheduleLoopDuration" value="0" min="0">
+          </div>
+          <button class="btn" id="eidScheduleSaveBtn" onclick="addEidSchedule()"><i class="fas fa-save"></i> إضافة تنبيه عيد</button>
+          <button class="btn btn-secondary" id="eidScheduleCancelEditBtn" onclick="cancelEditEidSchedule()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
+          <div style="margin-top:20px"><h3>التنبيهات المضافة</h3><ul id="eidScheduleList"></ul></div>
         </div>
-        <label>مستوى الصوت (0-30)</label>
-        <input type="range" id="eidScheduleVolume" min="0" max="30" value="20" oninput="$('eidScheduleVolumeValue').textContent=this.value">
-        <span id="eidScheduleVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
-        <label>التكرار</label>
-        <select id="eidScheduleLoopToggle" onchange="toggleEidLoopFields()">
-          <option value="no">بدون تكرار</option>
-          <option value="yes">بتكرار</option>
-        </select>
-        <div id="eidLoopFields" style="display:none">
-          <label>مدة التكرار (دقائق)</label><input type="number" id="eidScheduleLoopDuration" value="0" min="0">
-        </div>
-        <button class="btn" onclick="addEidSchedule()"><i class="fas fa-save"></i> إضافة تنبيه عيد</button>
-        <div style="margin-top:20px"><h3>التنبيهات المضافة</h3><ul id="eidScheduleList"></ul></div>
       </div>
     </div>
     <!-- Player -->
     <div id="tab-player" class="tab">
       <h1><i class="fas fa-music"></i> مشغل الموسيقى والجدولة</h1>
-      
-      <div class="glass-card">
-        <h3><i class="fas fa-play-circle"></i> المشغل السريع</h3>
-        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">اختر ملف للتشغيل فوراً أو أضفه إلى القائمة للتشغيل المتتالي.</p>
-        <div class="row">
-          <div class="col"><select id="playlistFileSelect"></select></div>
-          <div class="col">
-            <button class="btn" onclick="playSingleFile()"><i class="fas fa-play"></i> تشغيل</button>
-            <button class="btn" onclick="addToPlaylist()"><i class="fas fa-plus"></i> إضافة للقائمة</button>
-          </div>
-        </div>
 
-        <!-- Professional Player Controls -->
-        <div id="playerControlsContainer" class="player-container" style="display:none;">
-          <div class="player-controls-group">
-            <button class="player-ctrl-btn btn-stop-ctrl" id="stopBtn" onclick="stopAudio()" title="إيقاف"><i class="fas fa-stop"></i> إيقاف</button>
-            <button class="player-ctrl-btn" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> رجوع</button>
-            <button class="player-ctrl-btn btn-play-pause" id="playPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i> تشغيل</button>
-            <button class="player-ctrl-btn" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> تقديم</button>
+      <div class="sub-tabs-nav">
+        <button class="sub-tab-btn active" onclick="showSubTab('tab-player', 'sub-player-quick', this)"><i class="fas fa-play-circle"></i> المشغل السريع</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-player', 'sub-player-sched', this)"><i class="fas fa-list-alt"></i> جدولة القوائم</button>
+        <button class="sub-tab-btn" onclick="showSubTab('tab-player', 'sub-player-lists', this)"><i class="fas fa-tasks"></i> القوائم المجدولة</button>
+      </div>
+
+      <div id="sub-player-quick" class="sub-tab-content">
+        <div class="glass-card">
+          <h3><i class="fas fa-play-circle"></i> المشغل السريع</h3>
+          <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">اختر ملف للتشغيل فوراً أو أضفه إلى القائمة للتشغيل المتتالي.</p>
+          
+          <div class="row" style="align-items: center; gap: 15px; margin-bottom: 20px;">
+            <div class="col" style="flex: 2; min-width: 200px; margin: 0;">
+              <select id="playlistFileSelect" style="width: 100%;"></select>
+            </div>
+            <div class="col" style="flex: 1; min-width: 150px; margin: 0; display: flex; gap: 10px;">
+              <button class="btn" onclick="playSingleFile()" style="margin: 0; flex: 1;"><i class="fas fa-play"></i> تشغيل</button>
+              <button class="btn" onclick="addToPlaylist()" style="margin: 0; flex: 1;"><i class="fas fa-plus"></i> إضافة</button>
+            </div>
           </div>
-          <div id="playerControls" style="display:none;">
-            <div class="player-progress-row">
-              <span class="player-time" id="trackPosition">00:00</span>
-              <input type="range" id="trackProgress" class="player-progress" min="0" max="100" value="0" onchange="setTrackProgress(this.value)">
-              <span class="player-time" id="trackDuration">00:00</span>
+
+          <!-- Professional Player Controls -->
+          <div id="playerControlsContainer" class="player-container" style="display:none; border:none; background:transparent; padding:0; margin-top:20px;">
+            <div class="player-controls-group" style="margin-top:0;">
+              <button class="player-ctrl-btn btn-stop-ctrl" id="stopBtn" onclick="stopAudio()" title="إيقاف"><i class="fas fa-stop"></i> إيقاف</button>
+              <button class="player-ctrl-btn" onclick="seekBackward()" title="رجوع 10 ثواني"><i class="fas fa-backward"></i> رجوع</button>
+              <button class="player-ctrl-btn btn-play-pause" id="playPauseBtn" onclick="togglePlayPause()" title="تشغيل/إيقاف مؤقت"><i class="fas fa-play"></i> تشغيل</button>
+              <button class="player-ctrl-btn" onclick="seekForward()" title="تقديم 10 ثواني"><i class="fas fa-forward"></i> تقديم</button>
+            </div>
+            <div id="playerControls" style="display:none; margin-top:5px;">
+              <div class="player-progress-row" style="margin-top:5px;">
+                <span class="player-time" id="trackPosition">00:00</span>
+                <input type="range" id="trackProgress" class="player-progress" min="0" max="100" value="0" onchange="setTrackProgress(this.value)">
+                <span class="player-time" id="trackDuration">00:00</span>
+              </div>
+            </div>
+          </div>
+          
+          <div id="quickPlayerPlaceholder" style="margin-top:20px; text-align:center; padding:20px; border: 1px dashed rgba(255,255,255,0.15); border-radius:8px; background:rgba(0,0,0,0.1);">
+            <i class="fas fa-music" style="font-size: 2em; color: rgba(255,255,255,0.3); margin-bottom: 10px; display: block;"></i>
+            <span style="color: rgba(255,255,255,0.6); font-size: 14px;">لا توجد أي وسائط قيد التشغيل حالياً. يمكنك اختيار ملف للتشغيل أعلاه.</span>
+          </div>
+
+          <div style="margin-top:25px; padding:15px; background:rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); border-radius:8px;">
+            <h4 style="margin-top:0; margin-bottom: 12px;"><i class="fas fa-list"></i> قائمة التشغيل المؤقتة:</h4>
+            <div id="playlist" style="margin-bottom:15px;"></div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button class="btn" onclick="playPlaylist()" style="margin: 0;"><i class="fas fa-play-circle"></i> تشغيل القائمة</button>
+              <button class="btn btn-danger" onclick="clearPlaylist()" style="margin: 0; background: var(--color-danger);"><i class="fas fa-trash"></i> مسح القائمة</button>
+            </div>
+            
+            <div class="dashboard-volume-row" style="margin-top:20px; margin-bottom:10px;">
+              <span><i class="fas fa-volume-down"></i> مستوى الصوت</span>
+              <strong id="playlistVolVal">15</strong>
+            </div>
+            <input type="range" id="playlistVolume" min="0" max="30" value="15" oninput="if($('playlistVolVal')) $('playlistVolVal').textContent=this.value" onchange="setVolume(this.value)">
+            
+            <div style="margin-top: 15px; display: flex; align-items: center; gap: 10px;">
+              <label class="switch" style="margin: 0;"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label>
+              <span>إيقاف التشغيل تلقائياً عند الأذان والإقامة</span>
             </div>
           </div>
         </div>
-
-        <div style="margin-top:15px; padding:10px; background:rgba(0,0,0,0.2); border-radius:8px;">
-          <h4 style="margin-top:0;">قائمة التشغيل المؤقتة:</h4>
-          <div id="playlist" style="margin-bottom:10px;"></div>
-          <button class="btn" onclick="playPlaylist()"><i class="fas fa-play-circle"></i> تشغيل القائمة</button>
-          <button class="btn" onclick="clearPlaylist()"><i class="fas fa-trash"></i> مسح القائمة</button>
-          <label style="display:block; margin-top:10px;">مستوى الصوت <span id="playlistVolVal">15</span></label>
-          <input type="range" id="playlistVolume" min="0" max="30" value="15" oninput="if($('playlistVolVal')) $('playlistVolVal').textContent=this.value" onchange="setVolume(this.value)" style="width:100%">
-          <label class="switch" style="margin-top:10px;"><input type="checkbox" id="playlistAdhanRespect"><span class="slider"></span></label> إيقاف عند الأذان
-        </div>
       </div>
-      <div class="glass-card" style="margin-top: 20px;">
-        <h3><i class="fas fa-list-alt"></i> جدولة قوائم التشغيل (Playlists)</h3>
-        <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد عدة ملفات لإنشاء قائمة تشغيل وإضافتها للجدولة.</p>
-        
-        <label>اسم قائمة التشغيل المجدولة</label><input type="text" id="playlistSchedName" placeholder="مثال: أذكار الصباح" style="width:100%; margin-bottom:10px;">
-        
-        <label>الملفات (اختر ملف أو أكثر)</label>
-        <div id="playlistFilesChecklist" style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 15px;"></div>
-        
-        <label>النوع</label>
-        <select id="playlistSchedType" onchange="toggleScheduleFields('playlistSched')">
-          <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
-          <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
-          <option value="prayer_relative">مرتبط بالصلاة</option>
-        </select>
-        
-        <div id="playlistSchedExtraFields"></div>
-        <div id="playlistSchedTimeContainer">
-          <label>الوقت</label><input type="time" id="playlistSchedTime">
-        </div>
-        <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
-        <input type="number" id="playlistSchedRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('playlistSched')">
-        <div id="playlistSchedEndTimeContainer" style="display:none;">
-          <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
-          <input type="time" id="playlistSchedEndTime" style="width:100%; margin-bottom:10px;">
-        </div>
-        
-        <label>مستوى الصوت (0-30)</label>
-        <input type="range" id="playlistSchedVolume" min="0" max="30" value="20" oninput="$('playlistSchedVolumeValue').textContent=this.value">
-        <span id="playlistSchedVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
-        
-        <label>التكرار</label>
-        <select id="playlistSchedLoopToggle" onchange="toggleLoopFields('playlistSched')">
-          <option value="no">بدون تكرار</option>
-          <option value="yes">تكرار لمدة معينة</option>
-        </select>
-        <div id="playlistSchedLoopFields" style="display:none">
-          <label>مدة التكرار (دقائق)</label><input type="number" id="playlistSchedLoopDuration" value="0" min="0">
-        </div>
-        
-        <div style="margin-top:10px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
-          <label class="switch"><input type="checkbox" id="playlistSchedImportant" checked><span class="slider"></span></label>
-          <span>تنبيه مهم (يوقف التشغيل اليدوي الحالي ويعمل)</span>
-        </div>
-        
-        <!-- GPIO Activation Feature for Playlist Scheduler -->
-        <div style="margin-top:15px; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:15px;">
-          <label style="display:inline-flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="playlistSchedGpioActive" onchange="toggleAlertGpioFields('playlistSched')"> تفعيل مخرج GPIO عند التنبيه
-          </label>
-          <div id="playlistSchedGpioFields" style="display:none; margin-top:10px;">
-            <label>المخرج (Pin)</label>
-            <select id="playlistSchedGpioPin">
-              <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
-              <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-              <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="19">19</option><option value="47">47</option>
-            </select>
-            <label>طريقة عمل المخرج</label>
-            <select id="playlistSchedGpioMode">
-              <option value="continuous">مستمر (Continuous HIGH)</option>
-              <option value="flasher">متقطع فلاشر (Flasher)</option>
-              <option value="pulse">نبضة امبلس (Pulse)</option>
-            </select>
-            <label>مدة تفعيل المخرج</label>
-            <select id="playlistSchedGpioDurationMode" onchange="toggleAlertGpioDurationFields('playlistSched')">
-              <option value="audio_duration">لحين انتهاء ملف الصوت</option>
-              <option value="custom">لوقت معين (ثواني)</option>
-            </select>
-            <div id="playlistSchedGpioDurationContainer" style="display:none; margin-top:10px;">
-              <label>المدة بالثواني</label>
-              <input type="number" id="playlistSchedGpioDurationSec" value="5" min="1">
+
+      <div id="sub-player-sched" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-list-alt"></i> جدولة قوائم التشغيل (Playlists)</h3>
+          <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد عدة ملفات لإنشاء قائمة تشغيل وإضافتها للجدولة.</p>
+          
+          <label>اسم قائمة التشغيل المجدولة</label><input type="text" id="playlistSchedName" placeholder="مثال: أذكار الصباح" style="width:100%; margin-bottom:10px;">
+          
+          <label>الملفات (اختر ملف أو أكثر)</label>
+          <div id="playlistFilesChecklist" style="max-height: 150px; overflow-y: auto; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px; margin-bottom: 15px;"></div>
+          
+          <label>النوع</label>
+          <select id="playlistSchedType" onchange="toggleScheduleFields('playlistSched')">
+            <option value="daily">يومي</option><option value="weekly">أسبوعي</option>
+            <option value="monthly">شهري</option><option value="specific">تاريخ محدد</option>
+            <option value="prayer_relative">مرتبط بالصلاة</option>
+          </select>
+          
+          <div id="playlistSchedExtraFields"></div>
+          <div id="playlistSchedTimeContainer">
+            <label>الوقت</label><input type="time" id="playlistSchedTime">
+          </div>
+          <label>تكرار التنبيه كل (دقائق) - 0 لتعطيل التكرار</label>
+          <input type="number" id="playlistSchedRepeatInterval" value="0" min="0" style="width:100%; margin-bottom:10px;" oninput="toggleAlertEndTimeField('playlistSched')">
+          <div id="playlistSchedEndTimeContainer" style="display:none;">
+            <label>حتى الساعة (اختياري - وقت نهاية التكرار)</label>
+            <input type="time" id="playlistSchedEndTime" style="width:100%; margin-bottom:10px;">
+          </div>
+          
+          <label>مستوى الصوت (0-30)</label>
+          <input type="range" id="playlistSchedVolume" min="0" max="30" value="20" oninput="$('playlistSchedVolumeValue').textContent=this.value">
+          <span id="playlistSchedVolumeValue" style="display:block; text-align:center; margin-bottom:10px;">20</span>
+          
+          <label>التكرار</label>
+          <select id="playlistSchedLoopToggle" onchange="toggleLoopFields('playlistSched')">
+            <option value="no">بدون تكرار</option>
+            <option value="yes">تكرار لمدة معينة</option>
+          </select>
+          <div id="playlistSchedLoopFields" style="display:none">
+            <label>مدة التكرار (دقائق)</label><input type="number" id="playlistSchedLoopDuration" value="0" min="0">
+          </div>
+          
+          <div style="margin-top:10px; margin-bottom:15px; display:flex; align-items:center; gap:10px;">
+            <label class="switch"><input type="checkbox" id="playlistSchedImportant" checked><span class="slider"></span></label>
+            <span>تنبيه مهم (يوقف التشغيل اليدوي الحالي ويعمل)</span>
+          </div>
+          
+          <!-- GPIO Activation Feature for Playlist Scheduler -->
+          <div style="margin-top:15px; border:1px solid rgba(255,255,255,0.1); padding:10px; border-radius:6px; background:rgba(0,0,0,0.1); margin-bottom:15px;">
+            <label style="display:inline-flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="playlistSchedGpioActive" onchange="toggleAlertGpioFields('playlistSched')"> تفعيل مخرج GPIO عند التنبيه
+            </label>
+            <div id="playlistSchedGpioFields" style="display:none; margin-top:10px;">
+              <label>المخرج (Pin)</label>
+              <select id="playlistSchedGpioPin">
+                <option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option>
+                <option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                <option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="19">19</option><option value="47">47</option>
+              </select>
+              <label>طريقة عمل المخرج</label>
+              <select id="playlistSchedGpioMode">
+                <option value="continuous">مستمر (Continuous HIGH)</option>
+                <option value="flasher">متقطع فلاشر (Flasher)</option>
+                <option value="pulse">نبضة امبلس (Pulse)</option>
+              </select>
+              <label>مدة تفعيل المخرج</label>
+              <select id="playlistSchedGpioDurationMode" onchange="toggleAlertGpioDurationFields('playlistSched')">
+                <option value="audio_duration">لحين انتهاء ملف الصوت</option>
+                <option value="custom">لوقت معين (ثواني)</option>
+              </select>
+              <div id="playlistSchedGpioDurationContainer" style="display:none; margin-top:10px;">
+                <label>المدة بالثواني</label>
+                <input type="number" id="playlistSchedGpioDurationSec" value="5" min="1">
+              </div>
             </div>
           </div>
+          
+          <button class="btn" id="playlistSchedSaveBtn" onclick="savePlaylistSched()"><i class="fas fa-plus-circle"></i> إضافة القائمة للجدولة</button>
+          <button class="btn btn-secondary" id="playlistSchedCancelEditBtn" onclick="cancelEditPlaylistSched()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
         </div>
-        
-        <button class="btn" id="playlistSchedSaveBtn" onclick="savePlaylistSched()"><i class="fas fa-plus-circle"></i> إضافة القائمة للجدولة</button>
-        <button class="btn btn-secondary" id="playlistSchedCancelEditBtn" onclick="cancelEditPlaylistSched()" style="display:none; margin-top:10px; background:#7f8c8d;"><i class="fas fa-times"></i> إلغاء التعديل</button>
       </div>
-      <div class="glass-card" style="margin-top: 20px;">
-        <h3><i class="fas fa-tasks"></i> قوائم التشغيل المجدولة</h3>
-        <ul id="playlistSchedulesList" style="list-style:none; padding:0;"></ul>
+
+      <div id="sub-player-lists" class="sub-tab-content" style="display:none">
+        <div class="glass-card">
+          <h3><i class="fas fa-tasks"></i> قوائم التشغيل المجدولة</h3>
+          <ul id="playlistSchedulesList" style="list-style:none; padding:0;"></ul>
+        </div>
       </div>
     </div>
     <!-- Maghrib -->
