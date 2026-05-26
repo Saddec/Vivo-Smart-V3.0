@@ -261,6 +261,7 @@ function initDashboard() {
     loadStartupSettings,
     loadSessionTimeout,
     loadWifiStatus,
+    loadEidModeStatus,
     loadEidSchedules,
     loadEidTakbeerConfig,
     populateGpioPins,
@@ -310,6 +311,7 @@ function fetchStatus() {
       $('volumeSlider').value = data.volume;
       if ($('mainVolVal')) $('mainVolVal').textContent = data.volume;
     }
+    updateEidModeBanner(!!data.eidMode);
     if ($('playlistVolume') && data.volume !== undefined) {
       $('playlistVolume').value = data.volume;
       if ($('playlistVolVal')) $('playlistVolVal').textContent = data.volume;
@@ -936,6 +938,7 @@ function populateFileSelects() {
         </label>
       `).join('');
   }
+  loadEidModeStatus();
 }
 
 function uploadFile() {
@@ -2076,16 +2079,43 @@ function deleteGpioSched(index) {
 
 function toggleEidMode() {
   apiPost('/api/eid/mode', { enabled: $('eidModeToggle')?.checked ? '1' : '0' })
-    .then(() => toast('تم تحديث وضع العيد')).catch((err) => toast(`فشل التحديث: ${err.message}`));
+    .then(() => {
+      updateEidModeBanner($('eidModeToggle')?.checked === true);
+      toast('تم تحديث وضع العيد');
+    }).catch((err) => toast(`فشل التحديث: ${err.message}`));
+}
+
+function updateEidModeBanner(enabled) {
+  if ($('eidModeBanner')) $('eidModeBanner').style.display = enabled ? 'flex' : 'none';
+}
+
+function loadEidModeStatus() {
+  apiGet('/api/eid/status', {}).then((data) => {
+    const enabled = !!data.enabled;
+    if ($('eidModeToggle')) $('eidModeToggle').checked = enabled;
+    if ($('eidTakbeerFile') && data.takbeerFile) $('eidTakbeerFile').value = data.takbeerFile;
+    if ($('eidTakbeerVolume') && data.takbeerVolume !== undefined) {
+      $('eidTakbeerVolume').value = data.takbeerVolume;
+      if ($('eidTakbeerVolumeValue')) $('eidTakbeerVolumeValue').textContent = data.takbeerVolume;
+    }
+    updateEidModeBanner(enabled);
+  });
 }
 
 function triggerTakbeer() {
-  apiPost('/api/audio/play', { file: $('eidTakbeerFile')?.value || '', priority: 1 })
+  apiPost('/api/audio/play', {
+    file: $('eidTakbeerFile')?.value || '',
+    priority: 1,
+    volume: $('eidTakbeerVolume')?.value || 15
+  })
     .catch((err) => toast(`فشل التشغيل: ${err.message}`));
 }
 
 function saveEidFile() {
-  apiPost('/api/eid/file', { file: $('eidTakbeerFile')?.value || '' })
+  apiPost('/api/eid/file', {
+    file: $('eidTakbeerFile')?.value || '',
+    volume: $('eidTakbeerVolume')?.value || 15
+  })
     .then(() => toast('تم حفظ ملف التكبيرات')).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
@@ -2444,7 +2474,7 @@ function addEidSchedule() {
     dayOfMonth,
     specificDate: $('eidScheduleDate')?.value || '',
     volume: $('eidScheduleVolume')?.value || 20,
-    loop: $('eidScheduleLoopToggle')?.value === 'yes' ? $('eidScheduleLoopDuration')?.value || 0 : 0,
+    loop: $('eidScheduleLoopToggle')?.value === 'yes' ? Number($('eidScheduleLoopDuration')?.value || 0) * 60 : 0,
     prayerIndex: $('eidSchedulePrayer')?.value || 0,
     offsetSeconds,
     eidOnly: '1',
@@ -2472,7 +2502,7 @@ function loadEidSchedules() {
             info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
           }
           info += ` - صوت: ${a.volume || 20}`;
-          if (a.loop > 0) info += ` (تكرار ${a.loop}د)`;
+          if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
           return `<li class="file-item"><span>${info}</span><button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})">حذف</button></li>`;
         }).join('')
       : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات عيد. أضف تنبيهاً أعلاه.</p>';
@@ -2503,6 +2533,10 @@ function loadEidTakbeerConfig() {
 }
 
 function saveEidTakbeerConfig() {
+  const takbeerFile = $('eidTakbeerFile')?.value || '';
+  if (!takbeerFile) return toast('اختر ملف التكبيرات أولاً');
+  const takbeerVolume = $('eidTakbeerVolume')?.value || 15;
+
   const prayers = [];
   document.querySelectorAll('.eid-prayer-cb').forEach((cb, i) => {
     const cbBefore = document.querySelectorAll('.eid-prayer-cb-before')[i];
@@ -2515,8 +2549,9 @@ function saveEidTakbeerConfig() {
       after: cbAfter?.checked ? parseInt(afterInput?.value || '0') : 0
     });
   });
-  apiPost('/api/eid/takbeer_config/save', {json: JSON.stringify(prayers)})
-    .then(() => toast('تم حفظ جدولة التكبيرات'))
+  apiPost('/api/eid/file', { file: takbeerFile, volume: takbeerVolume })
+    .then(() => apiPost('/api/eid/takbeer_config/save', {json: JSON.stringify(prayers)}))
+    .then(() => toast('تم حفظ ملف التكبيرات وجدولتها'))
     .catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
@@ -2665,6 +2700,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if ($('eidScheduleVolume')) {
     $('eidScheduleVolume').addEventListener('input', () => {
       if ($('eidScheduleVolumeValue')) $('eidScheduleVolumeValue').textContent = $('eidScheduleVolume').value;
+    });
+  }
+  if ($('eidTakbeerVolume')) {
+    $('eidTakbeerVolume').addEventListener('input', () => {
+      if ($('eidTakbeerVolumeValue')) $('eidTakbeerVolumeValue').textContent = $('eidTakbeerVolume').value;
     });
   }
 

@@ -648,14 +648,16 @@ static void handleCsvUpload(AsyncWebServerRequest *request, String filename, siz
 
 static void handleOtaUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     String token = postValue(request, "token", "");
+    if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
+        token = request->getHeader("X-Session-Token")->value();
+    }
     if (!(sessionValid() && token == sessionToken)) return;
     if (!lockUpload()) return;
     if (!index) {
         if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
-        size_t maxSize = 8388608;
-        if (!Update.begin(maxSize)) {
-            Serial.println("[OTA] Begin failed, not enough space");
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+            Serial.println("[OTA] Begin failed, not enough space or partition not found");
             uploadBusy = false;
             unlockUpload();
             return;
@@ -664,14 +666,18 @@ static void handleOtaUpload(AsyncWebServerRequest *request, String filename, siz
             Update.setMD5(request->getHeader("X-MD5")->value().c_str());
         }
     }
-    if (len && Update.write(data, len) != len) {
-        Serial.printf("[OTA] Write error at offset %u\n", (unsigned)index);
+    if (len && Update.isRunning()) {
+        if (Update.write(data, len) != len) {
+            Serial.printf("[OTA] Write error at offset %u\n", (unsigned)index);
+        }
     }
     if (final) {
-        if (Update.end(true)) {
-            Serial.println("[OTA] Update successful");
-        } else {
-            Serial.printf("[OTA] Update failed: %s\n", Update.errorString());
+        if (Update.isRunning()) {
+            if (Update.end(true)) {
+                Serial.println("[OTA] Update successful");
+            } else {
+                Serial.printf("[OTA] Update failed: %s\n", Update.errorString());
+            }
         }
         uploadBusy = false;
     }
@@ -734,6 +740,10 @@ void startWebServer() {
         doc["volume"] = audioManager.getVolume();
         doc["state"] = (int)audioManager.getState();
         doc["adhan"] = audioManager.isAdhanPlaying();
+        Preferences eidPrefs;
+        eidPrefs.begin("eid", true);
+        doc["eidMode"] = eidPrefs.getBool("enabled", false);
+        eidPrefs.end();
         extern String currentAudioDescription;
         doc["status_text"] = isPlaying ? (currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + String(audioManager.getCurrentFile()))) : "متوقف";
         doc["wifi"] = WiFi.status() == WL_CONNECTED;
@@ -1437,10 +1447,41 @@ void startWebServer() {
         setEidMode(postBool(request, "enabled"));
         sendOk(request);
     });
+    server.on("/api/eid/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(256);
+        Preferences prefs;
+        prefs.begin("eid", true);
+        doc["enabled"] = prefs.getBool("enabled", false);
+        doc["takbeerFile"] = prefs.getString("takbeer_file", "takbeer.mp3");
+        doc["takbeerVolume"] = prefs.getUChar("takbeer_volume", 15);
+        prefs.end();
+        sendJson(request, doc);
+    });
     server.on("/api/eid/file", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String file = postValue(request, "file", "");
+        if (file.length() == 0) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
+            return;
+        }
+        if (!sdReady()) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
+            return;
+        }
+        String filePath = cleanPath(file);
+        lockSD();
+        bool fileExists = SD.exists(filePath);
+        unlockSD();
+        if (!fileExists) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
+            return;
+        }
         Preferences prefs;
         prefs.begin("eid", false);
-        prefs.putString("takbeer_file", postValue(request, "file", "takbeer.mp3"));
+        prefs.putString("takbeer_file", file);
+        int volume = postValue(request, "volume", "15").toInt();
+        if (volume < 0) volume = 0;
+        if (volume > 30) volume = 30;
+        prefs.putUChar("takbeer_volume", (uint8_t)volume);
         prefs.end();
         sendOk(request);
     });

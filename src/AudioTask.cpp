@@ -209,6 +209,8 @@ void AudioManager::advancePlaylist() {
         }
         _currentPriority = 0;
         LOG_AUD("AUDIO", "Playlist playback completed");
+        extern String currentAudioDescription;
+        currentAudioDescription = "";
         xSemaphoreGiveRecursive(_audioMutex);
     }
 }
@@ -284,6 +286,8 @@ void AudioManager::stop() {
         _suspendedPauseAfterAdhan = 0;
         _isPlaylistSuspendedState = false;
         _waitingForResumption = false;
+        extern String currentAudioDescription;
+        currentAudioDescription = "";
         LOG_AUD("AUDIO", "Playback stopped");
     }
     xSemaphoreGiveRecursive(_audioMutex);
@@ -435,6 +439,8 @@ void AudioManager::audioOnStop(void *userData) {
             self->_cachedIsRunning = false;
             self->_cachedDuration = 0;
             self->_cachedCurrentTime = 0;
+            extern String currentAudioDescription;
+            currentAudioDescription = "";
         }
         xSemaphoreGiveRecursive(self->_audioMutex);
         return;
@@ -459,6 +465,8 @@ void AudioManager::audioOnStop(void *userData) {
     self->_cachedDuration = 0;
     self->_cachedCurrentTime = 0;
     self->_pendingSeekTime = 0;
+    extern String currentAudioDescription;
+    currentAudioDescription = "";
     xSemaphoreGiveRecursive(self->_audioMutex);
 }
 

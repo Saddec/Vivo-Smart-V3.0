@@ -3,6 +3,8 @@
 #include "PrayerTimesEngine.h"
 #include "EidMode.h"
 #include "EventLogger.h"
+#include "SDManager.h"
+#include <SD.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <time.h>
@@ -10,6 +12,28 @@
 Scheduler scheduler;
 
 void Scheduler::begin() { loadFromNVS(); lastCheck = 0; }
+
+static bool scheduledFileExists(const String& fileName) {
+    if (fileName.length() == 0) return true;
+    if (!isSDReady()) return true;
+
+    int startIdx = 0;
+    while (startIdx < fileName.length()) {
+        int commaIdx = fileName.indexOf(',', startIdx);
+        String subFile = commaIdx == -1 ? fileName.substring(startIdx) : fileName.substring(startIdx, commaIdx);
+        startIdx = commaIdx == -1 ? fileName.length() : commaIdx + 1;
+        subFile.trim();
+        if (subFile.length() == 0) continue;
+        subFile.replace("\\", "/");
+        while (subFile.startsWith("/")) subFile.remove(0, 1);
+        String fullPath = "/" + subFile;
+        lockSD();
+        bool exists = SD.exists(fullPath);
+        unlockSD();
+        if (!exists) return false;
+    }
+    return true;
+}
 void Scheduler::addAlert(const ScheduledAlert& alert, int index) {
     if (index >= 0 && index < (int)alerts.size()) {
         alerts[index] = alert;
@@ -100,17 +124,18 @@ void Scheduler::checkAndTrigger() {
         }
     }
 
-    if (isBlockPeriod) {
+    if (isBlockPeriod && audioManager.isAdhanPlaying()) {
         static time_t lastLogTime = 0;
         if (now - lastLogTime >= 60 || shouldLog) {
             lastLogTime = now;
             Serial.printf("[Scheduler] Alert blocking active: %s. Skipping all alert triggers.\n", blockReason.c_str());
         }
-        return; // Prevent scheduled alerts from running and overwriting currentAudioDescription
+        return; // Prevent alerts from interrupting the Adhan itself.
     }
 
     for(auto& alert : alerts) {
         if(!alert.enabled) continue;
+        if(isBlockPeriod && !alert.eidOnly) continue;
         if(alert.eidOnly && !eidActive) continue;
         if(!alert.eidOnly && eidActive) continue;
         bool match=false;
@@ -246,6 +271,13 @@ void Scheduler::checkAndTrigger() {
         if(match) {
             time_t triggerMinute = now - timeinfo.tm_sec;
             if (alert.lastTriggered != triggerMinute) {
+                if (!scheduledFileExists(alert.fileName)) {
+                    LOG_E("SCHEDULER", "Disabling alert '%s' because audio file is missing: %s", alert.name.c_str(), alert.fileName.c_str());
+                    alert.enabled = false;
+                    alert.lastTriggered = triggerMinute;
+                    saveToNVS();
+                    continue;
+                }
                 if (audioManager.getState() != AUDIO_IDLE) {
                     if (!alert.important) {
                         Serial.printf("[Scheduler] Alert '%s' is not important and audio is playing. Skipping alert.\n", alert.name.c_str());

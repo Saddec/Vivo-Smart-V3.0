@@ -66,6 +66,10 @@
     <!-- Dashboard -->
     <div id="tab-dashboard" class="tab active">
       <h1><i class="fas fa-tachometer-alt"></i> لوحة التحكم</h1>
+      <div class="eid-mode-banner" id="eidModeBanner" style="display:none;">
+        <i class="fas fa-star-and-crescent"></i>
+        <span>وضع العيد مفعل</span>
+      </div>
       <div class="row">
         <div class="col glass-card dashboard-clock-card">
           <h3><i class="far fa-clock"></i> الوقت والتاريخ</h3>
@@ -561,6 +565,9 @@
         <h3><i class="fas fa-volume-up"></i> التكبيرات - جدولة متقدمة</h3>
         <p style="font-size:var(--fs-small); color:rgba(255,255,255,0.7); margin-bottom:15px;">حدد قبل/بعد كل صلاة بعدد الدقائق، أو اختر صلوات محددة</p>
         <label>ملف التكبيرات</label><select id="eidTakbeerFile"></select>
+        <label>مستوى صوت التكبيرات</label>
+        <input type="range" id="eidTakbeerVolume" min="0" max="30" value="15">
+        <span id="eidTakbeerVolumeValue">15</span>
         <div id="eidPrayerConfig"></div>
         <button class="btn" onclick="saveEidTakbeerConfig()"><i class="fas fa-save"></i> حفظ جدولة التكبيرات</button>
         <button class="btn" onclick="triggerTakbeer()"><i class="fas fa-play"></i> تشغيل مرة واحدة</button>

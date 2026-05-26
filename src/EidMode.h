@@ -8,5 +8,6 @@ void setEidMode(bool enable);
 void checkEidSchedule();
 String getEidTakbeerConfigJson();
 void saveEidTakbeerConfigJson(const String& json);
+void resetEidTakbeerWindow();
 
 #endif

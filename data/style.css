@@ -258,6 +258,23 @@ input:checked + .slider:before { transform: translateX(24px); }
 .dashboard-player-card {
   min-height: 255px;
 }
+.eid-mode-banner {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 18px;
+  padding: 12px 16px;
+  color: #fff;
+  font-weight: 800;
+  background: linear-gradient(135deg, rgba(241,196,15,0.22), rgba(46,204,113,0.16));
+  border: 1px solid rgba(241,196,15,0.48);
+  border-radius: 8px;
+  box-shadow: 0 0 24px rgba(241,196,15,0.10);
+}
+.eid-mode-banner i {
+  color: var(--accent-gold);
+}
 .dashboard-clock-card { text-align: center; }
 .dashboard-clock-card h3,
 .dashboard-player-card h3,

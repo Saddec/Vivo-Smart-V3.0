@@ -49,6 +49,7 @@ static const unsigned long onlinePrayerStartupDelayMs = 20000;
 
 void forcePrayerRecalc() {
     lastPrayerCalc = 0;
+    resetEidTakbeerWindow();
 }
 
 static bool isApModeActive() {
