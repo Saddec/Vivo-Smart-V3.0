@@ -7,6 +7,7 @@
 
 #include "AudioTask.h"
 #include "SystemTask.h"
+#include "SDManager.h"
 
 QueueHandle_t audioQueue;
 SemaphoreHandle_t fileBufferMutex;
@@ -18,6 +19,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("بدء تشغيل Vivo Smart ESP32-S3");
 
+    initSDMutex();
     audioQueue = xQueueCreate(10, sizeof(AudioMessage));
     fileBufferMutex = xSemaphoreCreateMutex();
 

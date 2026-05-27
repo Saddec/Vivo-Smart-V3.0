@@ -6,7 +6,8 @@ const appState = {
   sessionToken: localStorage.getItem('vivoSessionToken') || '',
   activeTab: 'dashboard',
   prayerUiLoaded: false,
-  csvStatusLoaded: false
+  csvStatusLoaded: false,
+  lastUserInteraction: Date.now()
 };
 
 const $ = (id) => document.getElementById(id);
@@ -51,7 +52,11 @@ function safeAttr(value) {
 }
 
 function apiGet(url, fallback = {}, retries = 3) {
-  return fetch(url)
+  const headers = {};
+  if (appState.sessionToken) {
+    headers['X-Session-Token'] = appState.sessionToken;
+  }
+  return fetch(url, { headers })
     .then((response) => {
       if (!response.ok) throw new Error(`${response.status} ${url}`);
       return response.json();
@@ -68,9 +73,13 @@ function apiGet(url, fallback = {}, retries = 3) {
 function apiPost(url, data = {}) {
   const payload = { ...data };
   if (appState.sessionToken && !payload.token) payload.token = appState.sessionToken;
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
+  if (appState.sessionToken) {
+    headers['X-Session-Token'] = appState.sessionToken;
+  }
   return fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    headers: headers,
     body: formBody(payload)
   }).then((response) => {
     if (response.status === 401) {
@@ -198,6 +207,7 @@ function doLogin() {
           localStorage.setItem('vivoSessionToken', data.token);
         }
         localStorage.setItem('vivoSessionTime', Date.now().toString());
+        appState.lastUserInteraction = Date.now();
         initDashboard();
       } else {
         const err = $('loginError');
@@ -329,7 +339,16 @@ function updateClock() {
 }
 
 function fetchStatus() {
-  apiGet('/api/status', {}).then((data) => {
+  const isUserActive = (Date.now() - (appState.lastUserInteraction || 0)) < 60000;
+  let url = `/api/status?active=${isUserActive ? '1' : '0'}`;
+  if (appState.sessionToken) {
+    url += `&token=${encodeURIComponent(appState.sessionToken)}`;
+  }
+  apiGet(url, {}).then((data) => {
+    if (appState.sessionToken && data.authenticated === false) {
+      doLogout();
+      return;
+    }
     const isAdhan = data.adhan === true;
     const statusCard = $('playbackStatusCard');
     const statusIcon = $('playbackStatusIcon');
@@ -2978,6 +2997,18 @@ function checkResponsive() {
 document.addEventListener('DOMContentLoaded', () => {
   checkResponsive();
   window.addEventListener('resize', checkResponsive);
+
+  const resetSessionTimer = () => {
+    if (appState.sessionToken) {
+      localStorage.setItem('vivoSessionTime', Date.now().toString());
+      appState.lastUserInteraction = Date.now();
+    }
+  };
+  window.addEventListener('mousedown', resetSessionTimer);
+  window.addEventListener('keydown', resetSessionTimer);
+  window.addEventListener('touchstart', resetSessionTimer);
+  window.addEventListener('scroll', resetSessionTimer);
+
   toggleDHCP();
   toggleScheduleFields();
   toggleLoopFields();

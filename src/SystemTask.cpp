@@ -31,6 +31,9 @@ IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), 
 
 PrayerTimesResult todayPrayer;
 time_t lastPrayerCalc = 0;
+static time_t lastCalendarLoad = 0;
+static time_t loadManualTimeStatus = 0;
+static time_t lastCSVLoad = 0;
 bool adhanPlayed[5] = {false};
 bool iqamaPlayed[5] = {false};
 unsigned long adhanStartTime = 0;
@@ -49,6 +52,9 @@ static const unsigned long onlinePrayerStartupDelayMs = 20000;
 
 void forcePrayerRecalc() {
     lastPrayerCalc = 0;
+    lastCalendarLoad = 0;
+    lastCSVLoad = 0;
+    todayPrayer.valid = false;
     resetEidTakbeerWindow();
 }
 
@@ -364,8 +370,7 @@ void checkPrayerTimes() {
         // already filled
     }
     else if (CSVManager::isCalendarOnly()) {
-        static time_t lastCalendarLoad = 0;
-        if (now - lastCalendarLoad > 60) {
+        if (!todayPrayer.valid || now - lastCalendarLoad > 60) {
             DailyData csv;
             if (CSVManager::getCalendarData(csv)) {
                 applyDailyData(csv);
@@ -380,8 +385,7 @@ void checkPrayerTimes() {
         }
     }
     else if (CSVManager::isEnabled() && CSVManager::isAvailable()) {
-        static time_t lastCSVLoad = 0;
-        if (now - lastCSVLoad > 60) {
+        if (!todayPrayer.valid || now - lastCSVLoad > 60) {
             DailyData csv = CSVManager::getTodayData();
             applyDailyData(csv);
             LOG_PR("PRAYER", "Loaded daily prayer times from SD CSV database");
@@ -389,7 +393,7 @@ void checkPrayerTimes() {
         }
     }
     else {
-        if (now - lastPrayerCalc > 3600) {
+        if (!todayPrayer.valid || now - lastPrayerCalc > 3600) {
             String country, city;
             Preferences prefs;
             prefs.begin("prayer_cfg", true);
@@ -558,7 +562,7 @@ void systemTask(void *pvParameters) {
         updateLEDTask();
         maintainWiFi();
         if (shouldRetrySDCard()) {
-            LOG_SYS("SYSTEM", "Retrying SD card initialization...");
+            LOG_SYS("SYSTEM", "Retrying SD card initialization... Last error: %s", getLastSDError().c_str());
             initSDCard(false);
         }
         checkPrayerTimes();

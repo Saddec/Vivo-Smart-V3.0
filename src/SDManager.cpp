@@ -29,6 +29,11 @@ static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
     pinMode(pins.cs, OUTPUT);
     digitalWrite(pins.cs, HIGH);
     
+    // Enable internal pullups BEFORE SPI.begin to avoid disconnecting the SPI peripheral
+    pinMode(pins.miso, INPUT_PULLUP);
+    pinMode(pins.mosi, INPUT_PULLUP);
+    pinMode(pins.sck, INPUT_PULLUP);
+    
     SPI.end();
     delay(10);
     SPI.begin(pins.sck, pins.miso, pins.mosi, pins.cs);
@@ -61,6 +66,7 @@ bool initSDCard(bool force) {
     if (!force && sdInitialized) return true;
     if (!force && nowMs - lastSdAttempt < sdRetryIntervalMs) return false;
 
+    lockSD();
     lastSdAttempt = nowMs;
     sdInitialized = false;
     SD.end();
@@ -75,6 +81,7 @@ bool initSDCard(bool force) {
             Serial.printf("[SD] Type: %s | Size: %lu MB | Pins: CS=%u SCK=%u MISO=%u MOSI=%u\n",
                           getSDCardTypeName(), (unsigned long)getSDTotalMB(),
                           pins.cs, pins.sck, pins.miso, pins.mosi);
+            unlockSD();
             return true;
         }
         
@@ -83,12 +90,14 @@ bool initSDCard(bool force) {
             sdInitialized = true;
             Serial.printf("[SD] ✅ Card Mounted Successfully (Fallback)\n");
             Serial.printf("[SD] Type: %s | Size: %lu MB\n", getSDCardTypeName(), (unsigned long)getSDTotalMB());
+            unlockSD();
             return true;
         }
     }
 
     Serial.printf("[SD] ❌ SD Card failed: %s\n", lastSdError.c_str());
     Serial.println("[SD] تحقق من: التوصيلات + صيغة الكارت (FAT32) + 3.3V");
+    unlockSD();
     return false;
 }
 
@@ -139,5 +148,11 @@ void lockSD() {
 void unlockSD() {
     if (sdMutex != NULL) {
         xSemaphoreGiveRecursive(sdMutex);
+    }
+}
+
+void initSDMutex() {
+    if (sdMutex == NULL) {
+        sdMutex = xSemaphoreCreateRecursiveMutex();
     }
 }

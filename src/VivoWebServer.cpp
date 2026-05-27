@@ -35,6 +35,7 @@ static SemaphoreHandle_t uploadMutex = NULL;
 static String cachedFileListJson;
 static unsigned long cachedFileListAt = 0;
 static String sessionToken = "";
+static unsigned long lastSessionActivity = 0;
 static String generateSessionToken() {
     uint32_t r1 = esp_random();
     uint32_t r2 = esp_random();
@@ -44,7 +45,16 @@ static String generateSessionToken() {
     return String(buf);
 }
 static bool sessionValid() {
-    return sessionToken.length() > 0;
+    if (sessionToken.length() == 0) return false;
+    Preferences prefs;
+    prefs.begin("session", true);
+    int timeoutMins = prefs.getInt("timeout", 10);
+    prefs.end();
+    if (millis() - lastSessionActivity > (unsigned long)timeoutMins * 60000UL) {
+        sessionToken = ""; // Expire session
+        return false;
+    }
+    return true;
 }
 struct CalendarDownloadJob {
     volatile bool busy = false;
@@ -91,7 +101,10 @@ static bool requireSession(AsyncWebServerRequest *request) {
     if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
         token = request->getHeader("X-Session-Token")->value();
     }
-    if (sessionValid() && token == sessionToken) return true;
+    if (sessionValid() && token == sessionToken) {
+        lastSessionActivity = millis(); // Refresh activity timer
+        return true;
+    }
     request->send(401, "application/json", "{\"ok\":false,\"error\":\"unauthorized\"}");
     return false;
 }
@@ -735,7 +748,21 @@ void startWebServer() {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String token = postValue(request, "token", "");
+        if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
+            token = request->getHeader("X-Session-Token")->value();
+        }
+        bool authenticated = false;
+        if (token.length() > 0 && token == sessionToken && sessionValid()) {
+            authenticated = true;
+            String activeVal = postValue(request, "active", "");
+            if (activeVal == "1") {
+                lastSessionActivity = millis(); // Refresh activity timer on client interaction
+            }
+        }
+
         DynamicJsonDocument doc(768);
+        doc["authenticated"] = authenticated;
         bool isPlaying = (audioManager.getState() != AUDIO_IDLE);
         doc["playing"] = isPlaying;
         doc["file"] = audioManager.getCurrentFile();
@@ -1038,6 +1065,7 @@ void startWebServer() {
             result.maghrib = prefs.getString("maghrib", "18:00");
             result.isha = prefs.getString("isha", "19:30");
             result.valid = true;
+            result.source = "يدوي";
             prefs.end();
             if (!changed) todayPrayer = result;
             writePrayerJson(request, result);
@@ -1062,6 +1090,7 @@ void startWebServer() {
         if (reqCountry.length() > 0 && reqCity.length() > 0 &&
             PrayerTimesEngine::fetchOnline(reqCountry, reqCity, time(nullptr), config, result)) {
             PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
+            result.source = "انترنت";
             Serial.println("[Prayer] Using online prayer timings");
         } else {
             DailyData csv;
@@ -1553,7 +1582,7 @@ void startWebServer() {
         sendOk(request);
     });
     server.on("/api/calendar/fallback", HTTP_POST, [](AsyncWebServerRequest *request) {
-        CSVManager::setCalendarFallback(postBool(request, "enabled", true));
+        CSVManager::setCalendarFallback(postBool(request, "enabled", false));
         forcePrayerRecalc();
         sendOk(request);
     });
@@ -1805,6 +1834,7 @@ void startWebServer() {
         bool ok = postValue(request, "password", "") == saved;
         if (ok) {
             sessionToken = generateSessionToken();
+            lastSessionActivity = millis();
             DynamicJsonDocument doc(128);
             doc["ok"] = true;
             doc["token"] = sessionToken;
@@ -1833,6 +1863,7 @@ void startWebServer() {
         prefs.putString("password", postValue(request, "password", "admin"));
         prefs.end();
         sessionToken = generateSessionToken();
+        lastSessionActivity = millis();
         DynamicJsonDocument doc(128);
         doc["ok"] = true;
         doc["token"] = sessionToken;
@@ -1926,38 +1957,43 @@ void startWebServer() {
     server.on("/api/system/reboot", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
-        delay(1000);
-        ESP.restart();
+        xTaskCreate([](void*){
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ESP.restart();
+        }, "reboot_task", 2048, NULL, 1, NULL);
     });
 
     server.on("/api/system/reset", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
-        delay(1000);
-        // مسح مساحات التخزين للإعدادات
-        Preferences prefs;
-        prefs.begin("auth", false); prefs.clear(); prefs.end();
-        prefs.begin("network", false); prefs.clear(); prefs.end();
-        prefs.begin("prayer_cfg", false); prefs.clear(); prefs.end();
-        prefs.begin("prayer_manual", false); prefs.clear(); prefs.end();
-        prefs.begin("startup", false); prefs.clear(); prefs.end();
-        prefs.begin("gpio", false); prefs.clear(); prefs.end();
-        prefs.begin("gpio_sched", false); prefs.clear(); prefs.end();
-        prefs.begin("scheduler", false); prefs.clear(); prefs.end();
-        prefs.begin("ddns", false); prefs.clear(); prefs.end();
-        prefs.begin("session", false); prefs.clear(); prefs.end();
-        prefs.begin("time_manual", false); prefs.clear(); prefs.end();
-        prefs.begin("adhan_files", false); prefs.clear(); prefs.end();
-        prefs.begin("eid", false); prefs.clear(); prefs.end();
-        prefs.begin("maghrib", false); prefs.clear(); prefs.end();
-        ESP.restart();
+        xTaskCreate([](void*){
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            Preferences prefs;
+            prefs.begin("auth", false); prefs.clear(); prefs.end();
+            prefs.begin("network", false); prefs.clear(); prefs.end();
+            prefs.begin("prayer_cfg", false); prefs.clear(); prefs.end();
+            prefs.begin("prayer_manual", false); prefs.clear(); prefs.end();
+            prefs.begin("startup", false); prefs.clear(); prefs.end();
+            prefs.begin("gpio", false); prefs.clear(); prefs.end();
+            prefs.begin("gpio_sched", false); prefs.clear(); prefs.end();
+            prefs.begin("scheduler", false); prefs.clear(); prefs.end();
+            prefs.begin("ddns", false); prefs.clear(); prefs.end();
+            prefs.begin("session", false); prefs.clear(); prefs.end();
+            prefs.begin("time_manual", false); prefs.clear(); prefs.end();
+            prefs.begin("adhan_files", false); prefs.clear(); prefs.end();
+            prefs.begin("eid", false); prefs.clear(); prefs.end();
+            prefs.begin("maghrib", false); prefs.clear(); prefs.end();
+            ESP.restart();
+        }, "reset_task", 3072, NULL, 1, NULL);
     });
 
     server.on("/api/system/shutdown", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (!requireSession(request)) return;
         request->send(200, "application/json", "{\"ok\":true}");
-        delay(1000);
-        esp_deep_sleep_start();
+        xTaskCreate([](void*){
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_deep_sleep_start();
+        }, "shutdown_task", 2048, NULL, 1, NULL);
     });
 
     server.on("/api/ota", HTTP_POST, [](AsyncWebServerRequest *request) {

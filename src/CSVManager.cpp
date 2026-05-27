@@ -166,7 +166,7 @@ void CSVManager::setCalendarOnly(bool enable) {
 bool CSVManager::isCalendarFallback() {
     Preferences prefs;
     prefs.begin("csv_mode", true);
-    bool en = prefs.getBool("calendarFallback", true);
+    bool en = prefs.getBool("calFallback", true);
     prefs.end();
     return en;
 }
@@ -174,7 +174,7 @@ bool CSVManager::isCalendarFallback() {
 void CSVManager::setCalendarFallback(bool enable) {
     Preferences prefs;
     prefs.begin("csv_mode", false);
-    prefs.putBool("calendarFallback", enable);
+    prefs.putBool("calFallback", enable);
     prefs.end();
 }
 

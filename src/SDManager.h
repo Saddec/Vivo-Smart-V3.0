@@ -22,5 +22,6 @@ uint8_t getActiveSDMosiPin();
 
 void lockSD();
 void unlockSD();
+void initSDMutex();
 
 #endif
