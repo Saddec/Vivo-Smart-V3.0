@@ -1363,6 +1363,9 @@ function saveSingleAlert() {
     gpioDurationSec: Number($('singleAlertGpioDurationSec')?.value || 5),
     important: $('singleAlertImportant')?.checked ? 1 : 0
   };
+  if (editingSingleAlertIndex >= 0 && appState.alerts[editingSingleAlertIndex]) {
+    data.enabled = appState.alerts[editingSingleAlertIndex].enabled !== false ? 1 : 0;
+  }
 
   apiPost('/api/scheduler/add', data).then(() => {
     toast(editingSingleAlertIndex >= 0 ? 'تم تعديل التنبيه بنجاح' : 'تم إضافة التنبيه بنجاح');
@@ -1526,6 +1529,9 @@ function savePlaylistSched() {
     gpioDurationSec: Number($('playlistSchedGpioDurationSec')?.value || 5),
     important: $('playlistSchedImportant')?.checked ? 1 : 0
   };
+  if (editingPlaylistSchedIndex >= 0 && appState.alerts[editingPlaylistSchedIndex]) {
+    data.enabled = appState.alerts[editingPlaylistSchedIndex].enabled !== false ? 1 : 0;
+  }
 
   apiPost('/api/scheduler/add', data).then(() => {
     toast(editingPlaylistSchedIndex >= 0 ? 'تم تعديل القائمة المجدولة بنجاح' : 'تم إضافة القائمة للجدولة بنجاح');
@@ -1711,13 +1717,21 @@ function loadSchedules() {
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
           info += ` | 🔌 مخرج ${a.gpioPin} (${modeArabic} - ${durArabic})`;
         }
+        if (a.enabled === false) {
+          info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+        }
         info += '</span>';
         
-        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+        const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+        const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+        const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+        
+        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; ${itemOpacity}">
           <span>${info}</span>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-secondary" onclick="editSingleAlert(${a.originalIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
-            <button class="btn btn-danger" onclick="deleteSchedule(${a.originalIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-trash"></i> حذف</button>
+            <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${a.originalIndex}, ${a.enabled === false})" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+            <button class="btn btn-secondary" onclick="editSingleAlert(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+            <button class="btn btn-danger" onclick="deleteSchedule(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-trash"></i> حذف</button>
           </div>
         </li>`;
       }).join('');
@@ -1760,13 +1774,21 @@ function loadSchedules() {
           const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
           info += ` | 🔌 مخرج ${a.gpioPin} (${modeArabic} - ${durArabic})`;
         }
+        if (a.enabled === false) {
+          info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+        }
         info += '</span>';
         
-        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+        const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+        const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+        const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+        
+        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; ${itemOpacity}">
           <span>${info}</span>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-secondary" onclick="editPlaylistSched(${a.originalIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
-            <button class="btn btn-danger" onclick="deleteSchedule(${a.originalIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-trash"></i> حذف</button>
+            <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${a.originalIndex}, ${a.enabled === false})" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+            <button class="btn btn-secondary" onclick="editPlaylistSched(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+            <button class="btn btn-danger" onclick="deleteSchedule(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-trash"></i> حذف</button>
           </div>
         </li>`;
       }).join('');
@@ -1781,6 +1803,17 @@ function deleteSchedule(index) {
     cancelEditPlaylistSched();
     loadSchedules();
   }).catch((err) => toast(`فشل الحذف: ${err.message}`));
+}
+
+function toggleSchedule(index, enable, isEid = false) {
+  apiPost('/api/scheduler/toggle', { index, enabled: enable ? 1 : 0 }).then(() => {
+    toast(enable ? 'تم تشغيل التنبيه' : 'تم إيقاف التنبيه');
+    if (isEid) {
+      loadEidSchedules();
+    } else {
+      loadSchedules();
+    }
+  }).catch((err) => toast(`فشل تعديل حالة التنبيه: ${err.message}`));
 }
 
 function populateGpioPins() {
@@ -2750,7 +2783,7 @@ function addEidSchedule() {
   const endHour = $('eidScheduleEndTime')?.value ? Number($('eidScheduleEndTime').value.split(':')[0]) : -1;
   const endMinute = $('eidScheduleEndTime')?.value ? Number($('eidScheduleEndTime').value.split(':')[1]) : -1;
 
-  apiPost('/api/scheduler/add', {
+  const data = {
     name,
     file: fileList,
     type,
@@ -2769,7 +2802,12 @@ function addEidSchedule() {
     endHour,
     endMinute,
     index: editingEidAlertIndex
-  }).then(() => {
+  };
+  if (editingEidAlertIndex >= 0 && appState.alerts[editingEidAlertIndex]) {
+    data.enabled = appState.alerts[editingEidAlertIndex].enabled !== false ? 1 : 0;
+  }
+
+  apiPost('/api/scheduler/add', data).then(() => {
     toast(editingEidAlertIndex >= 0 ? 'تم تعديل تنبيه العيد' : 'تم إضافة تنبيه العيد');
     cancelEditEidSchedule();
     loadEidSchedules();
@@ -2806,11 +2844,18 @@ function loadEidSchedules() {
           }
           info += ` - صوت: ${a.volume || 20}`;
           if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
-          return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center;">
+          if (a.enabled === false) {
+            info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+          }
+          const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+          const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+          const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+          return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; ${itemOpacity}">
             <span>${info}</span>
             <div style="display:flex; gap:5px;">
-              <button class="btn btn-secondary" onclick="editEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px;"><i class="fas fa-edit"></i> تعديل</button>
-              <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px;">حذف</button>
+              <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${realIndex}, ${a.enabled === false}, true)" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+              <button class="btn btn-secondary" onclick="editEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+              <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;">حذف</button>
             </div>
           </li>`;
         }).join('')

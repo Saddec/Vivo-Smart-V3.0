@@ -1392,7 +1392,7 @@ void startWebServer() {
         alert.dayOfMonth = postValue(request, "dayOfMonth", "-1").toInt();
         alert.specificDate = postValue(request, "specificDate", "");
         alert.durationSec = postValue(request, "duration", "0").toInt();
-        alert.enabled = true;
+        alert.enabled = postBool(request, "enabled", true);
         alert.volume = postValue(request, "volume", "20").toInt();
         alert.loopDuration = postValue(request, "loop", "0").toInt();
         alert.isPrayerRelative = alert.type == "prayer_relative";
@@ -1415,6 +1415,12 @@ void startWebServer() {
     });
     server.on("/api/scheduler/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
         scheduler.removeAlert(postValue(request, "index", "-1").toInt());
+        sendOk(request);
+    });
+    server.on("/api/scheduler/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int index = postValue(request, "index", "-1").toInt();
+        bool enabled = postBool(request, "enabled", true);
+        scheduler.setAlertEnabled(index, enabled);
         sendOk(request);
     });
 

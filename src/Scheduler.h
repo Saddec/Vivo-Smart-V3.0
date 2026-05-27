@@ -39,6 +39,7 @@ public:
     void checkAndTrigger();
     String getAlertsJson();
     void removeAlert(int index);
+    void setAlertEnabled(int index, bool enabled);
 private:
     std::vector<ScheduledAlert> alerts;
     time_t lastCheck;

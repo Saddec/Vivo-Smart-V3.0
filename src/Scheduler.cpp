@@ -69,6 +69,13 @@ String Scheduler::getAlertsJson() {
 
 void Scheduler::removeAlert(int index) { if(index>=0&&index<(int)alerts.size()){alerts.erase(alerts.begin()+index); saveToNVS(); } }
 
+void Scheduler::setAlertEnabled(int index, bool enabled) {
+    if (index >= 0 && index < (int)alerts.size()) {
+        alerts[index].enabled = enabled;
+        saveToNVS();
+    }
+}
+
 void Scheduler::checkAndTrigger() {
     time_t now = time(nullptr); if(now - lastCheck < 1) return; lastCheck=now;
     struct tm timeinfo; localtime_r(&now,&timeinfo);
