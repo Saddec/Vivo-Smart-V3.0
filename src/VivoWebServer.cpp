@@ -761,7 +761,7 @@ void startWebServer() {
             }
         }
 
-        DynamicJsonDocument doc(768);
+        DynamicJsonDocument doc(1024);
         doc["authenticated"] = authenticated;
         bool isPlaying = (audioManager.getState() != AUDIO_IDLE);
         doc["playing"] = isPlaying;
@@ -777,8 +777,15 @@ void startWebServer() {
         doc["status_text"] = isPlaying ? (currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + String(audioManager.getCurrentFile()))) : "متوقف";
         doc["wifi"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
+        
+        // Include clock & date fields directly to optimize API calls
+        doc["time"] = getCurrentTimeStr();
+        doc["greg"] = getCurrentDateStr();
+        doc["hijri"] = PrayerTimesEngine::gregorianToHijri(time(nullptr));
+        
         sendJson(request, doc);
     });
+
 
     server.on("/api/audio/stop", HTTP_POST, [](AsyncWebServerRequest *request) {
         if (audioManager.isAdhanPlaying()) {

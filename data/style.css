@@ -1,17 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap');
-
 @font-face {
   font-family: 'Amiri';
   font-style: normal;
   font-weight: 400;
-  src: local('Amiri'), url('/Amiri-Regular.ttf') format('truetype');
+  src: local('Amiri'), url('/Amiri-Regular.woff2') format('woff2');
 }
 
 @font-face {
   font-family: 'Amiri';
   font-style: normal;
   font-weight: 700;
-  src: local('Amiri Bold'), local('Amiri-Bold'), url('/Amiri-Bold.ttf') format('truetype');
+  src: local('Amiri Bold'), local('Amiri-Bold'), url('/Amiri-Bold.woff2') format('woff2');
 }
 
 :root {

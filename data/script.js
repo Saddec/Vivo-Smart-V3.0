@@ -330,8 +330,8 @@ function format12Hour(time24) {
   return `${String(hi).padStart(2, '0')}:${m} ${ampm}`;
 }
 
-function updateClock() {
-  apiGet('/api/clock', {}).then((data) => {
+function updateClock(data) {
+  if (data && data.time) {
     if ($('timeDisplay') && data.time) $('timeDisplay').textContent = format12Hour(data.time);
     if ($('gregDate')) $('gregDate').textContent = data.greg || '';
     if ($('hijriDate')) $('hijriDate').textContent = data.hijri || '';
@@ -345,7 +345,11 @@ function updateClock() {
         console.error("Day calculation error:", e);
       }
     }
-  });
+  } else {
+    apiGet('/api/clock', {}).then((clockData) => {
+      updateClock(clockData);
+    });
+  }
 }
 
 function fetchStatus() {
@@ -359,6 +363,10 @@ function fetchStatus() {
       doLogout();
       return;
     }
+    
+    // Update local clock using data directly from status response
+    updateClock(data);
+
     const isAdhan = data.adhan === true;
     const statusCard = $('playbackStatusCard');
     const statusIcon = $('playbackStatusIcon');
@@ -441,6 +449,18 @@ function fetchStatus() {
     if ($('dashPlayPauseBtn')) {
       if (data.state === 1) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-pause"></i> إيقاف مؤقت';
       else if (data.state === 2) $('dashPlayPauseBtn').innerHTML = '<i class="fas fa-play"></i> تشغيل';
+    }
+
+    // Smart Polling: Fetch track progress details only when audio is active
+    if (data.playing) {
+      fetchTrackInfo();
+    } else {
+      if ($('trackDuration')) $('trackDuration').textContent = '--:--';
+      if ($('trackPosition')) $('trackPosition').textContent = '00:00';
+      if ($('trackProgress')) $('trackProgress').value = 0;
+      if ($('dashTrackDuration')) $('dashTrackDuration').textContent = '--:--';
+      if ($('dashTrackPosition')) $('dashTrackPosition').textContent = '00:00';
+      if ($('dashTrackProgress')) $('dashTrackProgress').value = 0;
     }
   });
 }
@@ -2653,7 +2673,14 @@ function toggleEidScheduleFields() {
   ).join('') + '</div>';
   if (type === 'monthly') html = '<label>اليوم من الشهر</label><input type="number" id="eidScheduleDay" min="1" max="31" value="1">';
   if (type === 'specific') html = '<label>التاريخ</label><input type="date" id="eidScheduleDate">';
-  if (type === 'prayer_relative') html = '<label>الصلاة</label><select id="eidSchedulePrayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select><label>الإزاحة بالدقائق</label><input type="number" id="eidScheduleOffset" value="0"><label>قبل/بعد</label><select id="eidScheduleBeforeAfter"><option value="before">قبل الصلاة</option><option value="after">بعد الصلاة</option></select>';
+  if (type === 'prayer_relative') {
+    html = '<label>الصلاة</label><select id="eidSchedulePrayer"><option value="0">الفجر</option><option value="1">الظهر</option><option value="2">العصر</option><option value="3">المغرب</option><option value="4">العشاء</option></select>' +
+      '<label>الإزاحة بالدقائق</label><input type="number" id="eidScheduleOffset" value="0">' +
+      '<label>قبل/بعد</label><select id="eidScheduleBeforeAfter"><option value="before">قبل الصلاة</option><option value="after">بعد الصلاة</option></select>' +
+      '<label>أيام التشغيل (اختياري - اتركه فارغاً للتشغيل يومياً)</label><div id="eidWeeklyDays">' +
+      dayNames.map((d, i) => `<label style="display:inline-flex;align-items:center;gap:4px;margin:4px 8px 4px 0;font-size:var(--fs-small)"><input type="checkbox" class="eid-weekly-day-cb" value="${i}"> ${d}</label>`
+    ).join('') + '</div>';
+  }
   if ($('eidScheduleExtraFields')) $('eidScheduleExtraFields').innerHTML = html;
 
   const timeContainer = $('eidScheduleTimeContainer');
@@ -2727,7 +2754,7 @@ function editEidSchedule(index) {
     }
   }
   
-  if (alert.type === 'weekly') {
+  if ((alert.type === 'weekly' || alert.type === 'prayer_relative') && alert.dayOfWeek >= 0) {
     document.querySelectorAll('.eid-weekly-day-cb').forEach(cb => {
       cb.checked = (alert.dayOfWeek & (1 << parseInt(cb.value))) !== 0;
     });
@@ -2779,11 +2806,14 @@ function addEidSchedule() {
   const [hour = '0', minute = '0'] = ($('eidScheduleTime')?.value || '00:00').split(':');
   const type = $('eidScheduleType')?.value || 'daily';
   let dayOfWeek = -1, dayOfMonth = -1;
-  if (type === 'weekly') {
+  if (type === 'weekly' || type === 'prayer_relative') {
     const cbs = document.querySelectorAll('.eid-weekly-day-cb:checked');
-    if (cbs.length === 0) return toast('اختر يوماً واحداً على الأقل');
-    dayOfWeek = 0;
-    cbs.forEach(cb => { dayOfWeek |= (1 << parseInt(cb.value)); });
+    if (cbs.length > 0) {
+      dayOfWeek = 0;
+      cbs.forEach(cb => { dayOfWeek |= (1 << parseInt(cb.value)); });
+    } else if (type === 'weekly') {
+      return toast('اختر يوماً واحداً على الأقل');
+    }
   }
   if (type === 'monthly') dayOfMonth = $('eidScheduleDay')?.value || '-1';
   let offsetSeconds = Number($('eidScheduleOffset')?.value || 0) * 60;
@@ -3102,15 +3132,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let prayerFetchCounter = 0;
   setInterval(() => {
+    // Performance optimization: skip polling if tab is hidden/backgrounded
+    if (document.hidden) return;
+    
     if ($('mainContent')?.style.display !== 'none') {
-      updateClock();
-      fetchStatus();
-      fetchTrackInfo();
+      fetchStatus(); // fetchStatus now updates clock and conditional track info internally
       checkSessionTimeout();
       prayerFetchCounter++;
       if (!calendarDownloadActive && prayerFetchCounter % 6 === 0 && appState.activeTab === 'dashboard') fetchPrayerTimes();
     }
-  }, 2000);
+  }, 3000);
 });
 
 function togglePasswordVisibility(inputId, iconId) {
