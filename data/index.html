@@ -6,23 +6,31 @@
   <title class="notranslate" translate="no">Vivo Smart – لوحة التحكم</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400;1,700&family=Cairo:wght@300;400;500;600;700;800;900&family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="/all.min.css">   <!-- نسخة محلية كاحتياطي -->
   <link rel="stylesheet" href="/style.css?v=3.14">
 </head>
 <body>
   <!-- طبقة تسجيل الدخول -->
-  <div id="loginOverlay">
-    <div class="glass-card" style="max-width:350px; width:90%; text-align:center;">
-      <h2><i class="fas fa-lock"></i> تسجيل الدخول</h2>
+  <div id="loginOverlay" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; padding: 20px 0;">
+    <!-- الشعار خارج بطاقة تسجيل الدخول (أعلاها) بشكل أنيق وجذاب -->
+    <div class="login-logo-container" style="text-align: center; z-index: 2;">
+      <img src="/logo.png" alt="Vivo Smart" class="notranslate" translate="no" 
+           style="max-width: 140px; width: 100%; height: auto; border-radius: 16px; 
+                  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 242, 254, 0.3); 
+                  border: 1px solid rgba(255, 255, 255, 0.18);
+                  animation: floatLogo 4s ease-in-out infinite;">
+    </div>
+    <div class="glass-card" style="max-width:350px; width:90%; text-align:center; padding: 35px 24px; z-index: 2; position: relative;">
+      <h2 style="font-size: 20px; margin-bottom: 25px; font-weight: 700; color: #fff;"><i class="fas fa-lock" style="margin-left: 8px; color: var(--accent-cyan);"></i> تسجيل الدخول</h2>
       <div style="position:relative; width:100%; margin: 15px auto;">
-        <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center; width:100%;">
+        <input type="password" id="loginPassword" placeholder="كلمة المرور" style="text-align:center; width:100%; margin-bottom: 5px;">
         <i class="fas fa-eye pwd-toggle-icon" id="toggleLoginPwd" onclick="togglePasswordVisibility('loginPassword', 'toggleLoginPwd')"></i>
       </div>
-      <button class="btn" onclick="doLogin()" style="width:100%; margin-top:5px;">دخول</button>
+      <button class="btn" onclick="doLogin()" style="width:100%; margin-top:5px; background: linear-gradient(135deg, var(--primary-purple), var(--primary-blue));">دخول</button>
       <button class="btn" onclick="forgotPassword()" style="width:100%; margin-top:10px; background:transparent; border:1px solid #3498db; color:#3498db;">نسيت كلمة السر؟</button>
-      <p id="loginError" style="color:#e74c3c; margin-top:10px; display:none;">كلمة المرور غير صحيحة</p>
+      <p id="loginError" style="color:#e74c3c; margin-top:10px; display:none; font-weight: 600;">كلمة المرور غير صحيحة</p>
     </div>
   </div>
 
@@ -30,7 +38,7 @@
   <header class="mobile-header" id="mobileHeader">
     <div style="display:flex; align-items:center; gap:10px;">
       <img src="/logo.png" alt="Logo" style="height:35px; width:auto; border-radius:6px;">
-      <span class="notranslate" translate="no" style="font-weight:800; font-size:18px; color:#fff; font-family:'Tajawal', sans-serif;">Vivo Smart</span>
+      <span class="notranslate" translate="no" style="font-weight:800; font-size:18px; color:#fff; font-family:'Amiri', serif;">Vivo Smart</span>
     </div>
     <button class="menu-toggle-btn" id="menuToggleBtn" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
   </header>
@@ -76,6 +84,7 @@
           <div class="dashboard-location" id="locationDisplay"><i class="fas fa-map-marker-alt"></i> --, --</div>
           <div class="dashboard-clock-wrap">
             <div class="dashboard-clock" id="timeDisplay">--:--</div>
+            <div id="dayDisplay" style="text-align: center; font-size: 36px; font-weight: 800; color: #fff; margin-top: 8px; text-shadow: 0 0 15px rgba(0, 242, 254, 0.7); font-family: 'Amiri', serif; line-height: 1.2;">--</div>
           </div>
           <div class="dashboard-date-grid">
             <div class="date-pill">

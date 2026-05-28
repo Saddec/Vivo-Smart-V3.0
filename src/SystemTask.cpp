@@ -120,11 +120,13 @@ void setupWiFi() {
 void maintainWiFi() {
     bool connected = WiFi.status() == WL_CONNECTED;
     unsigned long nowMs = millis();
+    static unsigned long lastHardReconnect = 0;
 
     if (connected) {
         if (!lastWifiConnected) {
             lastWifiConnected = true;
             wifiConnectedAt = nowMs;
+            lastHardReconnect = 0;
             setLedState(LED_WIFI_OK);
             LOG_WF("WIFI", "WiFi reconnected. IP: %s", WiFi.localIP().toString().c_str());
             syncTimeFromNTP();
@@ -141,6 +143,7 @@ void maintainWiFi() {
         lastWifiConnected = false;
         wifiDisconnectedAt = nowMs;
         lastReconnectAttempt = 0;
+        lastHardReconnect = 0;
         setLedState(LED_WIFI_CONNECTING);
         LOG_W("WIFI", "WiFi disconnected");
     }
@@ -151,7 +154,22 @@ void maintainWiFi() {
         startSetupAp();
     }
 
-    if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
+    if (nowMs - wifiDisconnectedAt >= 180000 && (lastHardReconnect == 0 || nowMs - lastHardReconnect >= 180000)) {
+        lastHardReconnect = nowMs;
+        lastReconnectAttempt = nowMs; // delay next reconnect call
+        LOG_W("WIFI", "WiFi disconnected for over 3 minutes. Performing hard reconnect...");
+        WiFi.disconnect();
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+
+        Preferences prefs;
+        prefs.begin("network", true);
+        String ssid = prefs.getString("ssid", defaultSSID);
+        String pass = prefs.getString("pass", defaultPass);
+        prefs.end();
+
+        WiFi.begin(ssid.c_str(), pass.c_str());
+    } 
+    else if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
         lastReconnectAttempt = nowMs;
         if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
         LOG_WF("WIFI", "Attempting WiFi reconnection...");

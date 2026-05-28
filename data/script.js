@@ -335,6 +335,16 @@ function updateClock() {
     if ($('timeDisplay') && data.time) $('timeDisplay').textContent = format12Hour(data.time);
     if ($('gregDate')) $('gregDate').textContent = data.greg || '';
     if ($('hijriDate')) $('hijriDate').textContent = data.hijri || '';
+    if ($('dayDisplay') && data.greg) {
+      try {
+        const [year, month, day] = data.greg.split('-').map(Number);
+        const dateObj = new Date(year, month - 1, day);
+        const weekdaysArabic = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+        $('dayDisplay').textContent = weekdaysArabic[dateObj.getDay()];
+      } catch (e) {
+        console.error("Day calculation error:", e);
+      }
+    }
   });
 }
 
