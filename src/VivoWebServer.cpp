@@ -250,12 +250,43 @@ static void listFilesRecursively(String dirPath, JsonArray &arr, int depth) {
     }
     File f = dir.openNextFile();
     while (f) {
+        String fname = String(f.name());
+        int lastSlash = fname.lastIndexOf('/');
+        String baseName = (lastSlash >= 0) ? fname.substring(lastSlash + 1) : fname;
+        
+        bool isSystem = false;
+        
+        // 1. Hide hidden files/folders starting with '.'
+        if (baseName.startsWith(".")) {
+            isSystem = true;
+        }
+        // 2. Hide Windows system folder
+        else if (baseName.equalsIgnoreCase("System Volume Information")) {
+            isSystem = true;
+        }
+        // 3. Hide project system folders
+        else if (baseName.equalsIgnoreCase("prayer_csv") || baseName.equalsIgnoreCase("logs")) {
+            isSystem = true;
+        }
+        // 4. Hide root level monthly calendar CSV files (01.csv to 12.csv)
+        else if (dirPath == "/" && !f.isDirectory()) {
+            if (baseName.length() == 6 && baseName.endsWith(".csv") && isdigit(baseName[0]) && isdigit(baseName[1])) {
+                isSystem = true;
+            }
+        }
+        
+        if (isSystem) {
+            f.close();
+            f = dir.openNextFile();
+            continue;
+        }
+
         JsonObject o = arr.createNestedObject();
-        String name = String(f.name());
+        String name = fname;
         if (!name.startsWith("/")) {
             name = dirPath;
             if (!name.endsWith("/")) name += "/";
-            name += f.name();
+            name += fname;
         }
         String cleanName = name;
         if (cleanName.startsWith("/")) cleanName.remove(0, 1);
@@ -523,7 +554,15 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
         request->send(404, "text/plain", "File not found");
         return;
     }
-    request->send(SD, path, "application/octet-stream");
+    
+    // Serve audio files with correct MIME types for HTML5 player compatibility
+    String contentType = "application/octet-stream";
+    if (path.endsWith(".mp3") || path.endsWith(".MP3")) {
+        contentType = "audio/mpeg";
+    } else if (path.endsWith(".wav") || path.endsWith(".WAV")) {
+        contentType = "audio/wav";
+    }
+    request->send(SD, path, contentType);
 }
 
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {

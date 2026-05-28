@@ -1208,7 +1208,8 @@ function previewFile(name) {
   if (!/\.(mp3|wav)$/i.test(name)) return;
   if ($('previewCard')) $('previewCard').style.display = 'block';
   if ($('previewName')) $('previewName').textContent = name;
-  if ($('audioPlayer')) $('audioPlayer').src = `/sd/${encodeURIComponent(name)}`;
+  const encodedPath = name.split('/').map(encodeURIComponent).join('/');
+  if ($('audioPlayer')) $('audioPlayer').src = `/sd/${encodedPath}`;
 }
 
 function closePreview() {
