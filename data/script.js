@@ -1705,6 +1705,9 @@ function loadSchedules() {
     
     alerts.forEach((alert, index) => {
       alert.originalIndex = index;
+      if (alert.eidOnly && (alert.eidOnly === '1' || alert.eidOnly === 1 || alert.eidOnly === true || alert.eidOnly === 'true')) {
+        return; // Skip Eid-only alerts for the regular scheduler view
+      }
       if (alert.file && alert.file.includes(',')) {
         playlistSchedules.push(alert);
       } else {
