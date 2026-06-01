@@ -83,6 +83,19 @@ void Scheduler::checkAndTrigger() {
         curMday=timeinfo.tm_mday, curMon=timeinfo.tm_mon+1, curYear=timeinfo.tm_year+1900;
     extern PrayerTimesResult todayPrayer;
     bool eidActive = isEidMode();
+    extern AudioManager audioManager;
+
+    // Stop alerts whose end time has been reached
+    for (const auto& alert : alerts) {
+        if (alert.enabled && alert.endHour == curHour && alert.endMinute == curMin && alert.repeatInterval <= 0) {
+            String alertDesc = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
+            extern String currentAudioDescription;
+            if (currentAudioDescription == alertDesc && audioManager.getState() != AUDIO_IDLE) {
+                Serial.printf("[Scheduler] Stopping alert '%s' because its end time %02d:%02d was reached\n", alert.name.c_str(), alert.endHour, alert.endMinute);
+                audioManager.stop();
+            }
+        }
+    }
 
     static int lastLoggedMin = -1;
     bool shouldLog = (timeinfo.tm_min != lastLoggedMin);
@@ -142,9 +155,11 @@ void Scheduler::checkAndTrigger() {
 
     for(auto& alert : alerts) {
         if(!alert.enabled) continue;
-        if(isBlockPeriod && !alert.eidOnly) continue;
-        if(alert.eidOnly && !eidActive) continue;
-        if(!alert.eidOnly && eidActive) continue;
+        if(isBlockPeriod && !alert.eidOnly && !alert.bothModes) continue;
+        if(!alert.bothModes) {
+            if(alert.eidOnly && !eidActive) continue;
+            if(!alert.eidOnly && eidActive) continue;
+        }
         bool match=false;
         int targetHour = -1;
         int targetMin = -1;
@@ -338,6 +353,7 @@ void Scheduler::loadFromNVS() {
             a.isPrayerRelative=obj["isPrayerRelative"]|false; a.prayerIndex=obj["prayerIndex"]|0; a.offsetSeconds=obj["offsetSeconds"]|0;
             a.validFrom=obj["validFrom"]|""; a.validTo=obj["validTo"]|"";
             a.eidOnly=obj["eidOnly"]|false;
+            a.bothModes=obj["bothModes"]|false;
             a.repeatInterval=obj["repeatInterval"]|0;
             a.endHour=obj["endHour"]|-1;
             a.endMinute=obj["endMinute"]|-1;
@@ -345,8 +361,9 @@ void Scheduler::loadFromNVS() {
             a.gpioPin=obj["gpioPin"]|0;
             a.gpioMode=obj["gpioMode"]|"continuous";
             a.gpioDurationMode=obj["gpioDurationMode"]|"audio_duration";
-            a.gpioDurationSec=obj["gpioDurationSec"]|5;
             a.important=obj["important"]|true;
+            a.skipAdhan=obj["skipAdhan"]|false;
+            a.skipIqama=obj["skipIqama"]|false;
             a.lastTriggered = 0;
             alerts.push_back(a);
         }
@@ -363,6 +380,7 @@ void Scheduler::saveToNVS() {
         obj["isPrayerRelative"]=a.isPrayerRelative; obj["prayerIndex"]=a.prayerIndex; obj["offsetSeconds"]=a.offsetSeconds;
         obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
         obj["eidOnly"]=a.eidOnly;
+        obj["bothModes"]=a.bothModes;
         obj["repeatInterval"]=a.repeatInterval;
         obj["endHour"]=a.endHour;
         obj["endMinute"]=a.endMinute;
@@ -372,7 +390,59 @@ void Scheduler::saveToNVS() {
         obj["gpioDurationMode"]=a.gpioDurationMode;
         obj["gpioDurationSec"]=a.gpioDurationSec;
         obj["important"]=a.important;
+        obj["skipAdhan"]=a.skipAdhan;
+        obj["skipIqama"]=a.skipIqama;
     }
     String json; serializeJson(doc,json);
     Preferences prefs; prefs.begin("scheduler",false); prefs.putString("alerts",json); prefs.end();
+}
+
+bool Scheduler::shouldSkipAdhan(int prayerIndex) {
+    time_t now_ts = time(nullptr);
+    struct tm t_now;
+    localtime_r(&now_ts, &t_now);
+    int curWday = t_now.tm_wday;
+
+    for (const auto& alert : alerts) {
+        if (alert.enabled && alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipAdhan) {
+            bool dayMatch = true;
+            if (alert.dayOfWeek >= 0) {
+                if (alert.dayOfWeek >= 128) {
+                    int mask = alert.dayOfWeek & 0x7F;
+                    dayMatch = ((mask & (1 << curWday)) != 0);
+                } else if (alert.dayOfWeek <= 6) {
+                    dayMatch = (curWday == alert.dayOfWeek);
+                } else {
+                    dayMatch = ((alert.dayOfWeek & (1 << curWday)) != 0);
+                }
+            }
+            if (dayMatch) return true;
+        }
+    }
+    return false;
+}
+
+bool Scheduler::shouldSkipIqama(int prayerIndex) {
+    time_t now_ts = time(nullptr);
+    struct tm t_now;
+    localtime_r(&now_ts, &t_now);
+    int curWday = t_now.tm_wday;
+
+    for (const auto& alert : alerts) {
+        if (alert.enabled && alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipIqama) {
+            bool dayMatch = true;
+            if (alert.dayOfWeek >= 0) {
+                if (alert.dayOfWeek >= 128) {
+                    int mask = alert.dayOfWeek & 0x7F;
+                    dayMatch = ((mask & (1 << curWday)) != 0);
+                } else if (alert.dayOfWeek <= 6) {
+                    dayMatch = (curWday == alert.dayOfWeek);
+                } else {
+                    dayMatch = ((alert.dayOfWeek & (1 << curWday)) != 0);
+                }
+            }
+            if (dayMatch) return true;
+        }
+    }
+    return false;
 }

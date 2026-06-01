@@ -1397,7 +1397,7 @@ void startWebServer() {
         ScheduledAlert alert;
         alert.name = postValue(request, "name", "");
         alert.fileName = postValue(request, "file", "");
-        if (alert.fileName.length() > 0) {
+        if (alert.fileName.length() > 0 && !alert.fileName.startsWith("http://") && !alert.fileName.startsWith("https://")) {
             if (!sdReady()) {
                 request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing_audio_file\"}");
                 return;
@@ -1445,6 +1445,7 @@ void startWebServer() {
         alert.prayerIndex = postValue(request, "prayerIndex", "0").toInt();
         alert.offsetSeconds = postValue(request, "offsetSeconds", "0").toInt();
         alert.eidOnly = postBool(request, "eidOnly");
+        alert.bothModes = postBool(request, "bothModes");
         alert.repeatInterval = postValue(request, "repeatInterval", "0").toInt();
         alert.endHour = postValue(request, "endHour", "-1").toInt();
         alert.endMinute = postValue(request, "endMinute", "-1").toInt();
@@ -1454,6 +1455,8 @@ void startWebServer() {
         alert.gpioDurationMode = postValue(request, "gpioDurationMode", "audio_duration");
         alert.gpioDurationSec = postValue(request, "gpioDurationSec", "5").toInt();
         alert.important = postBool(request, "important", true);
+        alert.skipAdhan = postBool(request, "skipAdhan");
+        alert.skipIqama = postBool(request, "skipIqama");
         
         int index = postValue(request, "index", "-1").toInt();
         scheduler.addAlert(alert, index);

@@ -1279,6 +1279,9 @@ function toggleScheduleFields(prefix = 'singleAlert') {
   if (timeContainer) {
     timeContainer.style.display = type === 'prayer_relative' ? 'none' : 'block';
   }
+  if (prefix === 'singleAlert') {
+    updateRadioPrayerOverrideVisibility();
+  }
 }
 
 function toggleLoopFields(prefix = 'singleAlert') {
@@ -1290,10 +1293,22 @@ function toggleLoopFields(prefix = 'singleAlert') {
 }
 
 function toggleAlertEndTimeField(prefix) {
-  const interval = Number($(`${prefix}RepeatInterval`)?.value || 0);
   const container = $(`${prefix}EndTimeContainer`);
   if (container) {
-    container.style.display = interval > 0 ? 'block' : 'none';
+    container.style.display = 'block';
+  }
+}
+
+function toggleSkipBoth(checked) {
+  if ($('singleAlertSkipAdhan')) $('singleAlertSkipAdhan').checked = checked;
+  if ($('singleAlertSkipIqama')) $('singleAlertSkipIqama').checked = checked;
+}
+
+function updateSkipBothCheckbox() {
+  const adhan = $('singleAlertSkipAdhan')?.checked;
+  const iqama = $('singleAlertSkipIqama')?.checked;
+  if ($('singleAlertSkipBoth')) {
+    $('singleAlertSkipBoth').checked = adhan && iqama;
   }
 }
 
@@ -1360,8 +1375,9 @@ function formatDays(mask) {
 
 function saveSingleAlert() {
   const name = $('singleAlertName')?.value || '';
-  const file = $('singleAlertFile')?.value || '';
-  if (!file) return toast('يجب اختيار ملف صوّتي');
+  const isRadioSource = document.querySelector('input[name="singleAlertSourceType"]:checked')?.value === 'radio';
+  const file = isRadioSource ? ($('singleAlertRadioFile')?.value || '') : ($('singleAlertFile')?.value || '');
+  if (!file) return toast(isRadioSource ? 'يجب اختيار إذاعة' : 'يجب اختيار ملف صوّتي');
 
   const [hour = '0', minute = '0'] = ($('singleAlertTime')?.value || '00:00').split(':');
   const type = $('singleAlertType')?.value || 'daily';
@@ -1382,7 +1398,8 @@ function saveSingleAlert() {
     loop: $('singleAlertLoopToggle')?.value === 'yes' ? $('singleAlertLoopDuration')?.value || 0 : 0,
     prayerIndex: $('singleAlertPrayer')?.value || 0,
     offsetSeconds: Number($('singleAlertOffset')?.value || 0) * 60,
-    eidOnly: '0',
+    eidOnly: eidOnly,
+    bothModes: bothModes,
     index: editingSingleAlertIndex,
     repeatInterval: Number($('singleAlertRepeatInterval')?.value || 0),
     endHour: $('singleAlertEndTime')?.value ? Number($('singleAlertEndTime').value.split(':')[0]) : -1,
@@ -1392,7 +1409,9 @@ function saveSingleAlert() {
     gpioMode: $('singleAlertGpioMode')?.value || 'continuous',
     gpioDurationMode: $('singleAlertGpioDurationMode')?.value || 'audio_duration',
     gpioDurationSec: Number($('singleAlertGpioDurationSec')?.value || 5),
-    important: $('singleAlertImportant')?.checked ? 1 : 0
+    important: $('singleAlertImportant')?.checked ? 1 : 0,
+    skipAdhan: (isRadioSource && type === 'prayer_relative' && $('singleAlertSkipAdhan')?.checked) ? 1 : 0,
+    skipIqama: (isRadioSource && type === 'prayer_relative' && $('singleAlertSkipIqama')?.checked) ? 1 : 0
   };
   if (editingSingleAlertIndex >= 0 && appState.alerts[editingSingleAlertIndex]) {
     data.enabled = appState.alerts[editingSingleAlertIndex].enabled !== false ? 1 : 0;
@@ -1401,14 +1420,39 @@ function saveSingleAlert() {
   apiPost('/api/scheduler/add', data).then(() => {
     toast(editingSingleAlertIndex >= 0 ? 'تم تعديل التنبيه بنجاح' : 'تم إضافة التنبيه بنجاح');
     cancelEditSingleAlert();
-    loadSchedules();
+    const isEidOnly = data.eidOnly === '1' || data.eidOnly === 1 || data.eidOnly === true || data.eidOnly === 'true';
+    if (isEidOnly) {
+      showTab('eid');
+      showSubTab('tab-eid', 'sub-eid-alerts');
+      loadEidSchedules();
+    } else if (isRadioSource) {
+      showTab('scheduler');
+      showSubTab('tab-scheduler', 'sub-sched-list');
+      loadSchedules();
+      if (data.bothModes) loadEidSchedules();
+    } else {
+      showTab('scheduler');
+      showSubTab('tab-scheduler', 'sub-sched-list');
+      loadSchedules();
+      if (data.bothModes) loadEidSchedules();
+    }
   }).catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
 function cancelEditSingleAlert() {
   editingSingleAlertIndex = -1;
+  if ($('singleAlertEidOnly')) $('singleAlertEidOnly').value = '0';
+  if ($('singleAlertSkipAdhan')) $('singleAlertSkipAdhan').checked = false;
+  if ($('singleAlertSkipIqama')) $('singleAlertSkipIqama').checked = false;
+  if ($('singleAlertSkipBoth')) $('singleAlertSkipBoth').checked = false;
   if ($('singleAlertName')) $('singleAlertName').value = '';
   if ($('singleAlertFile')) $('singleAlertFile').selectedIndex = 0;
+  if ($('singleAlertRadioFile')) $('singleAlertRadioFile').selectedIndex = 0;
+  const localSourceRadio = document.querySelector('input[name="singleAlertSourceType"][value="local"]');
+  if (localSourceRadio) {
+    localSourceRadio.checked = true;
+    toggleAlertSourceType();
+  }
   if ($('singleAlertType')) {
     $('singleAlertType').value = 'daily';
     toggleScheduleFields('singleAlert');
@@ -1448,8 +1492,27 @@ function editSingleAlert(index) {
   editingSingleAlertIndex = index;
   showSubTab('tab-scheduler', 'sub-sched-add');
   
+  if ($('singleAlertEidOnly')) {
+    if (alert.bothModes === true || alert.bothModes === 1 || alert.bothModes === '1' || alert.bothModes === 'true') {
+      $('singleAlertEidOnly').value = '2';
+    } else {
+      $('singleAlertEidOnly').value = (alert.eidOnly === true || alert.eidOnly === 1 || alert.eidOnly === '1' || alert.eidOnly === 'true') ? '1' : '0';
+    }
+  }
   if ($('singleAlertName')) $('singleAlertName').value = alert.name || '';
-  if ($('singleAlertFile')) $('singleAlertFile').value = alert.file || '';
+  
+  const isRadioSource = alert.file && (alert.file.startsWith('http://') || alert.file.startsWith('https://'));
+  const radioEl = document.querySelector(`input[name="singleAlertSourceType"][value="${isRadioSource ? 'radio' : 'local'}"]`);
+  if (radioEl) {
+    radioEl.checked = true;
+    toggleAlertSourceType();
+  }
+
+  if (isRadioSource) {
+    if ($('singleAlertRadioFile')) $('singleAlertRadioFile').value = alert.file || '';
+  } else {
+    if ($('singleAlertFile')) $('singleAlertFile').value = alert.file || '';
+  }
   if ($('singleAlertType')) {
     $('singleAlertType').value = alert.type || 'daily';
     toggleScheduleFields('singleAlert');
@@ -1517,6 +1580,13 @@ function editSingleAlert(index) {
     if ($('singleAlertOffset')) $('singleAlertOffset').value = alert.offsetSeconds !== undefined ? Math.round(alert.offsetSeconds / 60) : 0;
   }
   
+  if ($('singleAlertSkipAdhan')) $('singleAlertSkipAdhan').checked = alert.skipAdhan === true || alert.skipAdhan === 1;
+  if ($('singleAlertSkipIqama')) $('singleAlertSkipIqama').checked = alert.skipIqama === true || alert.skipIqama === 1;
+  updateSkipBothCheckbox();
+  
+  // Call this to update the visibility of override container based on current settings
+  updateRadioPrayerOverrideVisibility();
+
   if ($('singleAlertSaveBtn')) $('singleAlertSaveBtn').innerHTML = '<i class="fas fa-save"></i> تعديل التنبيه';
   if ($('singleAlertCancelEditBtn')) $('singleAlertCancelEditBtn').style.display = 'block';
 }
@@ -1702,6 +1772,7 @@ function loadSchedules() {
     
     const singleAlerts = [];
     const playlistSchedules = [];
+    const radioAlerts = [];
     
     alerts.forEach((alert, index) => {
       alert.originalIndex = index;
@@ -1710,6 +1781,8 @@ function loadSchedules() {
       }
       if (alert.file && alert.file.includes(',')) {
         playlistSchedules.push(alert);
+      } else if (alert.file && (alert.file.startsWith('http://') || alert.file.startsWith('https://'))) {
+        radioAlerts.push(alert);
       } else {
         singleAlerts.push(alert);
       }
@@ -1717,7 +1790,7 @@ function loadSchedules() {
 
     if ($('singleAlertsList')) {
       $('singleAlertsList').innerHTML = singleAlerts.map((a) => {
-        let info = `<strong>${safeText(a.name || 'بدون اسم')}</strong>`;
+        let info = `<span class="prayer-source-badge source-local" style="margin-left: 5px;"><i class="fas fa-file-audio"></i> ملف محلي</span><strong>${safeText(a.name || 'بدون اسم')}</strong>`;
         info += `<br><span style="font-size:0.9em;opacity:0.8;">📄 ${safeText(a.file)}</span>`;
         info += `<br><span style="font-size:0.9em;opacity:0.8;">🕒 ${safeText(a.type)}`;
         if (a.type === 'weekly' && a.dayOfWeek !== undefined) info += ` (${formatDays(a.dayOfWeek)})`;
@@ -1760,7 +1833,65 @@ function loadSchedules() {
         const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
         const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
         
-        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; ${itemOpacity}">
+        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; border-right: 4px solid #9b59b6; padding-right: 10px; ${itemOpacity}">
+          <span>${info}</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${a.originalIndex}, ${a.enabled === false})" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+            <button class="btn btn-secondary" onclick="editSingleAlert(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+            <button class="btn btn-danger" onclick="deleteSchedule(${a.originalIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-trash"></i> حذف</button>
+          </div>
+        </li>`;
+      }).join('');
+    }
+
+    if ($('radioAlertsList')) {
+      $('radioAlertsList').innerHTML = radioAlerts.map((a) => {
+        let info = `<span class="prayer-source-badge source-internet" style="margin-left: 5px;"><i class="fas fa-broadcast-tower"></i> بث راديو</span><strong>${safeText(a.name || 'بدون اسم')}</strong>`;
+        info += `<br><span style="font-size:0.9em;opacity:0.8;">📻 ${safeText(a.file)}</span>`;
+        info += `<br><span style="font-size:0.9em;opacity:0.8;">🕒 ${safeText(a.type)}`;
+        if (a.type === 'weekly' && a.dayOfWeek !== undefined) info += ` (${formatDays(a.dayOfWeek)})`;
+        if (a.type === 'monthly') info += ` (يوم ${a.dayOfMonth})`;
+        if (a.type === 'specific') info += ` (${safeText(a.specificDate)})`;
+        if (a.type === 'prayer_relative') {
+          const prayerNames = ['الفجر', 'الظهر', 'العصر', 'المغرب', 'العشاء'];
+          info += ` (صلاة ${prayerNames[a.prayerIndex] || a.prayerIndex}، إزاحة ${Math.round(a.offsetSeconds / 60)} دقيقة`;
+          if (a.dayOfWeek !== undefined && a.dayOfWeek >= 0) {
+            info += `، أيام: ${formatDays(a.dayOfWeek)}`;
+          }
+          if (a.skipAdhan) info += `، 🔕 تخطي الأذان`;
+          if (a.skipIqama) info += `، 🔕 تخطي الإقامة`;
+          info += `)`;
+        }
+        if (a.type !== 'prayer_relative' || a.repeatInterval <= 0) {
+          info += ` الساعة ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
+        }
+        info += ` | 🔊 ${a.volume}`;
+        if (a.loop && a.loop > 0) info += ` (مدة التشغيل ${a.loop} ق)`;
+        if (a.repeatInterval && a.repeatInterval > 0) {
+          info += ` | 🔁 كل ${a.repeatInterval} دقيقة`;
+          if (a.endHour !== undefined && a.endHour >= 0) {
+            const eh = String(a.endHour).padStart(2, '0');
+            const em = String(a.endMinute).padStart(2, '0');
+            info += ` (حتى ${eh}:${em})`;
+          }
+        }
+        const impText = (a.important === false || a.important === 0) ? 'غير مهم' : 'مهم';
+        info += ` | ⚠️ ${impText}`;
+        if (a.gpioActive) {
+          const modeArabic = a.gpioMode === 'flasher' ? 'متقطع فلاشر' : a.gpioMode === 'pulse' ? 'نبضة' : 'مستمر';
+          const durArabic = a.gpioDurationMode === 'custom' ? `لوقت ${a.gpioDurationSec}ث` : 'لحين انتهاء الصوت';
+          info += ` | 🔌 مخرج ${a.gpioPin} (${modeArabic} - ${durArabic})`;
+        }
+        if (a.enabled === false) {
+          info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+        }
+        info += '</span>';
+        
+        const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+        const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+        const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+        
+        return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px; border-right: 4px solid #00ffcc; padding-right: 10px; ${itemOpacity}">
           <span>${info}</span>
           <div style="display:flex; gap:8px;">
             <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${a.originalIndex}, ${a.enabled === false})" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
@@ -2865,45 +2996,103 @@ function loadEidSchedules() {
     alerts.forEach((alert, index) => {
       alert.originalIndex = index;
     });
-    const eidAlerts = alerts.filter(a => a.eidOnly);
-    if (!$('eidScheduleList')) return;
-    $('eidScheduleList').innerHTML = eidAlerts.length
-      ? eidAlerts.map((a, i) => {
-          const realIndex = alerts.indexOf(a);
-          let namePrefix = a.name ? `<strong>${safeText(a.name)}</strong>: ` : '';
-          let info = `${namePrefix}${safeText(a.file)} - ${safeText(a.type)}`;
-          if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
-          if (a.type === 'prayer_relative') {
-            const pn = prayerNames[a.prayerIndex] || '';
-            info += ` ${pn} ${a.offsetSeconds >= 0 ? 'بعد' : 'قبل'} (${Math.abs(a.offsetSeconds/60)}د)`;
-          } else {
-            info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
-          }
-          if (a.repeatInterval > 0) {
-            info += ` (تكرار كل ${a.repeatInterval}د`;
-            if (a.endHour >= 0 && a.endMinute >= 0) {
-              info += ` حتى ${String(a.endHour).padStart(2, '0')}:${String(a.endMinute).padStart(2, '0')}`;
+    
+    const eidAlerts = alerts.filter(a =>
+      (a.eidOnly && (a.eidOnly === '1' || a.eidOnly === 1 || a.eidOnly === true || a.eidOnly === 'true')) ||
+      (a.bothModes && (a.bothModes === '1' || a.bothModes === 1 || a.bothModes === true || a.bothModes === 'true'))
+    );
+    const eidLocalAlerts = [];
+    const eidRadioAlerts = [];
+    
+    eidAlerts.forEach(alert => {
+      if (alert.file && (alert.file.startsWith('http://') || alert.file.startsWith('https://'))) {
+        eidRadioAlerts.push(alert);
+      } else {
+        eidLocalAlerts.push(alert);
+      }
+    });
+
+    if ($('eidScheduleList')) {
+      $('eidScheduleList').innerHTML = eidLocalAlerts.length
+        ? eidLocalAlerts.map((a) => {
+            const realIndex = a.originalIndex;
+            let namePrefix = a.name ? `<strong>${safeText(a.name)}</strong>: ` : '';
+            let info = `${namePrefix}${safeText(a.file)} - ${safeText(a.type)}`;
+            if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
+            if (a.type === 'prayer_relative') {
+              const pn = prayerNames[a.prayerIndex] || '';
+              info += ` ${pn} ${a.offsetSeconds >= 0 ? 'بعد' : 'قبل'} (${Math.abs(a.offsetSeconds/60)}د)`;
+            } else {
+              info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
             }
-            info += `)`;
-          }
-          info += ` - صوت: ${a.volume || 20}`;
-          if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
-          if (a.enabled === false) {
-            info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
-          }
-          const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
-          const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
-          const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
-          return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; ${itemOpacity}">
-            <span>${info}</span>
-            <div style="display:flex; gap:5px;">
-              <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${realIndex}, ${a.enabled === false}, true)" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
-              <button class="btn btn-secondary" onclick="editEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
-              <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;">حذف</button>
-            </div>
-          </li>`;
-        }).join('')
-      : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات عيد. أضف تنبيهاً أعلاه.</p>';
+            if (a.repeatInterval > 0) {
+              info += ` (تكرار كل ${a.repeatInterval}د`;
+              if (a.endHour >= 0 && a.endMinute >= 0) {
+                info += ` حتى ${String(a.endHour).padStart(2, '0')}:${String(a.endMinute).padStart(2, '0')}`;
+              }
+              info += `)`;
+            }
+            info += ` - صوت: ${a.volume || 20}`;
+            if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
+            if (a.enabled === false) {
+              info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+            }
+            const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+            const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+            const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+            return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; ${itemOpacity}">
+              <span>${info}</span>
+              <div style="display:flex; gap:5px;">
+                <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${realIndex}, ${a.enabled === false}, true)" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+                <button class="btn btn-secondary" onclick="editEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+                <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;">حذف</button>
+              </div>
+            </li>`;
+          }).join('')
+        : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات ملفات عيد. أضف تنبيهاً أعلاه.</p>';
+    }
+
+    if ($('eidRadioScheduleList')) {
+      $('eidRadioScheduleList').innerHTML = eidRadioAlerts.length
+        ? eidRadioAlerts.map((a) => {
+            const realIndex = a.originalIndex;
+            let namePrefix = a.name ? `<strong>${safeText(a.name)}</strong>: ` : '';
+            let info = `${namePrefix}${safeText(a.file)} - ${safeText(a.type)}`;
+            if (a.type === 'weekly' && a.dayOfWeek > 0) info += ` (${formatDays(a.dayOfWeek)})`;
+            if (a.type === 'prayer_relative') {
+              const pn = prayerNames[a.prayerIndex] || '';
+              info += ` ${pn} ${a.offsetSeconds >= 0 ? 'بعد' : 'قبل'} (${Math.abs(a.offsetSeconds/60)}د)`;
+              if (a.skipAdhan) info += `، 🔕 تخطي الأذان`;
+              if (a.skipIqama) info += `، 🔕 تخطي الإقامة`;
+            } else {
+              info += ` ${String(a.hour).padStart(2, '0')}:${String(a.minute).padStart(2, '0')}`;
+            }
+            if (a.repeatInterval > 0) {
+              info += ` (تكرار كل ${a.repeatInterval}د`;
+              if (a.endHour >= 0 && a.endMinute >= 0) {
+                info += ` حتى ${String(a.endHour).padStart(2, '0')}:${String(a.endMinute).padStart(2, '0')}`;
+              }
+              info += `)`;
+            }
+            info += ` - صوت: ${a.volume || 20}`;
+            if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
+            if (a.enabled === false) {
+              info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
+            }
+            const toggleBtnClass = a.enabled !== false ? 'btn-secondary' : 'btn-play';
+            const toggleBtnText = a.enabled !== false ? '<i class="fas fa-pause"></i> إيقاف' : '<i class="fas fa-play"></i> تشغيل';
+            const itemOpacity = a.enabled !== false ? '' : 'opacity: 0.6;';
+            return `<li class="file-item" style="display:flex; justify-content:space-between; align-items:center; ${itemOpacity}">
+              <span>${info}</span>
+              <div style="display:flex; gap:5px;">
+                <button class="btn ${toggleBtnClass}" onclick="toggleSchedule(${realIndex}, ${a.enabled === false}, true)" style="padding:4px 8px; font-size:12px; margin:0;">${toggleBtnText}</button>
+                <button class="btn btn-secondary" onclick="editSingleAlert(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;"><i class="fas fa-edit"></i> تعديل</button>
+                <button class="btn btn-danger" onclick="deleteEidSchedule(${realIndex})" style="padding:4px 8px; font-size:12px; margin:0;">حذف</button>
+              </div>
+            </li>`;
+          }).join('')
+        : '<p style="text-align:center;opacity:0.7">لا توجد تنبيهات راديو عيد. قم بجدولتها من قسم الراديو واختيار وضع العيد.</p>';
+    }
   });
 }
 
@@ -3103,6 +3292,7 @@ document.addEventListener('DOMContentLoaded', () => {
   toggleLoopFields();
   toggleEidScheduleFields();
   toggleEidLoopFields();
+  toggleAlertSourceType();
   populateGpioPins();
   if ($('scheduleVolume')) {
     $('scheduleVolume').addEventListener('input', () => {
@@ -3358,4 +3548,293 @@ function downloadRawLogFile() {
   link.click();
   document.body.removeChild(link);
 }
+
+// ==========================================
+// MP3QURAN LIVE RADIO INTEGRATION
+// ==========================================
+
+let radioLanguage = 'ar';
+let allRadiosList = [];
+
+const defaultOfflineRadios = {
+  ar: [
+    { id: 99999, name: "إذاعة القرآن الكريم من القاهرة", url: "http://stream.radiojar.com/8s5u5tpdtwzuv" },
+    { id: 109082, name: "إذاعة القرآن الكريم - السعودية", url: "https://stream.radiojar.com/0tpy1h0kxtzuv" },
+    { id: 108, name: "الإذاعة العامة - تلاوات متنوعة (Mp3Quran)", url: "https://backup.qurango.net/radio/mix" },
+    { id: 110, name: "إذاعة تكبيرات العيد", url: "https://backup.qurango.net/radio/eid" },
+    { id: 114, name: "إذاعة الرقية الشرعية", url: "https://backup.qurango.net/radio/roqiah" },
+    { id: 116, name: "إذاعة تفسير القرآن الكريم", url: "https://backup.qurango.net/radio/tafseer" },
+    { id: 10902, name: "آيات السكينة (تلاوات هادئة)", url: "https://backup.qurango.net/radio/sakeenah" },
+    { id: 10906, name: "أذكار الصباح (بث مباشر)", url: "https://backup.qurango.net/radio/athkar_sabah" },
+    { id: 10907, name: "أذكار المساء (بث مباشر)", url: "https://backup.qurango.net/radio/athkar_masa" },
+    { id: 79, name: "إذاعة مشاري العفاسي", url: "https://backup.qurango.net/radio/mishary_alafasi" },
+    { id: 33, name: "إذاعة عبد الرحمن السديس", url: "https://backup.qurango.net/radio/abdulrahman_alsudaes" },
+    { id: 63, name: "إذاعة ماهر المعيقلي", url: "https://backup.qurango.net/radio/maher" },
+    { id: 30, name: "إذاعة عبد الباسط عبد الصمد (المصحف المجود)", url: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
+  ],
+  eng: [
+    { id: 99999, name: "Holy Quran Radio from Cairo", url: "http://stream.radiojar.com/8s5u5tpdtwzuv" },
+    { id: 109082, name: "Holy Quran Radio from Saudi Arabia", url: "https://stream.radiojar.com/0tpy1h0kxtzuv" },
+    { id: 108, name: "General Radio - Various Recitations", url: "https://backup.qurango.net/radio/mix" },
+    { id: 110, name: "Eid Takbeer", url: "https://backup.qurango.net/radio/eid" },
+    { id: 114, name: "Sharia Ruqyah (Quran Healing)", url: "https://backup.qurango.net/radio/roqiah" },
+    { id: 116, name: "Quran Tafseer (Interpretation)", url: "https://backup.qurango.net/radio/tafseer" },
+    { id: 10902, name: "Verses of Serenity", url: "https://backup.qurango.net/radio/sakeenah" },
+    { id: 10906, name: "Athkar Morning (Remembrances)", url: "https://backup.qurango.net/radio/athkar_sabah" },
+    { id: 10907, name: "Athkar Evening (Remembrances)", url: "https://backup.qurango.net/radio/athkar_masa" },
+    { id: 79, name: "Radio Mishary Alafasi", url: "https://backup.qurango.net/radio/mishary_alafasi" },
+    { id: 33, name: "Radio Abdulrahman Alsudaes", url: "https://backup.qurango.net/radio/abdulrahman_alsudaes" },
+    { id: 63, name: "Radio Maher Al Meaqli", url: "https://backup.qurango.net/radio/maher" },
+    { id: 30, name: "Radio Abdulbasit Abdulsamad (Mojawwad)", url: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
+  ]
+};
+
+function toggleAlertSourceType() {
+  const sourceType = document.querySelector('input[name="singleAlertSourceType"]:checked')?.value || 'local';
+  if (sourceType === 'radio') {
+    if ($('singleAlertLocalFileContainer')) $('singleAlertLocalFileContainer').style.display = 'none';
+    if ($('singleAlertRadioContainer')) $('singleAlertRadioContainer').style.display = 'block';
+  } else {
+    if ($('singleAlertLocalFileContainer')) $('singleAlertLocalFileContainer').style.display = 'block';
+    if ($('singleAlertRadioContainer')) $('singleAlertRadioContainer').style.display = 'none';
+  }
+  updateRadioPrayerOverrideVisibility();
+}
+
+function updateRadioPrayerOverrideVisibility() {
+  const isRadioSource = document.querySelector('input[name="singleAlertSourceType"]:checked')?.value === 'radio';
+  const type = $('singleAlertType')?.value || 'daily';
+  const overrideContainer = $('singleAlertRadioPrayerOverrideContainer');
+  if (overrideContainer) {
+    if (isRadioSource && type === 'prayer_relative') {
+      overrideContainer.style.display = 'block';
+    } else {
+      overrideContainer.style.display = 'none';
+      if ($('singleAlertSkipAdhan')) $('singleAlertSkipAdhan').checked = false;
+      if ($('singleAlertSkipIqama')) $('singleAlertSkipIqama').checked = false;
+    }
+  }
+}
+
+function loadRadioList() {
+  if (allRadiosList.length === 0) {
+    fetchRadiosFromApi();
+  } else {
+    renderRadioList(allRadiosList);
+  }
+}
+
+function fetchRadiosFromApi(force = false) {
+  const statusTxt = $('radioStatusText');
+  if (statusTxt) statusTxt.textContent = "جاري تحميل الإذاعات...";
+
+  if (!force && allRadiosList.length > 0) {
+    renderRadioList(allRadiosList);
+    return;
+  }
+
+  const url = `https://mp3quran.net/api/v3/radios?language=${radioLanguage}`;
+  fetch(url)
+    .then(response => {
+      if (!response.ok) throw new Error("HTTP error " + response.status);
+      return response.json();
+    })
+    .then(data => {
+      if (data && data.radios) {
+        const cairoRadio = {
+          id: 99999,
+          name: radioLanguage === 'ar' ? "إذاعة القرآن الكريم من القاهرة" : "Holy Quran Radio from Cairo",
+          url: "http://stream.radiojar.com/8s5u5tpdtwzuv"
+        };
+        allRadiosList = [cairoRadio, ...data.radios];
+        if (statusTxt) statusTxt.textContent = `تم تحميل ${allRadiosList.length} إذاعة من الإنترنت.`;
+        populateRadioDropdowns();
+        renderRadioList(allRadiosList);
+      } else {
+        throw new Error("Invalid API response format");
+      }
+    })
+    .catch(err => {
+      console.warn("Failed to fetch radios, falling back to offline list:", err);
+      allRadiosList = defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar;
+      if (statusTxt) statusTxt.textContent = `فشل الاتصال بالإنترنت. تم تحميل القائمة الافتراضية (${allRadiosList.length} إذاعات أوفلاين).`;
+      populateRadioDropdowns();
+      renderRadioList(allRadiosList);
+    });
+}
+
+function changeRadioLanguage(lang) {
+  radioLanguage = lang;
+  allRadiosList = [];
+  fetchRadiosFromApi(true);
+}
+
+function renderRadioList(radios) {
+  const container = $('radioListContainer');
+  if (!container) return;
+
+  container.innerHTML = '';
+  if (radios.length === 0) {
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5);">لا توجد إذاعات تطابق البحث.</div>';
+    return;
+  }
+
+  radios.forEach(radio => {
+    const item = document.createElement('div');
+    item.className = 'glass-card';
+    item.style.margin = '8px 0';
+    item.style.padding = '10px 15px';
+    item.style.display = 'flex';
+    item.style.justifyContent = 'space-between';
+    item.style.alignItems = 'center';
+    item.style.background = 'rgba(255,255,255,0.03)';
+    item.style.borderRadius = '8px';
+    item.style.border = '1px solid rgba(255,255,255,0.05)';
+
+    const details = document.createElement('div');
+    details.style.display = 'flex';
+    details.style.flexDirection = 'column';
+    details.style.gap = '3px';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.style.fontWeight = 'bold';
+    nameSpan.style.fontSize = '14px';
+    nameSpan.textContent = radio.name;
+
+    const urlSpan = document.createElement('span');
+    urlSpan.style.fontSize = '11px';
+    urlSpan.style.color = 'rgba(255,255,255,0.4)';
+    urlSpan.style.wordBreak = 'break-all';
+    urlSpan.textContent = radio.url;
+
+    details.appendChild(nameSpan);
+    details.appendChild(urlSpan);
+
+    const actions = document.createElement('div');
+    actions.style.display = 'flex';
+    actions.style.gap = '8px';
+
+    const playBtn = document.createElement('button');
+    playBtn.className = 'btn';
+    playBtn.style.margin = '0';
+    playBtn.style.padding = '5px 12px';
+    playBtn.style.fontSize = '12px';
+    playBtn.innerHTML = '<i class="fas fa-play"></i> تشغيل';
+    playBtn.onclick = () => playRadioStream(radio.url, radio.name);
+
+    const schedBtn = document.createElement('button');
+    schedBtn.className = 'btn btn-secondary';
+    schedBtn.style.margin = '0';
+    schedBtn.style.padding = '5px 12px';
+    schedBtn.style.fontSize = '12px';
+    schedBtn.style.background = 'rgba(255,255,255,0.1)';
+    schedBtn.innerHTML = '<i class="fas fa-calendar-plus"></i> جدولة';
+    schedBtn.onclick = () => scheduleRadioStream(radio.url, radio.name);
+
+    actions.appendChild(playBtn);
+    actions.appendChild(schedBtn);
+
+    item.appendChild(details);
+    item.appendChild(actions);
+    container.appendChild(item);
+  });
+}
+
+function filterRadioList() {
+  const searchVal = ($('radioSearchInput')?.value || '').toLowerCase().trim();
+  const countryVal = $('radioCountryFilter')?.value || '';
+
+  const filtered = allRadiosList.filter(radio => {
+    const matchesSearch = radio.name.toLowerCase().includes(searchVal) || radio.url.toLowerCase().includes(searchVal);
+    
+    let matchesCountry = true;
+    if (countryVal) {
+      // Custom mapping for popular countries in names
+      const countryKeywords = {
+        "السعودية": [
+          "السعودية", "saudi", "المملكة", "الرياض", "مكة", "المدينة", "حرم", "saudia",
+          "السديس", "sudaes", "الشريم", "shuraim", "المعيقلي", "muaiqly", "meaqli",
+          "الدوسري", "dossari", "القطامي", "qatami", "الحذيفي", "huthaify", "الغامدي", "ghamdi",
+          "البدير", "budair", "الجهني", "juhany", "العجمي", "ajmy"
+        ],
+        "مصر": [
+          "مصر", "egypt", "القاهرة", "cairo", "طنطا", "المنصورة",
+          "عبد الباسط", "abdulsamad", "abdul_basit", "الحصري", "hussary", "hosary",
+          "المنشاوي", "minshawi", "مصطفى إسماعيل", "mustafa ismail", "البنا", "banna",
+          "رفعت", "rifat", "rifaat"
+        ],
+        "الكويت": ["الكويت", "kuwait", "العفاسي", "alafasi"],
+        "الإمارات": ["الإمارات", "دبي", "أبوظبي", "dubai", "uae", "sharjah", "الشارقة"],
+        "فلسطين": ["فلسطين", "القدس", "palestine", "gaza", "غزة"],
+        "الجزائر": ["الجزائر", "algeria", "algerie"],
+        "المغرب": ["المغرب", "morocco", "maroc", "الرباط", "الدار البيضاء"],
+        "الأردن": ["الأردن", "jordan", "عمان"],
+        "اليمن": ["اليمن", "yemen", "صنعاء", "عباد", "abbad"],
+        "عمان": ["عمان", "oman", "مسقط"],
+        "البحرين": ["البحرين", "bahrain", "المنامة"],
+        "قطر": ["قطر", "qatar", "الدوحة"],
+        "ليبيا": ["ليبيا", "libya", "طرابلس"]
+      };
+
+      const keywords = countryKeywords[countryVal] || [countryVal];
+      matchesCountry = keywords.some(kw => radio.name.toLowerCase().includes(kw.toLowerCase()));
+    }
+
+    return matchesSearch && matchesCountry;
+  });
+
+  renderRadioList(filtered);
+}
+
+function playRadioStream(url, name) {
+  apiPost('/api/audio/play', { file: url, volume: 15, priority: 0 })
+    .then(() => toast(`جاري تشغيل: ${name}`))
+    .catch(err => toast(`فشل التشغيل: ${err.message}`));
+}
+
+function scheduleRadioStream(url, name) {
+  showSubTab('tab-scheduler', 'sub-sched-add');
+  
+  const radioEl = document.querySelector('input[name="singleAlertSourceType"][value="radio"]');
+  if (radioEl) {
+    radioEl.checked = true;
+    toggleAlertSourceType();
+  }
+
+  if ($('singleAlertName')) $('singleAlertName').value = `راديو ${name}`;
+  if ($('singleAlertRadioFile')) {
+    // Check if the URL already exists in dropdown, if not add it dynamically
+    let exists = false;
+    for (let i = 0; i < $('singleAlertRadioFile').options.length; i++) {
+      if ($('singleAlertRadioFile').options[i].value === url) {
+        exists = true;
+        break;
+      }
+    }
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = url;
+      opt.textContent = name;
+      $('singleAlertRadioFile').appendChild(opt);
+    }
+    $('singleAlertRadioFile').value = url;
+  }
+  
+  // Scroll to singleAlertName to focus user's attention
+  $('singleAlertName')?.scrollIntoView({ behavior: 'smooth' });
+}
+
+function populateRadioDropdowns() {
+  const select = $('singleAlertRadioFile');
+  if (!select) return;
+
+  select.innerHTML = '';
+  allRadiosList.forEach(radio => {
+    const opt = document.createElement('option');
+    opt.value = radio.url;
+    opt.textContent = radio.name;
+    select.appendChild(opt);
+  });
+}
+
 

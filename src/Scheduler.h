@@ -20,6 +20,7 @@ struct ScheduledAlert {
     int offsetSeconds = 0;
     String validFrom, validTo;
     bool eidOnly = false;
+    bool bothModes = false;
     time_t lastTriggered = 0;
     int repeatInterval = 0; // minutes
     int endHour = -1; // -1 means no end bound (repeat until midnight)
@@ -30,6 +31,8 @@ struct ScheduledAlert {
     String gpioDurationMode = "audio_duration"; // "audio_duration", "custom"
     int gpioDurationSec = 5;
     bool important = true;
+    bool skipAdhan = false;
+    bool skipIqama = false;
 };
 
 class Scheduler {
@@ -40,6 +43,8 @@ public:
     String getAlertsJson();
     void removeAlert(int index);
     void setAlertEnabled(int index, bool enabled);
+    bool shouldSkipAdhan(int prayerIndex);
+    bool shouldSkipIqama(int prayerIndex);
 private:
     std::vector<ScheduledAlert> alerts;
     time_t lastCheck;

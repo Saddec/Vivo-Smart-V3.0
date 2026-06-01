@@ -207,6 +207,14 @@ void removeInputMapping(int pin) {
     saveGPIOMappings();
 }
 
+void removeOutputMapping(int pin) {
+    Serial.printf("[GPIOManager] Removing output mapping for pin %d. Previous count: %d\n", pin, (int)outputMappings.size());
+    outputMappings.erase(std::remove_if(outputMappings.begin(), outputMappings.end(),
+        [pin](const OutputMapping& m) { return m.pin == pin; }), outputMappings.end());
+    Serial.printf("[GPIOManager] Output mapping removed. Current count: %d\n", (int)outputMappings.size());
+    saveGPIOMappings();
+}
+
 void addOutputMapping(int pin, const String& alertFile, int durationSec) {
     if (!isValidPin(pin) || !isOutputPin(pin)) return;
     outputMappings.erase(std::remove_if(outputMappings.begin(), outputMappings.end(),

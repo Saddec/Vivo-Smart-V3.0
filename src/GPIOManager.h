@@ -49,6 +49,7 @@ void checkGPIOInputs();
 void checkGpioSchedules();
 void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration, int volume = 20);
 void removeInputMapping(int pin);
+void removeOutputMapping(int pin);
 void addOutputMapping(int pin, const String& alertFile, int durationSec);
 String getGpioMappingsJson();
 void setOutputForAlert(const String& alertName, int durationSec);

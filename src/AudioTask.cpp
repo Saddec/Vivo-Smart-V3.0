@@ -13,6 +13,12 @@ static const uint8_t AUDIO_POWER_SAFE_MAX_VOLUME = 30;
 static String normalizeAudioPath(const char* path) {
     String fullPath = String(path);
     fullPath.trim();
+    if (fullPath.startsWith("http://") || fullPath.startsWith("https://")) {
+        if (fullPath.startsWith("https://")) {
+            fullPath = "http://" + fullPath.substring(8);
+        }
+        return fullPath;
+    }
     if (!fullPath.startsWith("/")) fullPath = "/" + fullPath;
     fullPath.replace("//", "/");
     return fullPath;
@@ -73,7 +79,11 @@ void AudioManager::begin() {
 
 bool AudioManager::playFile(const char* path, int priority, uint32_t duration, uint8_t volume, uint32_t loopDuration, int repeatCount) {
     if (!_audio) return false;
-    if (!isSDReady()) {
+    
+    String fullPath = normalizeAudioPath(path);
+    bool isUrl = fullPath.startsWith("http://") || fullPath.startsWith("https://");
+
+    if (!isUrl && !isSDReady()) {
         Serial.printf("[Audio] SD not ready: %s\n", getLastSDError().c_str());
         return false;
     }
@@ -101,28 +111,42 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
 
     _adhanPlaying = (priority >= 2);
 
-    String fullPath = normalizeAudioPath(path);
-    if (!SD.exists(fullPath)) {
-        Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
-        LOG_E("AUDIO", "Missing audio file: %s", fullPath.c_str());
-        _state = AUDIO_IDLE;
-        _adhanPlaying = false;
-        _cachedIsRunning = false;
-        _cachedDuration = 0;
-        _cachedCurrentTime = 0;
-        xSemaphoreGiveRecursive(_audioMutex);
-        return false;
-    }
-    if (!_audio->connecttoSD(fullPath.c_str())) {
-        Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
-        LOG_E("AUDIO", "Cannot play audio file: %s", fullPath.c_str());
-        _state = AUDIO_IDLE;
-        _adhanPlaying = false;
-        _cachedIsRunning = false;
-        _cachedDuration = 0;
-        _cachedCurrentTime = 0;
-        xSemaphoreGiveRecursive(_audioMutex);
-        return false;
+    if (isUrl) {
+        if (!_audio->connecttohost(fullPath.c_str())) {
+            Serial.printf("[Audio] Cannot play stream: %s\n", fullPath.c_str());
+            LOG_E("AUDIO", "Cannot play stream: %s", fullPath.c_str());
+            _state = AUDIO_IDLE;
+            _adhanPlaying = false;
+            _cachedIsRunning = false;
+            _cachedDuration = 0;
+            _cachedCurrentTime = 0;
+            xSemaphoreGiveRecursive(_audioMutex);
+            return false;
+        }
+        LOG_I("AUDIO", "Started streaming URL: %s", fullPath.c_str());
+    } else {
+        if (!SD.exists(fullPath)) {
+            Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
+            LOG_E("AUDIO", "Missing audio file: %s", fullPath.c_str());
+            _state = AUDIO_IDLE;
+            _adhanPlaying = false;
+            _cachedIsRunning = false;
+            _cachedDuration = 0;
+            _cachedCurrentTime = 0;
+            xSemaphoreGiveRecursive(_audioMutex);
+            return false;
+        }
+        if (!_audio->connecttoSD(fullPath.c_str())) {
+            Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
+            LOG_E("AUDIO", "Cannot play audio file: %s", fullPath.c_str());
+            _state = AUDIO_IDLE;
+            _adhanPlaying = false;
+            _cachedIsRunning = false;
+            _cachedDuration = 0;
+            _cachedCurrentTime = 0;
+            xSemaphoreGiveRecursive(_audioMutex);
+            return false;
+        }
     }
     _state = AUDIO_PLAYING;
     _currentPriority = priority;

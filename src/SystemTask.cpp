@@ -493,19 +493,29 @@ void checkPrayerTimes() {
         int mm = prayers[i].substring(3, 5).toInt();
         int prayerMin = hh * 60 + mm;
         if (curMin >= prayerMin && curMin < prayerMin + 2 && !adhanPlayed[i]) {
-            String file = getAdhanFile(i);
-            currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
-            LOG_PR("PRAYER", "Triggering Adhan play command for: %s, file: %s", prayerNames[i].c_str(), file.c_str());
-            sendPlayCommand(file.c_str(), 3, 0, 0);
             adhanPlayed[i] = true;
             adhanStartTime = millis();
             activePrayerIndex = i;
-            setLedState(LED_ADHAN);
+            
+            if (scheduler.shouldSkipAdhan(i)) {
+                Serial.printf("[System] Skipping Adhan for prayer %d due to radio schedule override\n", i);
+                LOG_PR("PRAYER", "Skipping Adhan for prayer %s due to radio schedule override", prayerNames[i].c_str());
+            } else {
+                String file = getAdhanFile(i);
+                currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
+                LOG_PR("PRAYER", "Triggering Adhan play command for: %s, file: %s", prayerNames[i].c_str(), file.c_str());
+                sendPlayCommand(file.c_str(), 3, 0, 0);
+                setLedState(LED_ADHAN);
+            }
         }
     }
     for (int i=0; i<5; i++) {
         if (adhanPlayed[i] && !iqamaPlayed[i]) {
-            if (currentIqamaConfig.enabled[i]) {
+            if (scheduler.shouldSkipIqama(i)) {
+                Serial.printf("[System] Skipping Iqama for prayer %d due to radio schedule override\n", i);
+                LOG_PR("PRAYER", "Skipping Iqama for prayer %s due to radio schedule override", prayerNames[i].c_str());
+                iqamaPlayed[i] = true;
+            } else if (currentIqamaConfig.enabled[i]) {
                 unsigned long delayMs = (unsigned long)currentIqamaConfig.delayMin[i] * 60000UL;
                 if (millis() - adhanStartTime >= delayMs) {
                     String iqamaFile = getIqamaFile();
