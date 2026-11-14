@@ -104,6 +104,7 @@ int MaghribManager::getMP3Duration(const String& path) {
 
 // ----------------------------------------------------------------
 void MaghribManager::begin() {
+    if (_maghribMutex == NULL) _maghribMutex = xSemaphoreCreateRecursiveMutex();
     loadFromNVS();
     triggeredToday = false;
     triggerTimeToday = 0;
@@ -111,30 +112,40 @@ void MaghribManager::begin() {
 
 void MaghribManager::setFileForDay(int dayOfWeek, const String& fileName) {
     if (dayOfWeek < 0 || dayOfWeek > 6) return;
+    int dur = fileName.length() > 0 ? getMP3Duration(fileName) : 0;
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     alerts[dayOfWeek].fileName = fileName;
-    alerts[dayOfWeek].durationSec = fileName.length() > 0 ? getMP3Duration(fileName) : 0;
+    alerts[dayOfWeek].durationSec = dur;
     saveToNVS();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 void MaghribManager::setEnabledForDay(int dayOfWeek, bool enable) {
     if (dayOfWeek < 0 || dayOfWeek > 6) return;
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     alerts[dayOfWeek].enabled = enable;
     saveToNVS();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 void MaghribManager::setVolumeForDay(int dayOfWeek, uint8_t vol) {
     if (dayOfWeek < 0 || dayOfWeek > 6) return;
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     alerts[dayOfWeek].volume = vol;
     saveToNVS();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 void MaghribManager::setLoopForDay(int dayOfWeek, uint32_t loopSec) {
     if (dayOfWeek < 0 || dayOfWeek > 6) return;
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     alerts[dayOfWeek].loopDuration = loopSec;
     saveToNVS();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 String MaghribManager::getAlertsJson() {
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     DynamicJsonDocument doc(1024);
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < 7; i++) {
@@ -148,6 +159,7 @@ String MaghribManager::getAlertsJson() {
     }
     String json;
     serializeJson(doc, json);
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
     return json;
 }
 
@@ -156,36 +168,65 @@ void MaghribManager::saveAlertsJson(const String& json) {
     DeserializationError err = deserializeJson(doc, json);
     if (err || !doc.is<JsonArray>()) return;
     JsonArray arr = doc.as<JsonArray>();
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     int i = 0;
     for (JsonObject obj : arr) {
         if (i >= 7) break;
-        alerts[i].fileName = obj["file"].as<String>();
+        String newFile = obj["file"].as<String>();
+        bool fileChanged = (alerts[i].fileName != newFile);
+        alerts[i].fileName = newFile;
         alerts[i].enabled = obj["enabled"] | false;
         alerts[i].volume = obj["volume"] | 15;
         alerts[i].loopDuration = obj["loop"] | 0;
-        alerts[i].durationSec = alerts[i].fileName.length() > 0 ? getMP3Duration(alerts[i].fileName) : 0;
+        if (newFile.length() == 0) {
+            alerts[i].durationSec = 0;
+        } else if (fileChanged || alerts[i].durationSec <= 0) {
+            if (audioManager.getState() == AUDIO_IDLE) {
+                alerts[i].durationSec = getMP3Duration(newFile);
+            }
+        }
         i++;
     }
     saveToNVS();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 void MaghribManager::checkAndTrigger() {
+    if (_maghribMutex && xSemaphoreTakeRecursive(_maghribMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
     time_t now = time(nullptr);
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     int wday = timeinfo.tm_wday;   // 0 = Sunday
 
     DailyMaghribAlert &alert = alerts[wday];
-    if (!alert.enabled || alert.fileName.length() == 0) return;
-    if (alert.durationSec == 0) return;   // cannot calculate duration
+    if (!alert.enabled || alert.fileName.length() == 0) {
+        if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+        return;
+    }
+    if (alert.durationSec <= 0) {
+        if (audioManager.getState() == AUDIO_IDLE) {
+            alert.durationSec = getMP3Duration(alert.fileName);
+            if (alert.durationSec > 0) saveToNVS();
+        }
+        if (alert.durationSec <= 0) {
+            if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+            return;
+        }
+    }
 
     // Get today's Maghrib time (cached in SystemTask or recalc)
+    extern PrayerTimesResult getTodayPrayerSafe();
     extern PrayerConfig currentPrayerConfig;
-    PrayerTimesResult times = PrayerTimesEngine::calculate(now, currentPrayerConfig);
-    if (!times.valid) return;
+    PrayerTimesResult cachedP = getTodayPrayerSafe();
+    PrayerTimesResult times = cachedP.valid ? cachedP : PrayerTimesEngine::calculate(now, currentPrayerConfig);
+    if (!times.valid) {
+        if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+        return;
+    }
 
     int maghribHour = 0, maghribMin = 0;
     if (sscanf(times.maghrib.c_str(), "%d:%d", &maghribHour, &maghribMin) != 2) {
+        if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
         return;
     }
     struct tm maghribTm = timeinfo;
@@ -214,10 +255,11 @@ void MaghribManager::checkAndTrigger() {
 
     if (!triggeredToday && now >= triggerTime && now < maghribEpoch) {
         // Play with priority 1 (alert) and the day‑specific volume and loop
-        currentAudioDescription = "تنبيه قبل المغرب: " + alert.fileName;
+        audioManager.setAudioDescription("تنبيه قبل المغرب: " + alert.fileName);
         sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
         triggeredToday = true;
     }
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
 }
 
 void MaghribManager::loadFromNVS() {

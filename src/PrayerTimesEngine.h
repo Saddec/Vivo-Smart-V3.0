@@ -37,6 +37,7 @@ class PrayerTimesEngine {
 public:
     static PrayerTimesResult calculate(time_t date, const PrayerConfig& config);
     static bool fetchOnline(const String& country, const String& city, time_t date, const PrayerConfig& config, PrayerTimesResult& result);
+    static bool getCachedOnline(const String& country, const String& city, time_t date, const PrayerConfig& config, PrayerTimesResult& result);
     static bool getCoordinates(const String& country, const String& city, float& lat, float& lng, int& tz);
     static String gregorianToHijri(time_t date);
     static void syncTime(const char* ntpServer = "pool.ntp.org");

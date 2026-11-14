@@ -165,6 +165,9 @@ function showSubTab(parentTabId, subTabId, btn) {
   if (activeBtn) {
     activeBtn.classList.add('active');
   }
+  if (subTabId === 'sub-prayer-csv') {
+    loadCsvStatus();
+  }
 }
 
 function toggleSidebar() {
@@ -316,7 +319,7 @@ function initDashboard() {
     loadDDNS
   ];
   startupJobs.forEach((job, index) => setTimeout(job, 150 + (index * 180)));
-  if (appState.activeTab === 'prayer') setTimeout(loadCsvStatus, 3000);
+  setTimeout(loadCsvStatus, 1200);
   setTimeout(loadFileList, 3000);
 }
 
@@ -414,9 +417,16 @@ function fetchStatus() {
     if ($('playingStatus')) {
       $('playingStatus').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'متوقف';
     }
+    if ($('radioNowPlayingText')) {
+      $('radioNowPlayingText').textContent = data.playing ? (data.status_text || `يعمل: ${data.file || ''}`) : 'البث متوقف حالياً';
+    }
     if ($('volumeSlider') && data.volume !== undefined) {
       $('volumeSlider').value = data.volume;
       if ($('mainVolVal')) $('mainVolVal').textContent = data.volume;
+    }
+    if ($('radioVolumeSlider') && data.volume !== undefined) {
+      $('radioVolumeSlider').value = data.volume;
+      if ($('radioVolVal')) $('radioVolVal').textContent = data.volume;
     }
     updateEidModeBanner(!!data.eidMode);
     if ($('playlistVolume') && data.volume !== undefined) {
@@ -426,6 +436,7 @@ function fetchStatus() {
     const showControls = data.playing && !isAdhan;
     if ($('stopBtn')) $('stopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('dashStopBtn')) $('dashStopBtn').style.display = showControls ? 'inline-block' : 'none';
+    if ($('radioStopBtn')) $('radioStopBtn').style.display = showControls ? 'inline-block' : 'none';
     if ($('playerControlsContainer')) {
       const isPlaying = !!data.playing;
       $('playerControlsContainer').style.display = isPlaying ? 'block' : 'none';
@@ -1384,6 +1395,9 @@ function saveSingleAlert() {
   let dayOfWeek = -1, dayOfMonth = -1;
   if (type === 'weekly' || type === 'prayer_relative') dayOfWeek = getSelectedDaysBitmask('singleAlert');
   if (type === 'monthly') dayOfMonth = $('singleAlertDay')?.value || '-1';
+  const modeVal = $('singleAlertEidOnly')?.value || '0';
+  const eidOnly = modeVal === '1' ? '1' : '0';
+  const bothModes = modeVal === '2' ? '1' : '0';
   
   const data = {
     name,
@@ -2638,15 +2652,33 @@ function monthLabel(month) {
   return names[month - 1] || String(month);
 }
 
-function renderCalendarMonths(year, available, missing) {
+function selectCalendarYear(year) {
+  if ($('calendarYearInput')) {
+    $('calendarYearInput').value = year;
+  }
+  loadCsvStatus(year);
+}
+
+function renderCalendarMonths(year, available, missing, savedYears = []) {
   if (!$('calendarMonthsView')) return;
+  const yearsHtml = Array.isArray(savedYears) && savedYears.length
+    ? `<div style="margin-bottom:10px; padding:10px 12px; border-radius:8px; background:rgba(52, 152, 219, 0.12); border:1px solid rgba(52, 152, 219, 0.35);">` +
+      `<div style="font-weight:bold; color:#3498db; margin-bottom:6px;"><i class="fas fa-sd-card"></i> السنوات المحفوظة حالياً على بطاقة SD (اضغط على السنة لعرضها):</div>` +
+      savedYears.map((item) => {
+        const isCurrent = Number(item.year) === Number(year);
+        const bg = isCurrent ? 'background:#2ecc71;color:#000;font-weight:bold;border:2px solid #fff;' : '';
+        return `<button class="btn" style="padding:5px 12px; margin:3px; ${bg}" onclick="selectCalendarYear(${Number(item.year)})"><i class="fas fa-check-circle"></i> رزنامة ${safeText(item.year)} (${Number(item.months)}/12 شهر)</button>`;
+      }).join(' ') +
+      `</div>`
+    : `<div style="margin-bottom:8px; color:#f39c12;">لا توجد سنوات محفوظة على SD حالياً</div>`;
   const availableText = available.length ? available.map((m) =>
     `<button class="btn" style="padding:6px 10px; margin:3px;" onclick="openCalendarMonth(${year}, ${m})">${safeText(monthLabel(m))}</button>`
   ).join('') : 'لا يوجد';
-  const missingText = missing.length ? missing.map(monthLabel).join('، ') : 'لا يوجد';
+  const missingText = missing.length ? missing.map(monthLabel).join('، ') : 'لا يوجد (مكتملة 12/12)';
   $('calendarMonthsView').innerHTML =
+    yearsHtml +
     `<div>الموجود على SD لسنة ${year}: <span style="color:#2ecc71">${availableText}</span></div>` +
-    `<div>الناقص: <span style="color:${missing.length ? '#e74c3c' : '#2ecc71'}">${safeText(missingText)}</span></div>`;
+    `<div>الناقص لسنة ${year}: <span style="color:${missing.length ? '#e74c3c' : '#2ecc71'}">${safeText(missingText)}</span></div>`;
 }
 
 function openCalendarMonth(year, month) {
@@ -2681,18 +2713,18 @@ function closeCalendarMonthEditor() {
 }
 
 function downloadCalendarMonths(months, force = false) {
-  const year = $('calendarYearInput')?.value || new Date().getFullYear();
+  const year = parseInt($('calendarYearInput')?.value, 10) || new Date().getFullYear();
+  if (year < 2000 || year > 2100) return toast('أدخل سنة صحيحة بين 2000 و 2100');
   const country = $('countrySelect')?.value || '';
   const city = $('citySelect')?.value || '';
-  const method = $('methodSelect')?.value || defaultPrayerMethod(country);
-  if (!country || !city) return toast('اختر الدولة والمدينة أولاً');
+  const method = $('methodSelect')?.value ?? defaultPrayerMethod(country || 'Egypt');
   if (calendarDownloadActive) return toast('يوجد تحميل رزنامة قيد التنفيذ');
   if (!months.length) return toast('لا توجد شهور ناقصة للتحميل');
   calendarDownloadActive = true;
   let saved = 0;
   let skipped = 0;
   const failed = [];
-  if ($('calendarStatus')) $('calendarStatus').textContent = `جاري تحميل الرزنامة إلى SD... 0/${months.length}`;
+  if ($('calendarStatus')) $('calendarStatus').textContent = `جاري تحميل رزنامة سنة ${year} إلى SD... 0/${months.length}`;
 
   const waitCalendarJob = (month) => new Promise((resolve) => {
     const poll = () => {
@@ -2704,7 +2736,7 @@ function downloadCalendarMonths(months, force = false) {
           }
           if (status.success) saved++;
           else failed.push(`${month}${status.error ? ':' + status.error : ''}`);
-          if ($('calendarStatus')) $('calendarStatus').textContent = `جاري التحميل... ${month}/12 (تم ${saved})`;
+          if ($('calendarStatus')) $('calendarStatus').textContent = `جاري تحميل سنة ${year}... شهر ${month} (تم ${saved})`;
           resolve();
         })
         .catch(() => {
@@ -2719,7 +2751,7 @@ function downloadCalendarMonths(months, force = false) {
     .then((data) => {
       if (data.skipped) {
         skipped++;
-        if ($('calendarStatus')) $('calendarStatus').textContent = `تخطي ${monthLabel(month)} لأنه موجود (${index + 1}/${months.length})`;
+        if ($('calendarStatus')) $('calendarStatus').textContent = `تخطي ${monthLabel(month)} (${year}) لأنه موجود (${index + 1}/${months.length})`;
         return;
       }
       if (!data.ok) {
@@ -2740,22 +2772,33 @@ function downloadCalendarMonths(months, force = false) {
   chain.then(() => {
     calendarDownloadActive = false;
     if (failed.length === 0) {
-      toast('اكتمل تحميل الرزنامة');
-      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل: تم ${saved}، تم تخطي ${skipped}`;
+      toast(`اكتمل تحميل رزنامة سنة ${year}`);
+      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل لسنة ${year}: تم حفظ ${saved} شهر، تخطي ${skipped}`;
     } else {
       toast(`اكتمل جزئياً: تم ${saved} وفشل ${failed.length}`);
-      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل جزئياً. تم ${saved}، تخطي ${skipped}. فشل: ${failed.join(', ')}`;
+      if ($('calendarStatus')) $('calendarStatus').textContent = `اكتمل جزئياً لسنة ${year}. تم ${saved}، تخطي ${skipped}. فشل: ${failed.join(', ')}`;
     }
-    loadCsvStatus();
+    loadCsvStatus(year);
   });
 }
 
 function downloadYearCalendar() {
-  downloadCalendarMonths([1,2,3,4,5,6,7,8,9,10,11,12], false);
+  downloadCalendarMonths([1,2,3,4,5,6,7,8,9,10,11,12], true);
 }
 
 function downloadMissingCalendarMonths() {
-  downloadCalendarMonths(calendarMissingMonths.slice(), false);
+  const year = parseInt($('calendarYearInput')?.value, 10) || new Date().getFullYear();
+  apiGet(`/api/csv/status?year=${encodeURIComponent(year)}`, null, 0)
+    .then((data) => {
+      if (data && Array.isArray(data.missingCalendarMonths)) {
+        calendarMissingMonths = data.missingCalendarMonths;
+        renderCalendarMonths(year, data.calendarMonths || [], calendarMissingMonths);
+      }
+      downloadCalendarMonths(calendarMissingMonths.slice(), false);
+    })
+    .catch(() => {
+      downloadCalendarMonths(calendarMissingMonths.slice(), false);
+    });
 }
 
 function deleteYearCalendar() {
@@ -2772,26 +2815,42 @@ function deleteYearCalendar() {
     .catch((err) => toast(`فشل الحذف: ${err.message}`));
 }
 
-function loadCsvStatus() {
-  const selectedYear = $('calendarYearInput')?.value || '';
+function loadCsvStatus(explicitYear) {
+  const inputEl = $('calendarYearInput');
+  const selectedYear = explicitYear || inputEl?.value || '';
   const query = selectedYear ? `?year=${encodeURIComponent(selectedYear)}` : '';
-  apiGet(`/api/csv/status${query}`, {}).then((data) => {
+  apiGet(`/api/csv/status${query}`, {}, 2).then((data) => {
     if ($('csvModeToggle')) $('csvModeToggle').checked = !!data.enabled;
     if ($('calendarOnlyToggle')) $('calendarOnlyToggle').checked = !!data.calendarOnly;
     if ($('calendarFallbackToggle')) $('calendarFallbackToggle').checked = data.calendarFallback !== false;
-    if ($('calendarYearInput') && data.calendarYear) $('calendarYearInput').value = data.calendarYear;
+    const activeYear = data.calendarYear || selectedYear || new Date().getFullYear();
+    if (inputEl && activeYear) inputEl.value = activeYear;
     if (data.deferred) {
       appState.csvStatusLoaded = false;
+      setTimeout(() => loadCsvStatus(explicitYear), 1500);
       return;
     }
     appState.csvStatusLoaded = true;
-    if ($('calendarStatus')) {
+    const statusEl = $('calendarStatus');
+    if (statusEl) {
       const months = data.calendarMonths || [];
+      const savedYears = Array.isArray(data.savedYears) ? data.savedYears : [];
       calendarMissingMonths = data.missingCalendarMonths || [];
-      $('calendarStatus').textContent = months.length
-        ? `رزنامة ${data.calendarYear}: ${months.length}/12 شهر على SD`
-        : 'لا توجد رزنامة سنوية محفوظة للسنة الحالية';
-      renderCalendarMonths(data.calendarYear, months, calendarMissingMonths);
+      const savedSummary = savedYears.length
+        ? ` | السنوات المتوفرة على SD: ${savedYears.map((y) => `${y.year} (${y.months}/12)`).join(' ، ')}`
+        : '';
+      if (months.length > 0) {
+        statusEl.style.background = 'rgba(46, 204, 113, 0.15)';
+        statusEl.style.borderColor = 'rgba(46, 204, 113, 0.45)';
+        statusEl.style.color = '#2ecc71';
+        statusEl.textContent = `✅ رزنامة ${activeYear} موجودة على بطاقة SD (${months.length}/12 شهر)` + savedSummary;
+      } else {
+        statusEl.style.background = 'rgba(243, 156, 18, 0.15)';
+        statusEl.style.borderColor = 'rgba(243, 156, 18, 0.45)';
+        statusEl.style.color = '#f39c12';
+        statusEl.textContent = `⚠️ لا توجد رزنامة محفوظة لسنة ${activeYear} على SD` + savedSummary;
+      }
+      renderCalendarMonths(activeYear, months, calendarMissingMonths, savedYears);
     }
   });
 }
@@ -3594,6 +3653,13 @@ function toggleAlertSourceType() {
   if (sourceType === 'radio') {
     if ($('singleAlertLocalFileContainer')) $('singleAlertLocalFileContainer').style.display = 'none';
     if ($('singleAlertRadioContainer')) $('singleAlertRadioContainer').style.display = 'block';
+    if (allRadiosList.length === 0) {
+      allRadiosList = defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar;
+      populateRadioDropdowns();
+      fetchRadiosFromApi();
+    } else if ($('singleAlertRadioFile') && $('singleAlertRadioFile').options.length === 0) {
+      populateRadioDropdowns();
+    }
   } else {
     if ($('singleAlertLocalFileContainer')) $('singleAlertLocalFileContainer').style.display = 'block';
     if ($('singleAlertRadioContainer')) $('singleAlertRadioContainer').style.display = 'none';
@@ -3633,7 +3699,7 @@ function fetchRadiosFromApi(force = false) {
     return;
   }
 
-  const url = `https://mp3quran.net/api/v3/radios?language=${radioLanguage}`;
+  const url = `https://www.mp3quran.net/api/v3/radios?language=${radioLanguage}`;
   fetch(url)
     .then(response => {
       if (!response.ok) throw new Error("HTTP error " + response.status);
@@ -3787,12 +3853,35 @@ function filterRadioList() {
 }
 
 function playRadioStream(url, name) {
-  apiPost('/api/audio/play', { file: url, volume: 15, priority: 0 })
-    .then(() => toast(`جاري تشغيل: ${name}`))
+  const vol = Number($('radioVolumeSlider')?.value || $('volumeSlider')?.value || 15);
+  apiPost('/api/audio/play', { file: url, name: name || url, volume: vol, priority: 0 })
+    .then(() => {
+      toast(`جاري تشغيل: ${name || url}`);
+      fetchStatus();
+    })
     .catch(err => toast(`فشل التشغيل: ${err.message}`));
 }
 
+function playCustomRadioStream() {
+  const url = ($('customRadioUrlInput')?.value || '').trim();
+  const name = ($('customRadioNameInput')?.value || '').trim() || 'محطة مخصصة';
+  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    return toast('يرجى إدخال رابط بث صحيح يبدأ بـ http:// أو https://');
+  }
+  playRadioStream(url, name);
+}
+
+function scheduleCustomRadioStream() {
+  const url = ($('customRadioUrlInput')?.value || '').trim();
+  const name = ($('customRadioNameInput')?.value || '').trim() || 'محطة مخصصة';
+  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+    return toast('يرجى إدخال رابط بث صحيح يبدأ بـ http:// أو https://');
+  }
+  scheduleRadioStream(url, name);
+}
+
 function scheduleRadioStream(url, name) {
+  showTab('scheduler');
   showSubTab('tab-scheduler', 'sub-sched-add');
   
   const radioEl = document.querySelector('input[name="singleAlertSourceType"][value="radio"]');
@@ -3828,13 +3917,32 @@ function populateRadioDropdowns() {
   const select = $('singleAlertRadioFile');
   if (!select) return;
 
+  const previousVal = select.value;
+  const previousText = select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
   select.innerHTML = '';
-  allRadiosList.forEach(radio => {
+  const list = allRadiosList.length > 0 ? allRadiosList : (defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar);
+  list.forEach(radio => {
     const opt = document.createElement('option');
     opt.value = radio.url;
     opt.textContent = radio.name;
     select.appendChild(opt);
   });
+  if (previousVal) {
+    let found = false;
+    for (let i = 0; i < select.options.length; i++) {
+      if (select.options[i].value === previousVal) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      const opt = document.createElement('option');
+      opt.value = previousVal;
+      opt.textContent = previousText || previousVal;
+      select.appendChild(opt);
+    }
+    select.value = previousVal;
+  }
 }
 
 

@@ -17,6 +17,7 @@
 #include <Update.h>
 #include <LittleFS.h>
 #include <WiFiClientSecure.h>
+#include <esp_netif.h>
 #include <freertos/semphr.h>
 
 AsyncWebServer server(80);
@@ -32,8 +33,46 @@ static String chunkUploadPath;
 static String calendarDownloadError;
 static bool uploadBusy = false;
 static SemaphoreHandle_t uploadMutex = NULL;
+static SemaphoreHandle_t sessionMutex = NULL;
 static String cachedFileListJson;
 static unsigned long cachedFileListAt = 0;
+static String cachedCsvStatusJson;
+static unsigned long cachedCsvStatusAt = 0;
+static int cachedCsvStatusYear = 0;
+static bool wifiConnectPending = false;
+static String wifiConnectSsid = "";
+static String wifiConnectPass = "";
+
+static void wifiConnectTask(void *pvParameters) {
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP("VivoSmart-Setup");
+    WiFi.disconnect(false);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    Preferences prefs;
+    prefs.begin("network", true);
+    bool useDhcp = prefs.getBool("dhcp", false);
+    String ipStr = prefs.getString("ip", "192.168.1.100");
+    String gwStr = prefs.getString("gw", "192.168.1.1");
+    String maskStr = prefs.getString("mask", "255.255.255.0");
+    String dnsStr = prefs.getString("dns", "8.8.8.8");
+    prefs.end();
+
+    if (useDhcp) {
+        WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+    } else {
+        IPAddress ip, gateway, subnet, dns;
+        ip.fromString(ipStr);
+        gateway.fromString(gwStr);
+        subnet.fromString(maskStr);
+        dns.fromString(dnsStr);
+        WiFi.config(ip, gateway, subnet, dns, gateway);
+    }
+
+    WiFi.begin(wifiConnectSsid.c_str(), wifiConnectPass.c_str());
+    wifiConnectPending = false;
+    vTaskDelete(NULL);
+}
 static String sessionToken = "";
 static unsigned long lastSessionActivity = 0;
 static String generateSessionToken() {
@@ -44,16 +83,20 @@ static String generateSessionToken() {
     snprintf(buf, sizeof(buf), "%08x%08x%08x", r1, r2, r3);
     return String(buf);
 }
+static int cachedSessionTimeoutMins = 10;
+
 static bool sessionValid() {
-    if (sessionToken.length() == 0) return false;
-    Preferences prefs;
-    prefs.begin("session", true);
-    int timeoutMins = prefs.getInt("timeout", 10);
-    prefs.end();
-    if (millis() - lastSessionActivity > (unsigned long)timeoutMins * 60000UL) {
-        sessionToken = ""; // Expire session
+    if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) != pdTRUE) return false;
+    if (sessionToken.length() == 0) {
+        if (sessionMutex) xSemaphoreGive(sessionMutex);
         return false;
     }
+    if (millis() - lastSessionActivity > (unsigned long)cachedSessionTimeoutMins * 60000UL) {
+        sessionToken = ""; // Expire session
+        if (sessionMutex) xSemaphoreGive(sessionMutex);
+        return false;
+    }
+    if (sessionMutex) xSemaphoreGive(sessionMutex);
     return true;
 }
 struct CalendarDownloadJob {
@@ -80,6 +123,11 @@ static bool sdReady() {
 static void initWebServerLocks() {
     if (uploadMutex == NULL) uploadMutex = xSemaphoreCreateMutex();
     if (calendarJobMutex == NULL) calendarJobMutex = xSemaphoreCreateMutex();
+    if (sessionMutex == NULL) sessionMutex = xSemaphoreCreateMutex();
+    Preferences prefs;
+    prefs.begin("session", true);
+    cachedSessionTimeoutMins = prefs.getInt("timeout", 10);
+    prefs.end();
 }
 
 static bool lockUpload(uint32_t timeoutMs = 200) {
@@ -101,9 +149,16 @@ static bool requireSession(AsyncWebServerRequest *request) {
     if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
         token = request->getHeader("X-Session-Token")->value();
     }
-    if (sessionValid() && token == sessionToken) {
-        lastSessionActivity = millis(); // Refresh activity timer
-        return true;
+    if (sessionValid()) {
+        bool match = false;
+        if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (token.length() > 0 && token == sessionToken) {
+                lastSessionActivity = millis(); // Refresh activity timer
+                match = true;
+            }
+            xSemaphoreGive(sessionMutex);
+        }
+        if (match) return true;
     }
     request->send(401, "application/json", "{\"ok\":false,\"error\":\"unauthorized\"}");
     return false;
@@ -149,7 +204,7 @@ static void applyWifiIpConfig(AsyncWebServerRequest *request) {
     gateway.fromString(postValue(request, "gw", "192.168.1.1"));
     subnet.fromString(postValue(request, "mask", "255.255.255.0"));
     dns.fromString(postValue(request, "dns", "8.8.8.8"));
-    WiFi.config(ip, gateway, subnet, dns);
+    WiFi.config(ip, gateway, subnet, dns, gateway);
 }
 
 static String cleanPath(const String &name) {
@@ -385,55 +440,51 @@ static int toAladhanMethodWeb(int method) {
     return 3;
 }
 
-static bool downloadCalendarMonth(int year, int month, const String& country, const String& city, int method) {
-    calendarDownloadError = "";
-    String url = "https://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
-                 "?city=" + httpUrlEncode(city) +
-                 "&country=" + httpUrlEncode(country) +
-                 "&method=" + String(toAladhanMethodWeb(method));
-
-    WiFiClientSecure client;
-    client.setInsecure();
-
-    HTTPClient http;
-    http.setTimeout(12000);
-    http.begin(client, url);
-    int code = http.GET();
-    if (code != 200) {
-        Serial.printf("[Calendar] Month download failed: year=%d month=%d http=%d\n", year, month, code);
-        calendarDownloadError = "http_" + String(code);
-        http.end();
-        return false;
+static int daysInGregorianMonth(int year, int month) {
+    static const int kDays[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month < 1 || month > 12) return 30;
+    if (month == 2) {
+        bool leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+        return leap ? 29 : 28;
     }
+    return kDays[month - 1];
+}
 
-    DynamicJsonDocument filter(768);
-    filter["data"][0]["timings"]["Fajr"] = true;
-    filter["data"][0]["timings"]["Sunrise"] = true;
-    filter["data"][0]["timings"]["Dhuhr"] = true;
-    filter["data"][0]["timings"]["Asr"] = true;
-    filter["data"][0]["timings"]["Maghrib"] = true;
-    filter["data"][0]["timings"]["Isha"] = true;
-    filter["data"][0]["date"]["gregorian"]["day"] = true;
-    filter["data"][0]["date"]["hijri"]["day"] = true;
-    filter["data"][0]["date"]["hijri"]["month"]["number"] = true;
-    filter["data"][0]["date"]["hijri"]["year"] = true;
-
-    DynamicJsonDocument doc(24576);
-    DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    http.end();
-    if (err) {
-        Serial.printf("[Calendar] JSON parse failed: %s\n", err.c_str());
-        calendarDownloadError = String("json_") + err.c_str();
-        return false;
+static void gregorianYmdToHijri(int year, int month, int day, int hijriOffset, int &hDay, int &hMonth, int &hYear) {
+    int y = year;
+    int m = month;
+    if (m <= 2) {
+        y -= 1;
+        m += 12;
     }
+    int A = y / 100;
+    int B = 2 - A + (A / 4);
+    double jd = floor(365.25 * (y + 4716)) + floor(30.6001 * (m + 1)) + day + B - 1524.5 + hijriOffset;
+    int l = (int)(jd + 0.5) - 1948440 + 10632;
+    int n = (l - 1) / 10631;
+    l = l - 10631 * n + 354;
+    int j = (10985 - l) / 5316 * (50 * l) / 17719 + l / 5670 * (43 * l) / 15238;
+    l = l - (30 - j) / 15 * (17719 * j) / 50 - j / 16 * (15238 * j) / 43 + 29;
+    hMonth = (24 * l) / 709;
+    hDay = l - (709 * hMonth) / 24;
+    hYear = 30 * n + j - 30;
+}
 
-    JsonArray days = doc["data"].as<JsonArray>();
-    if (days.isNull() || days.size() == 0) {
-        calendarDownloadError = "empty_data";
-        return false;
+static bool generateCalendarMonthLocally(int year, int month, const String& country, const String& city, int method) {
+    PrayerConfig cfg = currentPrayerConfig;
+    float lat = cfg.latitude;
+    float lng = cfg.longitude;
+    int tz = cfg.timezone;
+    if (PrayerTimesEngine::getCoordinates(country, city, lat, lng, tz)) {
+        cfg.latitude = lat;
+        cfg.longitude = lng;
+        cfg.timezone = tz;
     }
+    cfg.method = method;
 
+    int totalDays = daysInGregorianMonth(year, month);
     String path = CSVManager::getCalendarPath(year, month, country, city);
+
     lockSD();
     ensureDirExists(path);
     if (SD.exists(path)) SD.remove(path);
@@ -445,25 +496,130 @@ static bool downloadCalendarMonth(int year, int month, const String& country, co
     }
 
     f.println("GregorianDay,Fajr,Shuruk,Dhuhr,Asr,Maghrib,Isha,HijriDay,HijriMonth,HijriYear");
-    for (JsonObject day : days) {
-        JsonObject timings = day["timings"];
-        JsonObject greg = day["date"]["gregorian"];
-        JsonObject hijri = day["date"]["hijri"];
-        f.print(String((const char*)greg["day"]).toInt()); f.print(",");
-        f.print(apiTime(timings["Fajr"])); f.print(",");
-        f.print(apiTime(timings["Sunrise"])); f.print(",");
-        f.print(apiTime(timings["Dhuhr"])); f.print(",");
-        f.print(apiTime(timings["Asr"])); f.print(",");
-        f.print(apiTime(timings["Maghrib"])); f.print(",");
-        f.print(apiTime(timings["Isha"])); f.print(",");
-        f.print(String((const char*)hijri["day"]).toInt()); f.print(",");
-        f.print((int)hijri["month"]["number"]); f.print(",");
-        f.println(String((const char*)hijri["year"]).toInt());
+    for (int d = 1; d <= totalDays; d++) {
+        struct tm t = {};
+        int calcYear = year;
+        if (calcYear > 2037) {
+            bool isLeap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+            calcYear = isLeap ? 2028 : 2027;
+        } else if (calcYear < 1971) {
+            calcYear = 2026;
+        }
+        t.tm_year = calcYear - 1900;
+        t.tm_mon = month - 1;
+        t.tm_mday = d;
+        t.tm_hour = 12;
+        t.tm_isdst = -1;
+        time_t dayEpoch = mktime(&t);
+
+        PrayerTimesResult pt = PrayerTimesEngine::calculate(dayEpoch, cfg);
+        int hDay = 1, hMonth = 1, hYear = 1448;
+        gregorianYmdToHijri(year, month, d, cfg.hijriOffset, hDay, hMonth, hYear);
+
+        f.print(d); f.print(",");
+        f.print(pt.fajr); f.print(",");
+        f.print(pt.sunrise); f.print(",");
+        f.print(pt.dhuhr); f.print(",");
+        f.print(pt.asr); f.print(",");
+        f.print(pt.maghrib); f.print(",");
+        f.print(pt.isha); f.print(",");
+        f.print(hDay); f.print(",");
+        f.print(hMonth); f.print(",");
+        f.println(hYear);
     }
     f.close();
     unlockSD();
-    Serial.printf("[Calendar] Saved %s\n", path.c_str());
+    CSVManager::invalidateCalendarMonth(year, month);
+    cachedCsvStatusAt = 0;
+    Serial.printf("[Calendar] Generated locally & saved %s (year=%d month=%d)\n", path.c_str(), year, month);
     return true;
+}
+
+static bool downloadCalendarMonth(int year, int month, const String& country, const String& city, int method) {
+    calendarDownloadError = "";
+    String normCountry = country;
+    String normCity = city;
+    if (normCountry == "مصر") normCountry = "Egypt";
+    if (normCity == "القاهرة") normCity = "Cairo";
+
+    if (WiFi.status() == WL_CONNECTED) {
+        String url = "https://api.aladhan.com/v1/calendarByCity/" + String(year) + "/" + String(month) +
+                     "?city=" + httpUrlEncode(normCity) +
+                     "&country=" + httpUrlEncode(normCountry) +
+                     "&method=" + String(toAladhanMethodWeb(method));
+
+        WiFiClientSecure client;
+        client.setInsecure();
+
+        HTTPClient http;
+        http.setTimeout(12000);
+        http.useHTTP10(true);
+        http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+        http.begin(client, url);
+        int code = http.GET();
+        if (code == 200) {
+            DynamicJsonDocument filter(768);
+            filter["data"][0]["timings"]["Fajr"] = true;
+            filter["data"][0]["timings"]["Sunrise"] = true;
+            filter["data"][0]["timings"]["Dhuhr"] = true;
+            filter["data"][0]["timings"]["Asr"] = true;
+            filter["data"][0]["timings"]["Maghrib"] = true;
+            filter["data"][0]["timings"]["Isha"] = true;
+            filter["data"][0]["date"]["gregorian"]["day"] = true;
+            filter["data"][0]["date"]["hijri"]["day"] = true;
+            filter["data"][0]["date"]["hijri"]["month"]["number"] = true;
+            filter["data"][0]["date"]["hijri"]["year"] = true;
+
+            DynamicJsonDocument doc(24576);
+            DeserializationError err = deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+            http.end();
+            if (!err) {
+                JsonArray days = doc["data"].as<JsonArray>();
+                if (!days.isNull() && days.size() > 0) {
+                    String path = CSVManager::getCalendarPath(year, month, normCountry, normCity);
+                    lockSD();
+                    ensureDirExists(path);
+                    if (SD.exists(path)) SD.remove(path);
+                    File f = SD.open(path, FILE_WRITE);
+                    if (!f) {
+                        unlockSD();
+                        calendarDownloadError = "file_open_failed";
+                        return false;
+                    }
+
+                    f.println("GregorianDay,Fajr,Shuruk,Dhuhr,Asr,Maghrib,Isha,HijriDay,HijriMonth,HijriYear");
+                    for (JsonObject day : days) {
+                        JsonObject timings = day["timings"];
+                        JsonObject greg = day["date"]["gregorian"];
+                        JsonObject hijri = day["date"]["hijri"];
+                        f.print(String((const char*)greg["day"]).toInt()); f.print(",");
+                        f.print(apiTime(timings["Fajr"])); f.print(",");
+                        f.print(apiTime(timings["Sunrise"])); f.print(",");
+                        f.print(apiTime(timings["Dhuhr"])); f.print(",");
+                        f.print(apiTime(timings["Asr"])); f.print(",");
+                        f.print(apiTime(timings["Maghrib"])); f.print(",");
+                        f.print(apiTime(timings["Isha"])); f.print(",");
+                        f.print(String((const char*)hijri["day"]).toInt()); f.print(",");
+                        f.print((int)hijri["month"]["number"]); f.print(",");
+                        f.println(String((const char*)hijri["year"]).toInt());
+                    }
+                    f.close();
+                    unlockSD();
+                    CSVManager::invalidateCalendarMonth(year, month);
+                    cachedCsvStatusAt = 0;
+                    Serial.printf("[Calendar] Saved online %s\n", path.c_str());
+                    return true;
+                }
+            } else {
+                Serial.printf("[Calendar] JSON parse failed: %s, falling back to local generation\n", err.c_str());
+            }
+        } else {
+            Serial.printf("[Calendar] Online month fetch http=%d for year=%d month=%d, falling back to local generation\n", code, year, month);
+            http.end();
+        }
+    }
+
+    return generateCalendarMonthLocally(year, month, normCountry, normCity, method);
 }
 
 static String calendarMonthPath(int year, int month) {
@@ -496,6 +652,11 @@ static void calendarDownloadTask(void *pvParameters) {
 
 
 void handleFileList(AsyncWebServerRequest *request) {
+    bool forceRefresh = request->hasParam("force") && (request->getParam("force")->value() == "1" || request->getParam("force")->value() == "true");
+    if (!forceRefresh && cachedFileListJson.length() > 0 && (millis() - cachedFileListAt < 30000)) {
+        request->send(200, "application/json", cachedFileListJson);
+        return;
+    }
     if (audioManager.getState() != AUDIO_IDLE) {
         if (cachedFileListJson.length() > 0) {
             request->send(200, "application/json", cachedFileListJson);
@@ -550,19 +711,50 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
         request->send(503, "text/plain", "SD card not connected");
         return;
     }
-    if (!SD.exists(path)) {
+    lockSD();
+    bool exists = SD.exists(path);
+    unlockSD();
+    if (!exists) {
         request->send(404, "text/plain", "File not found");
         return;
     }
     
-    // Serve audio files with correct MIME types for HTML5 player compatibility
-    String contentType = "application/octet-stream";
-    if (path.endsWith(".mp3") || path.endsWith(".MP3")) {
-        contentType = "audio/mpeg";
-    } else if (path.endsWith(".wav") || path.endsWith(".WAV")) {
-        contentType = "audio/wav";
-    }
-    request->send(SD, path, contentType);
+        // Serve audio files with correct MIME types for HTML5 player compatibility
+        String contentType = "application/octet-stream";
+        if (path.endsWith(".mp3") || path.endsWith(".MP3")) {
+            contentType = "audio/mpeg";
+        } else if (path.endsWith(".wav") || path.endsWith(".WAV")) {
+            contentType = "audio/wav";
+        }
+        AsyncWebServerResponse *response = request->beginResponse(
+            contentType,
+            0,
+            [path](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                lockSD();
+                File f = SD.open(path, FILE_READ);
+                if (!f) {
+                    unlockSD();
+                    return 0;
+                }
+                if (!f.seek(index)) {
+                    f.close();
+                    unlockSD();
+                    return 0;
+                }
+                size_t toRead = maxLen > 2048 ? 2048 : maxLen;
+                size_t bytesRead = f.read(buffer, toRead);
+                f.close();
+                unlockSD();
+                return bytesRead;
+            }
+        );
+        lockSD();
+        File sizeFile = SD.open(path, FILE_READ);
+        size_t fileSize = sizeFile ? sizeFile.size() : 0;
+        if (sizeFile) sizeFile.close();
+        unlockSD();
+        response->setContentLength(fileSize);
+        request->send(response);
 }
 
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -599,6 +791,7 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
         uploadFile.close();
         unlockSD();
         uploadBusy = false;
+        cachedFileListAt = 0;
     }
     unlockUpload();
 }
@@ -660,6 +853,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
         chunkUploadFile.close();
         unlockSD();
         uploadBusy = false;
+        cachedFileListAt = 0;
     }
     unlockUpload();
 }
@@ -705,7 +899,12 @@ static void handleOtaUpload(AsyncWebServerRequest *request, String filename, siz
     if (token.length() == 0 && request->hasHeader("X-Session-Token")) {
         token = request->getHeader("X-Session-Token")->value();
     }
-    if (!(sessionValid() && token == sessionToken)) return;
+    bool validOtaSession = false;
+    if (sessionValid() && sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        validOtaSession = (token.length() > 0 && token == sessionToken);
+        xSemaphoreGive(sessionMutex);
+    }
+    if (!validOtaSession) return;
     if (!lockUpload()) return;
     if (!index) {
         if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); unlockUpload(); return; }
@@ -749,6 +948,7 @@ void startWebServer() {
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "*");
+    DefaultHeaders::Instance().addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 
     server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
 
@@ -792,11 +992,16 @@ void startWebServer() {
             token = request->getHeader("X-Session-Token")->value();
         }
         bool authenticated = false;
-        if (token.length() > 0 && token == sessionToken && sessionValid()) {
-            authenticated = true;
-            String activeVal = postValue(request, "active", "");
-            if (activeVal == "1") {
-                lastSessionActivity = millis(); // Refresh activity timer on client interaction
+        if (sessionValid()) {
+            if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                if (token.length() > 0 && token == sessionToken) {
+                    authenticated = true;
+                    String activeVal = postValue(request, "active", "");
+                    if (activeVal == "1") {
+                        lastSessionActivity = millis(); // Refresh activity timer on client interaction
+                    }
+                }
+                xSemaphoreGive(sessionMutex);
             }
         }
 
@@ -808,12 +1013,8 @@ void startWebServer() {
         doc["volume"] = audioManager.getVolume();
         doc["state"] = (int)audioManager.getState();
         doc["adhan"] = audioManager.isAdhanPlaying();
-        Preferences eidPrefs;
-        eidPrefs.begin("eid", true);
-        doc["eidMode"] = eidPrefs.getBool("enabled", false);
-        eidPrefs.end();
-        extern String currentAudioDescription;
-        doc["status_text"] = isPlaying ? (currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + String(audioManager.getCurrentFile()))) : "متوقف";
+        doc["eidMode"] = isEidMode();
+        doc["status_text"] = isPlaying ? audioManager.getAudioDescription() : "متوقف";
         doc["wifi"] = WiFi.status() == WL_CONNECTED;
         doc["ip"] = WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
         
@@ -891,9 +1092,15 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing file\"}");
             return;
         }
-        extern String currentAudioDescription;
-        currentAudioDescription = "تشغيل يدوي: " + file;
-        sendPlayCommand(file.c_str(), postValue(request, "priority", "0").toInt(), 0, postValue(request, "volume", "0").toInt(), 0);
+        String name = postValue(request, "name", "");
+        bool isUrl = file.startsWith("http://") || file.startsWith("https://");
+        if (name.length() > 0) {
+            audioManager.setAudioDescription((isUrl ? "بث مباشر: " : "تشغيل يدوي: ") + name);
+        } else {
+            audioManager.setAudioDescription((isUrl ? "بث مباشر: " : "تشغيل يدوي: ") + file);
+        }
+        uint32_t loopDur = (uint32_t)postValue(request, "loopDuration", "0").toInt();
+        sendPlayCommand(file.c_str(), postValue(request, "priority", "0").toInt(), 0, postValue(request, "volume", "0").toInt(), loopDur);
         sendOk(request);
     });
 
@@ -903,8 +1110,7 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing files\"}");
             return;
         }
-        extern String currentAudioDescription;
-        currentAudioDescription = "تشغيل قائمة ملفات";
+        audioManager.setAudioDescription("تشغيل قائمة ملفات");
         if (xSemaphoreTake(fileBufferMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             strlcpy(fileBuffer, files.c_str(), sizeof(fileBuffer));
             xSemaphoreGive(fileBufferMutex);
@@ -956,37 +1162,45 @@ void startWebServer() {
         }
 
         saveWifiSettings(request);
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.softAP("VivoSmart-Setup");
-        WiFi.disconnect(false);
-        delay(100);
-        applyWifiIpConfig(request);
-        WiFi.begin(ssid.c_str(), pass.c_str());
-
-        uint8_t tries = 0;
-        while (WiFi.status() != WL_CONNECTED && tries < 24) {
-            delay(500);
-            tries++;
+        if (!wifiConnectPending) {
+            wifiConnectPending = true;
+            wifiConnectSsid = ssid;
+            wifiConnectPass = pass;
+            xTaskCreatePinnedToCore(wifiConnectTask, "WifiConnect", 4096, NULL, 2, NULL, 0);
         }
 
         DynamicJsonDocument doc(384);
         bool connected = WiFi.status() == WL_CONNECTED;
         doc["ok"] = true;
+        doc["connecting"] = true;
         doc["connected"] = connected;
-        doc["ssid"] = connected ? WiFi.SSID() : ssid;
+        doc["ssid"] = ssid;
         doc["ip"] = connected ? WiFi.localIP().toString() : "";
-        doc["apIp"] = connected ? "" : WiFi.softAPIP().toString();
+        doc["apIp"] = WiFi.softAPIP().toString();
         sendJson(request, doc);
     });
 
     server.on("/api/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(384);
+        DynamicJsonDocument doc(512);
         bool connected = WiFi.status() == WL_CONNECTED;
+        String ipv6Str = "";
+        if (connected) {
+            esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+            esp_ip6_addr_t ip6;
+            if (netif && esp_netif_get_ip6_global(netif, &ip6) == ESP_OK) {
+                char buf[48];
+                snprintf(buf, sizeof(buf), IPV6STR, IPV62STR(ip6));
+                ipv6Str = String(buf);
+            } else {
+                ipv6Str = WiFi.localIPv6().toString();
+            }
+        }
         Preferences prefs;
         prefs.begin("network", true);
         doc["connected"] = connected;
         doc["ssid"] = connected ? WiFi.SSID() : "";
         doc["ip"] = connected ? WiFi.localIP().toString() : "";
+        doc["ipv6"] = ipv6Str;
         doc["apIp"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) ? WiFi.softAPIP().toString() : "";
         doc["dhcp"] = prefs.getBool("dhcp", false);
         doc["savedSsid"] = prefs.getString("ssid", "");
@@ -1020,8 +1234,9 @@ void startWebServer() {
         bool changed = false;
 
         if (audioManager.getState() != AUDIO_IDLE) {
-            if (todayPrayer.valid) {
-                writePrayerJson(request, todayPrayer);
+            PrayerTimesResult cachedToday = getTodayPrayerSafe();
+            if (cachedToday.valid) {
+                writePrayerJson(request, cachedToday);
             } else {
                 PrayerTimesResult result = PrayerTimesEngine::calculate(time(nullptr), config);
                 PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
@@ -1091,11 +1306,8 @@ void startWebServer() {
 
             applyConfiguredTimezone();
 
-            prefs.begin("prayer_manual", true);
-            if (prefs.getBool("enabled", false)) syncTimeFromNTP();
-            prefs.end();
-
             CSVManager::invalidateCalendarCache();
+            cachedCsvStatusAt = 0;
             forcePrayerRecalc();
             Serial.printf("[Prayer] Location/config updated: country=%s city=%s lat=%.4f lng=%.4f tz=%d method=%d\n",
                           reqCountry.c_str(), reqCity.c_str(), currentPrayerConfig.latitude,
@@ -1113,7 +1325,7 @@ void startWebServer() {
             result.valid = true;
             result.source = "يدوي";
             prefs.end();
-            if (!changed) todayPrayer = result;
+            if (!changed) setTodayPrayerSafe(result);
             writePrayerJson(request, result);
             return;
         }
@@ -1124,7 +1336,7 @@ void startWebServer() {
             if (CSVManager::getCalendarData(csv)) {
                 result = prayerFromDailyData(csv);
                 PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
-                todayPrayer = result;
+                setTodayPrayerSafe(result);
                 Serial.println("[Prayer] Web API using SD calendar only");
                 writePrayerJson(request, result);
                 return;
@@ -1133,11 +1345,14 @@ void startWebServer() {
             return;
         }
 
+        PrayerTimesResult cachedToday = getTodayPrayerSafe();
         if (reqCountry.length() > 0 && reqCity.length() > 0 &&
-            PrayerTimesEngine::fetchOnline(reqCountry, reqCity, time(nullptr), config, result)) {
+            PrayerTimesEngine::getCachedOnline(reqCountry, reqCity, time(nullptr), config, result)) {
             PrayerTimesEngine::applyDailyOffsets(result, time(nullptr));
             result.source = "انترنت";
-            Serial.println("[Prayer] Using online prayer timings");
+            Serial.println("[Prayer] Using cached online prayer timings");
+        } else if (!changed && cachedToday.valid) {
+            result = cachedToday;
         } else {
             DailyData csv;
             if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
@@ -1150,26 +1365,27 @@ void startWebServer() {
                 Serial.println("[Prayer] Using local calculated prayer timings");
             }
         }
-        if (result.valid) todayPrayer = result;
+        if (result.valid) setTodayPrayerSafe(result);
         writePrayerJson(request, result);
     });
 
     server.on("/api/prayer/config", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(512);
-        prefs.begin("prayer_cfg", true);
-        String savedCountry = prefs.getString("country", "Egypt");
-        String savedCity = prefs.getString("city", "Cairo");
+        Preferences localPrefs;
+        localPrefs.begin("prayer_cfg", true);
+        String savedCountry = localPrefs.getString("country", "Egypt");
+        String savedCity = localPrefs.getString("city", "Cairo");
         if (savedCountry == "مصر") savedCountry = "Egypt";
         if (savedCity == "القاهرة") savedCity = "Cairo";
         doc["country"] = savedCountry;
         doc["city"] = savedCity;
-        int method = prefs.getInt("method", PrayerTimesEngine::getDefaultMethod(savedCountry));
+        int method = localPrefs.getInt("method", PrayerTimesEngine::getDefaultMethod(savedCountry));
         if (savedCountry == "Saudi Arabia" && method == 0) method = PrayerTimesEngine::getDefaultMethod(savedCountry);
         doc["method"] = method;
         doc["defaultMethod"] = PrayerTimesEngine::getDefaultMethod(savedCountry);
         doc["hijriOffset"] = currentPrayerConfig.hijriOffset;
-        doc["egyptDst"] = prefs.getBool("egyptDst", true);
-        prefs.end();
+        doc["egyptDst"] = localPrefs.getBool("egyptDst", true);
+        localPrefs.end();
         sendJson(request, doc);
     });
 
@@ -1182,14 +1398,15 @@ void startWebServer() {
         if (request->hasParam("hijriOffset", true)) {
             currentPrayerConfig.hijriOffset = postValue(request, "hijriOffset", "0").toInt();
         }
-        prefs.begin("prayer_cfg", false);
-        prefs.putInt("fajr", currentPrayerConfig.offsetFajr);
-        prefs.putInt("dhuhr", currentPrayerConfig.offsetDhuhr);
-        prefs.putInt("asr", currentPrayerConfig.offsetAsr);
-        prefs.putInt("maghrib", currentPrayerConfig.offsetMaghrib);
-        prefs.putInt("isha", currentPrayerConfig.offsetIsha);
-        prefs.putInt("hijriOffset", currentPrayerConfig.hijriOffset);
-        prefs.end();
+        Preferences localPrefs;
+        localPrefs.begin("prayer_cfg", false);
+        localPrefs.putInt("fajr", currentPrayerConfig.offsetFajr);
+        localPrefs.putInt("dhuhr", currentPrayerConfig.offsetDhuhr);
+        localPrefs.putInt("asr", currentPrayerConfig.offsetAsr);
+        localPrefs.putInt("maghrib", currentPrayerConfig.offsetMaghrib);
+        localPrefs.putInt("isha", currentPrayerConfig.offsetIsha);
+        localPrefs.putInt("hijriOffset", currentPrayerConfig.hijriOffset);
+        localPrefs.end();
         forcePrayerRecalc();
         Serial.printf("[Prayer] Offsets saved: fajr=%d dhuhr=%d asr=%d maghrib=%d isha=%d hijri=%d\n",
                       currentPrayerConfig.offsetFajr, currentPrayerConfig.offsetDhuhr,
@@ -1360,6 +1577,7 @@ void startWebServer() {
         }
         String path = cleanPath(postValue(request, "name", ""));
         bool ok = deleteRecursively(path);
+        if (ok) cachedFileListAt = 0;
         request->send(ok ? 200 : 404, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
     server.on("/api/files/mkdir", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1371,6 +1589,7 @@ void startWebServer() {
         lockSD();
         bool ok = SD.mkdir(path);
         unlockSD();
+        if (ok) cachedFileListAt = 0;
         request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
     server.on("/api/files/rename", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1387,6 +1606,7 @@ void startWebServer() {
         lockSD();
         bool ok = SD.rename(oldName, newName);
         unlockSD();
+        if (ok) cachedFileListAt = 0;
         request->send(ok ? 200 : 400, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
     });
 
@@ -1569,6 +1789,7 @@ void startWebServer() {
         if (volume > 30) volume = 30;
         prefs.putUChar("takbeer_volume", (uint8_t)volume);
         prefs.end();
+        reloadEidSettings();
         sendOk(request);
     });
     server.on("/api/eid/takbeer_config", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -1597,47 +1818,115 @@ void startWebServer() {
     });
 
     server.on("/api/csv/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(512);
-        doc["enabled"] = CSVManager::isEnabled();
-        doc["calendarOnly"] = CSVManager::isCalendarOnly();
-        doc["calendarFallback"] = CSVManager::isCalendarFallback();
         time_t now = time(nullptr);
         struct tm tinfo;
         localtime_r(&now, &tinfo);
-        int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : (tinfo.tm_year + 1900);
-        if (year < 2024) year = tinfo.tm_year + 1900;
-        doc["calendarYear"] = year;
-        if (audioManager.getState() != AUDIO_IDLE) {
-            doc["available"] = false;
-            doc["deferred"] = true;
-            doc.createNestedArray("months");
-            doc.createNestedArray("calendarMonths");
-            doc.createNestedArray("missingCalendarMonths");
-            sendJson(request, doc);
+        int defaultYear = (tinfo.tm_year + 1900 >= 2024) ? (tinfo.tm_year + 1900) : 2026;
+        if (!request->hasParam("year")) {
+            Preferences csvPrefs;
+            csvPrefs.begin("csv_mode", true);
+            int savedLastYear = csvPrefs.getInt("lastCalYear", 0);
+            csvPrefs.end();
+            if (savedLastYear >= 2000 && savedLastYear <= 2100) {
+                defaultYear = savedLastYear;
+            }
+        }
+        int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : defaultYear;
+        if (year < 2000 || year > 2100) year = defaultYear;
+        if (request->hasParam("year")) {
+            Preferences csvPrefs;
+            csvPrefs.begin("csv_mode", false);
+            if (csvPrefs.getInt("lastCalYear", 0) != year) {
+                csvPrefs.putInt("lastCalYear", year);
+            }
+            csvPrefs.end();
+        }
+
+        if (cachedCsvStatusJson.length() > 0 && cachedCsvStatusYear == year && (millis() - cachedCsvStatusAt < 15000)) {
+            request->send(200, "application/json", cachedCsvStatusJson);
             return;
         }
+
+        DynamicJsonDocument doc(1536);
+        doc["enabled"] = CSVManager::isEnabled();
+        doc["calendarOnly"] = CSVManager::isCalendarOnly();
+        doc["calendarFallback"] = CSVManager::isCalendarFallback();
+        doc["calendarYear"] = year;
         doc["available"] = CSVManager::isAvailable();
         JsonArray months = doc.createNestedArray("months");
         for (int month : CSVManager::getLoadedMonths()) months.add(month);
+        std::vector<int> validCalMonths = CSVManager::getCalendarMonths(year);
         JsonArray calendarMonths = doc.createNestedArray("calendarMonths");
-        for (int month : CSVManager::getCalendarMonths(year)) calendarMonths.add(month);
+        for (int month : validCalMonths) calendarMonths.add(month);
         JsonArray missingMonths = doc.createNestedArray("missingCalendarMonths");
         for (int month = 1; month <= 12; month++) {
-            if (!CSVManager::isCalendarMonthValid(year, month)) missingMonths.add(month);
+            if (std::find(validCalMonths.begin(), validCalMonths.end(), month) == validCalMonths.end()) {
+                missingMonths.add(month);
+            }
         }
-        sendJson(request, doc);
+
+        JsonArray savedYears = doc.createNestedArray("savedYears");
+        if (sdReady()) {
+            String sampleYearDir = CSVManager::getCalendarPath(year, 0);
+            int lastSlash = sampleYearDir.lastIndexOf('/');
+            String cityDirPath = (lastSlash > 0) ? sampleYearDir.substring(0, lastSlash) : "";
+            std::vector<int> foundYears;
+            if (cityDirPath.length() > 0) {
+                lockSD();
+                if (SD.exists(cityDirPath)) {
+                    File cityDir = SD.open(cityDirPath);
+                    if (cityDir && cityDir.isDirectory()) {
+                        File entry = cityDir.openNextFile();
+                        while (entry) {
+                            if (entry.isDirectory()) {
+                                String name = String(entry.name());
+                                int sIdx = name.lastIndexOf('/');
+                                if (sIdx >= 0) name = name.substring(sIdx + 1);
+                                int yVal = name.toInt();
+                                if (yVal >= 2000 && yVal <= 2100) {
+                                    foundYears.push_back(yVal);
+                                }
+                            }
+                            entry.close();
+                            entry = cityDir.openNextFile();
+                        }
+                        cityDir.close();
+                    }
+                }
+                unlockSD();
+            }
+            std::sort(foundYears.begin(), foundYears.end());
+            for (int yVal : foundYears) {
+                auto yMonths = (yVal == year) ? validCalMonths : CSVManager::getCalendarMonths(yVal);
+                if (!yMonths.empty()) {
+                    JsonObject yObj = savedYears.createNestedObject();
+                    yObj["year"] = yVal;
+                    yObj["months"] = (int)yMonths.size();
+                }
+            }
+        }
+
+        String json;
+        serializeJson(doc, json);
+        cachedCsvStatusJson = json;
+        cachedCsvStatusAt = millis();
+        cachedCsvStatusYear = year;
+        request->send(200, "application/json", json);
     });
     server.on("/api/csv/toggle", HTTP_POST, [](AsyncWebServerRequest *request) {
         CSVManager::setEnabled(postBool(request, "enabled"));
+        cachedCsvStatusAt = 0;
         sendOk(request);
     });
     server.on("/api/calendar/only", HTTP_POST, [](AsyncWebServerRequest *request) {
         CSVManager::setCalendarOnly(postBool(request, "enabled"));
+        cachedCsvStatusAt = 0;
         forcePrayerRecalc();
         sendOk(request);
     });
     server.on("/api/calendar/fallback", HTTP_POST, [](AsyncWebServerRequest *request) {
         CSVManager::setCalendarFallback(postBool(request, "enabled", false));
+        cachedCsvStatusAt = 0;
         forcePrayerRecalc();
         sendOk(request);
     });
@@ -1650,13 +1939,38 @@ void startWebServer() {
         int month = postValue(request, "month", "0").toInt();
         String country = postValue(request, "country", "");
         String city = postValue(request, "city", "");
-        int method = postValue(request, "method", "1").toInt();
+        int method = postValue(request, "method", "-1").toInt();
         bool force = postBool(request, "force", false);
-        if (year < 2024 || month < 1 || month > 12 || country.length() == 0 || city.length() == 0) {
+        country.trim();
+        city.trim();
+        if (country.length() == 0 || city.length() == 0 || method < 0) {
+            Preferences prefs;
+            prefs.begin("prayer_cfg", true);
+            if (country.length() == 0) country = prefs.getString("country", "Egypt");
+            if (city.length() == 0) city = prefs.getString("city", "Cairo");
+            if (method < 0) method = prefs.getInt("method", PrayerTimesEngine::getDefaultMethod(country));
+            prefs.end();
+        }
+        if (year < 2000 || year > 2100 || month < 1 || month > 12 || country.length() == 0 || city.length() == 0) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
             return;
         }
+        if (country == "مصر") country = "Egypt";
+        if (city == "القاهرة") city = "Cairo";
+        {
+            Preferences prefs;
+            prefs.begin("prayer_cfg", false);
+            if (prefs.getString("country", "") != country) prefs.putString("country", country);
+            if (prefs.getString("city", "") != city) prefs.putString("city", city);
+            prefs.end();
+
+            Preferences csvPrefs;
+            csvPrefs.begin("csv_mode", false);
+            if (csvPrefs.getInt("lastCalYear", 0) != year) csvPrefs.putInt("lastCalYear", year);
+            csvPrefs.end();
+        }
         if (!force && CSVManager::isCalendarMonthValid(year, month)) {
+            cachedCsvStatusAt = 0;
             DynamicJsonDocument doc(192);
             doc["ok"] = true;
             doc["skipped"] = true;
@@ -1691,7 +2005,7 @@ void startWebServer() {
             return;
         }
 
-        BaseType_t created = xTaskCreatePinnedToCore(calendarDownloadTask, "CalendarDownload", 8192, NULL, 1, NULL, 1);
+        BaseType_t created = xTaskCreatePinnedToCore(calendarDownloadTask, "CalendarDownload", 12288, NULL, 1, NULL, 0);
         if (created != pdPASS) {
             if (calendarJobMutex && xSemaphoreTake(calendarJobMutex, pdMS_TO_TICKS(200)) == pdTRUE) {
                 calendarJob.busy = false;
@@ -1733,7 +2047,7 @@ void startWebServer() {
             return;
         }
         int year = postValue(request, "year", "0").toInt();
-        if (year < 2024) {
+        if (year < 2000 || year > 2100) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_year\"}");
             return;
         }
@@ -1741,6 +2055,8 @@ void startWebServer() {
         lockSD();
         bool ok = !SD.exists(path) || deleteRecursively(path);
         unlockSD();
+        for (int m = 1; m <= 12; m++) CSVManager::invalidateCalendarMonth(year, m);
+        cachedCsvStatusAt = 0;
         forcePrayerRecalc();
         DynamicJsonDocument doc(128);
         doc["ok"] = ok;
@@ -1753,7 +2069,7 @@ void startWebServer() {
         }
         int year = request->hasParam("year") ? request->getParam("year")->value().toInt() : 0;
         int month = request->hasParam("month") ? request->getParam("month")->value().toInt() : 0;
-        if (year < 2024 || month < 1 || month > 12) {
+        if (year < 2000 || year > 2100 || month < 1 || month > 12) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
             return;
         }
@@ -1789,7 +2105,7 @@ void startWebServer() {
         int year = postValue(request, "year", "0").toInt();
         int month = postValue(request, "month", "0").toInt();
         String csv = postValue(request, "csv", "");
-        if (year < 2024 || month < 1 || month > 12 || csv.length() < 40) {
+        if (year < 2000 || year > 2100 || month < 1 || month > 12 || csv.length() < 40) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid_request\"}");
             return;
         }
@@ -1812,6 +2128,7 @@ void startWebServer() {
         f.close();
         unlockSD();
         CSVManager::invalidateCalendarMonth(year, month);
+        cachedCsvStatusAt = 0;
         forcePrayerRecalc();
         Serial.printf("[Calendar] Edited %s\n", path.c_str());
         sendOk(request);
@@ -1840,16 +2157,16 @@ void startWebServer() {
 
     server.on("/api/session/timeout", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(128);
-        Preferences prefs;
-        prefs.begin("session", true);
-        doc["timeout"] = prefs.getInt("timeout", 10);
-        prefs.end();
+        doc["timeout"] = cachedSessionTimeoutMins;
         sendJson(request, doc);
     });
     server.on("/api/session/timeout/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int mins = postValue(request, "timeout", "10").toInt();
+        if (mins < 1) mins = 1;
+        cachedSessionTimeoutMins = mins;
         Preferences prefs;
         prefs.begin("session", false);
-        prefs.putInt("timeout", postValue(request, "timeout", "10").toInt());
+        prefs.putInt("timeout", mins);
         prefs.end();
         sendOk(request);
     });
@@ -1868,16 +2185,43 @@ void startWebServer() {
         sendJson(request, doc);
     });
     server.on("/api/time/manual_save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        bool enabled = postBool(request, "enabled");
+        int year = postValue(request, "year", "2026").toInt();
+        int month = postValue(request, "month", "1").toInt();
+        int day = postValue(request, "day", "1").toInt();
+        int hour = postValue(request, "hour", "12").toInt();
+        int minute = postValue(request, "minute", "0").toInt();
         Preferences prefs;
         prefs.begin("time_manual", false);
-        prefs.putBool("enabled", postBool(request, "enabled"));
-        prefs.putInt("year", postValue(request, "year", "2026").toInt());
-        prefs.putInt("month", postValue(request, "month", "1").toInt());
-        prefs.putInt("day", postValue(request, "day", "1").toInt());
-        prefs.putInt("hour", postValue(request, "hour", "12").toInt());
-        prefs.putInt("minute", postValue(request, "minute", "0").toInt());
+        prefs.putBool("enabled", enabled);
+        prefs.putInt("year", year);
+        prefs.putInt("month", month);
+        prefs.putInt("day", day);
+        prefs.putInt("hour", hour);
+        prefs.putInt("minute", minute);
         prefs.end();
-        syncTimeFromNTP();
+        if (enabled) {
+            applyConfiguredTimezone();
+            struct tm t = {};
+            t.tm_year = year - 1900;
+            t.tm_mon = month - 1;
+            t.tm_mday = day;
+            t.tm_hour = hour;
+            t.tm_min = minute;
+            t.tm_sec = 0;
+            t.tm_isdst = -1;
+            time_t epoch = mktime(&t);
+            if (epoch >= 1704067200) {
+                struct timeval tv = {epoch, 0};
+                settimeofday(&tv, NULL);
+            }
+            forcePrayerRecalc();
+        } else {
+            xTaskCreatePinnedToCore([](void*){
+                syncTimeFromNTP();
+                vTaskDelete(NULL);
+            }, "NtpSync", 4096, NULL, 2, NULL, 0);
+        }
         sendOk(request);
     });
 
@@ -1888,11 +2232,15 @@ void startWebServer() {
         prefs.end();
         bool ok = postValue(request, "password", "") == saved;
         if (ok) {
-            sessionToken = generateSessionToken();
-            lastSessionActivity = millis();
+            String newTok = generateSessionToken();
+            if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                sessionToken = newTok;
+                lastSessionActivity = millis();
+                xSemaphoreGive(sessionMutex);
+            }
             DynamicJsonDocument doc(128);
             doc["ok"] = true;
-            doc["token"] = sessionToken;
+            doc["token"] = newTok;
             String json;
             serializeJson(doc, json);
             request->send(200, "application/json", json);
@@ -1910,18 +2258,27 @@ void startWebServer() {
             return;
         }
         String token = postValue(request, "token", "");
-        if (token != sessionToken) {
+        bool tokMatch = false;
+        if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            tokMatch = (token.length() > 0 && token == sessionToken);
+            xSemaphoreGive(sessionMutex);
+        }
+        if (!tokMatch) {
             request->send(200, "application/json", "{\"ok\":false,\"error\":\"session expired\"}");
             return;
         }
         prefs.begin("auth", false);
         prefs.putString("password", postValue(request, "password", "admin"));
         prefs.end();
-        sessionToken = generateSessionToken();
-        lastSessionActivity = millis();
+        String newTok = generateSessionToken();
+        if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+            sessionToken = newTok;
+            lastSessionActivity = millis();
+            xSemaphoreGive(sessionMutex);
+        }
         DynamicJsonDocument doc(128);
         doc["ok"] = true;
-        doc["token"] = sessionToken;
+        doc["token"] = newTok;
         String json;
         serializeJson(doc, json);
         request->send(200, "application/json", json);
@@ -1981,8 +2338,11 @@ void startWebServer() {
         if (master == savedMaster) {
             prefs.begin("auth", false);
             prefs.putString("password", newPass);
-            sessionToken = "";
             prefs.end();
+            if (sessionMutex && xSemaphoreTake(sessionMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                sessionToken = "";
+                xSemaphoreGive(sessionMutex);
+            }
             request->send(200, "application/json", "{\"ok\":true}");
         } else {
             request->send(200, "application/json", "{\"ok\":false}");
@@ -2137,11 +2497,40 @@ void startWebServer() {
             path = String(buf);
         }
 
-        if (!SD.exists(path)) {
+        lockSD();
+        File sizeFile = SD.open(path, FILE_READ);
+        if (!sizeFile) {
+            unlockSD();
             request->send(404, "application/json", "{\"ok\":false,\"error\":\"file_not_found\"}");
             return;
         }
-        request->send(SD, path, "application/octet-stream");
+        size_t fileSize = sizeFile.size();
+        sizeFile.close();
+        unlockSD();
+
+        AsyncWebServerResponse *response = request->beginResponse(
+            "application/octet-stream",
+            fileSize,
+            [path](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                lockSD();
+                File f = SD.open(path, FILE_READ);
+                if (!f) {
+                    unlockSD();
+                    return 0;
+                }
+                if (!f.seek(index)) {
+                    f.close();
+                    unlockSD();
+                    return 0;
+                }
+                size_t toRead = maxLen > 2048 ? 2048 : maxLen;
+                size_t bytesRead = f.read(buffer, toRead);
+                f.close();
+                unlockSD();
+                return bytesRead;
+            }
+        );
+        request->send(response);
     });
 
     server.onNotFound([](AsyncWebServerRequest *request) {

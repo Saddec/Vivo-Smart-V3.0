@@ -103,7 +103,10 @@ DailyData CSVManager::getTodayData() {
     int day = t.tm_mday;
     if (monthData[month].empty()) {
         String fname = "/" + String(month < 10 ? "0" : "") + String(month) + ".csv";
-        if (SD.exists(fname)) loadMonth(month, fname);
+        lockSD();
+        bool exists = SD.exists(fname);
+        unlockSD();
+        if (exists) loadMonth(month, fname);
         else return DailyData();
     }
     for (const auto& d : monthData[month]) {
@@ -216,7 +219,10 @@ std::vector<int> CSVManager::getLoadedMonths() {
         if (!monthData[m].empty()) months.push_back(m);
         else {
             String fname = "/" + String(m < 10 ? "0" : "") + String(m) + ".csv";
-            if (SD.exists(fname)) { loadMonth(m, fname); if (!monthData[m].empty()) months.push_back(m); }
+            lockSD();
+            bool exists = SD.exists(fname);
+            unlockSD();
+            if (exists) { loadMonth(m, fname); if (!monthData[m].empty()) months.push_back(m); }
         }
     }
     return months;
@@ -224,9 +230,33 @@ std::vector<int> CSVManager::getLoadedMonths() {
 
 std::vector<int> CSVManager::getCalendarMonths(int year) {
     std::vector<int> months;
-    for (int m = 1; m <= 12; m++) {
-        if (isCalendarMonthValid(year, m)) months.push_back(m);
+    String dirPath = getCalendarPath(year, 0);
+    lockSD();
+    if (SD.exists(dirPath)) {
+        File dir = SD.open(dirPath);
+        if (dir && dir.isDirectory()) {
+            File f = dir.openNextFile();
+            while (f) {
+                if (!f.isDirectory() && f.size() > 120) {
+                    String fname = String(f.name());
+                    int sIdx = fname.lastIndexOf('/');
+                    if (sIdx >= 0) fname = fname.substring(sIdx + 1);
+                    if (fname.endsWith(".csv") || fname.endsWith(".CSV")) {
+                        int m = fname.substring(0, fname.length() - 4).toInt();
+                        if (m >= 1 && m <= 12) {
+                            months.push_back(m);
+                        }
+                    }
+                }
+                f.close();
+                f = dir.openNextFile();
+            }
+            dir.close();
+        }
     }
+    unlockSD();
+    std::sort(months.begin(), months.end());
+    months.erase(std::unique(months.begin(), months.end()), months.end());
     return months;
 }
 
@@ -267,8 +297,14 @@ void CSVManager::invalidateCalendarCache() {
 }
 
 String CSVManager::getCalendarPath(int year, int month, const String& country, const String& city) {
-    String cleanCountry = cleanFsName(country);
-    String cleanCity = cleanFsName(city);
+    String normCountry = country;
+    String normCity = city;
+    normCountry.trim();
+    normCity.trim();
+    if (normCountry == "مصر") normCountry = "Egypt";
+    if (normCity == "القاهرة") normCity = "Cairo";
+    String cleanCountry = cleanFsName(normCountry);
+    String cleanCity = cleanFsName(normCity);
     if (cleanCountry.isEmpty()) cleanCountry = "Egypt";
     if (cleanCity.isEmpty()) cleanCity = "Cairo";
     if (month == 0) {
@@ -283,5 +319,47 @@ String CSVManager::getCalendarPath(int year, int month) {
     String country = prefs.getString("country", "Egypt");
     String city = prefs.getString("city", "Cairo");
     prefs.end();
+    String primaryDir = getCalendarPath(year, 0, country, city);
+    int lastSlash = primaryDir.lastIndexOf('/');
+    String cityDir = (lastSlash > 0) ? primaryDir.substring(0, lastSlash) : "";
+
+    lockSD();
+    bool primaryExists = cityDir.length() > 0 && SD.exists(cityDir);
+    if (!primaryExists && SD.exists("/prayer_csv")) {
+        if (SD.exists("/prayer_csv/Egypt/Cairo")) {
+            country = "Egypt";
+            city = "Cairo";
+        } else {
+            File root = SD.open("/prayer_csv");
+            if (root && root.isDirectory()) {
+                File cDir = root.openNextFile();
+                bool found = false;
+                while (cDir && !found) {
+                    if (cDir.isDirectory()) {
+                        String cName = String(cDir.name());
+                        int idx1 = cName.lastIndexOf('/');
+                        if (idx1 >= 0) cName = cName.substring(idx1 + 1);
+                        File sub = cDir.openNextFile();
+                        while (sub && !found) {
+                            if (sub.isDirectory()) {
+                                String ciName = String(sub.name());
+                                int idx2 = ciName.lastIndexOf('/');
+                                if (idx2 >= 0) ciName = ciName.substring(idx2 + 1);
+                                country = cName;
+                                city = ciName;
+                                found = true;
+                            }
+                            sub.close();
+                            if (!found) sub = cDir.openNextFile();
+                        }
+                    }
+                    cDir.close();
+                    if (!found) cDir = root.openNextFile();
+                }
+                root.close();
+            }
+        }
+    }
+    unlockSD();
     return getCalendarPath(year, month, country, city);
 }

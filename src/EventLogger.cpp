@@ -1,5 +1,6 @@
 #include "EventLogger.h"
 #include "SDManager.h"
+#include "AudioTask.h"
 #include <SD.h>
 #include <time.h>
 #include <Preferences.h>
@@ -9,7 +10,7 @@
 // Background task function
 static void loggerTask(void *pvParameters) {
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(8000)); // Sleep for 8 seconds
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000)); // Wake on notify or every 5 seconds
         EventLogger::getInstance().flush();
 
         // Check circular log limit once an hour
@@ -21,6 +22,8 @@ static void loggerTask(void *pvParameters) {
         }
     }
 }
+
+static TaskHandle_t loggerTaskHandle = NULL;
 
 const char* logLevelToString(LogLevel level) {
     switch (level) {
@@ -105,7 +108,7 @@ void EventLogger::begin() {
         4096,
         NULL,
         2, // Low priority to not interfere with critical processes
-        NULL,
+        &loggerTaskHandle,
         0  // Pin to Core 0 (where SystemTask resides)
     );
 
@@ -158,11 +161,14 @@ void EventLogger::log(LogLevel level, const char* category, const char* format, 
 
     // Add to SD write buffer
     _writeBuffer.push_back(entry);
-    bool forceFlush = (level == LOG_LEVEL_ERROR || level == LOG_LEVEL_CRITICAL || _writeBuffer.size() >= MAX_WRITE_BUFFER);
+    if (_writeBuffer.size() > 150) {
+        _writeBuffer.erase(_writeBuffer.begin());
+    }
+    bool shouldWake = (level == LOG_LEVEL_ERROR || level == LOG_LEVEL_CRITICAL || _writeBuffer.size() >= MAX_WRITE_BUFFER);
     xSemaphoreGiveRecursive(_mutex);
 
-    if (forceFlush) {
-        flush();
+    if (shouldWake && loggerTaskHandle != NULL && audioManager.getState() == AUDIO_IDLE) {
+        xTaskNotifyGive(loggerTaskHandle);
     }
 }
 
@@ -178,12 +184,12 @@ void EventLogger::flush() {
     _writeBuffer.clear();
     xSemaphoreGiveRecursive(_mutex);
 
-    if (!isSDReady()) {
-        // SD is not ready yet, keep in memory with a safety cap to prevent OOM
+    if (!isSDReady() || audioManager.getState() != AUDIO_IDLE) {
+        // SD is not ready or audio is playing, keep in memory with a safety cap to prevent OOM
         if (xSemaphoreTakeRecursive(_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
             tempBuffer.insert(tempBuffer.end(), _writeBuffer.begin(), _writeBuffer.end());
-            if (tempBuffer.size() > 100) {
-                tempBuffer.erase(tempBuffer.begin(), tempBuffer.begin() + (tempBuffer.size() - 100));
+            if (tempBuffer.size() > 150) {
+                tempBuffer.erase(tempBuffer.begin(), tempBuffer.begin() + (tempBuffer.size() - 150));
             }
             _writeBuffer = tempBuffer;
             xSemaphoreGiveRecursive(_mutex);
@@ -296,8 +302,9 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
         if (memMatches.size() >= (size_t)limit) break;
     }
 
-    // Return memory matches if we have enough or if SD card is offline
-    if (memMatches.size() >= (size_t)limit || !isSDReady()) {
+    // Return memory matches if we have enough, if SD card is offline, or if audio is actively playing
+    extern AudioManager audioManager;
+    if (memMatches.size() >= (size_t)limit || !isSDReady() || audioManager.getState() != AUDIO_IDLE) {
         xSemaphoreGiveRecursive(_mutex);
         std::reverse(memMatches.begin(), memMatches.end());
         return memMatches;
@@ -322,7 +329,7 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
     }
 
     size_t fileSize = file.size();
-    size_t readSize = 65536; // 64KB chunk is sufficient for last ~400-500 lines
+    size_t readSize = 16384; // 16KB chunk is safe for RAM and sufficient for recent lines
     if (fileSize < readSize) {
         readSize = fileSize;
     }
@@ -393,7 +400,7 @@ std::vector<String> EventLogger::getRecentLogs(int limit, const String& levelFil
 }
 
 void EventLogger::checkCircularLogLimit() {
-    if (!isSDReady()) return;
+    if (!isSDReady() || audioManager.getState() != AUDIO_IDLE) return;
 
     lockSD();
     File root = SD.open("/logs");

@@ -4,6 +4,17 @@
 #include <Preferences.h>
 #include <vector>
 #include <algorithm>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+static SemaphoreHandle_t gpioMutex = NULL;
+static void lockGpio() {
+    if (gpioMutex == NULL) gpioMutex = xSemaphoreCreateRecursiveMutex();
+    xSemaphoreTakeRecursive(gpioMutex, portMAX_DELAY);
+}
+static void unlockGpio() {
+    if (gpioMutex != NULL) xSemaphoreGiveRecursive(gpioMutex);
+}
 
 // ---- static structures ----
 static std::vector<InputMapping> inputMappings;
@@ -118,6 +129,7 @@ static void loadGPIOMappings() {
 
 // ---- public functions ----
 void initGPIO() {
+    lockGpio();
     loadGPIOMappings();
     for (auto& in : inputMappings) {
         if (isValidPin(in.pin)) {
@@ -135,9 +147,11 @@ void initGPIO() {
             digitalWrite(out.pin, LOW);
         }
     }
+    unlockGpio();
 }
 
 void checkGPIOInputs() {
+    lockGpio();
     for (auto& in : inputMappings) {
         if (!isValidPin(in.pin)) continue;
         bool cur = digitalRead(in.pin);
@@ -174,10 +188,12 @@ void checkGPIOInputs() {
         
         in.lastState = cur;
     }
+    unlockGpio();
 }
 
 void addInputMapping(const String& name, int pin, const String& file, int playDuration, int repeatCount, int outputPin, int outputDuration, int volume) {
     if (!isValidPin(pin) || !isInputPin(pin)) return;
+    lockGpio();
     inputMappings.erase(std::remove_if(inputMappings.begin(), inputMappings.end(),
         [pin](const InputMapping& m) { return m.pin == pin; }), inputMappings.end());
     InputMapping m;
@@ -197,26 +213,32 @@ void addInputMapping(const String& name, int pin, const String& file, int playDu
     }
     inputMappings.push_back(m);
     saveGPIOMappings();
+    unlockGpio();
 }
 
 void removeInputMapping(int pin) {
+    lockGpio();
     Serial.printf("[GPIOManager] Removing input mapping for pin %d. Previous count: %d\n", pin, (int)inputMappings.size());
     inputMappings.erase(std::remove_if(inputMappings.begin(), inputMappings.end(),
         [pin](const InputMapping& m) { return m.pin == pin; }), inputMappings.end());
     Serial.printf("[GPIOManager] Mapping removed. Current count: %d\n", (int)inputMappings.size());
     saveGPIOMappings();
+    unlockGpio();
 }
 
 void removeOutputMapping(int pin) {
+    lockGpio();
     Serial.printf("[GPIOManager] Removing output mapping for pin %d. Previous count: %d\n", pin, (int)outputMappings.size());
     outputMappings.erase(std::remove_if(outputMappings.begin(), outputMappings.end(),
         [pin](const OutputMapping& m) { return m.pin == pin; }), outputMappings.end());
     Serial.printf("[GPIOManager] Output mapping removed. Current count: %d\n", (int)outputMappings.size());
     saveGPIOMappings();
+    unlockGpio();
 }
 
 void addOutputMapping(int pin, const String& alertFile, int durationSec) {
     if (!isValidPin(pin) || !isOutputPin(pin)) return;
+    lockGpio();
     outputMappings.erase(std::remove_if(outputMappings.begin(), outputMappings.end(),
         [pin](const OutputMapping& m) { return m.pin == pin; }), outputMappings.end());
     OutputMapping m;
@@ -227,9 +249,11 @@ void addOutputMapping(int pin, const String& alertFile, int durationSec) {
     digitalWrite(pin, LOW);
     outputMappings.push_back(m);
     saveGPIOMappings();
+    unlockGpio();
 }
 
 String getGpioMappingsJson() {
+    lockGpio();
     DynamicJsonDocument doc(4096);
     JsonObject root = doc.to<JsonObject>();
     JsonArray inputs = root.createNestedArray("inputs");
@@ -253,10 +277,12 @@ String getGpioMappingsJson() {
     }
     String json;
     serializeJson(doc, json);
+    unlockGpio();
     return json;
 }
 
 void setOutputForAlert(const String& alertName, int durationSec) {
+    lockGpio();
     for (auto& out : outputMappings) {
         if (alertName.indexOf(out.alertFile) >= 0) {
             digitalWrite(out.pin, HIGH);
@@ -271,9 +297,11 @@ void setOutputForAlert(const String& alertName, int durationSec) {
             }
         }
     }
+    unlockGpio();
 }
 
 void checkOutputTimers() {
+    lockGpio();
     for (auto it = outputTimers.begin(); it != outputTimers.end(); ) {
         if (millis() >= it->second) {
             digitalWrite(it->first, LOW);
@@ -283,10 +311,12 @@ void checkOutputTimers() {
         }
     }
     checkActiveAlertOutputs();
+    unlockGpio();
 }
 
 void triggerAlertOutput(uint8_t pin, const String& mode, const String& durationMode, int durationSec) {
     if (!isValidPin(pin)) return;
+    lockGpio();
     pinMode(pin, OUTPUT);
     
     // Remove if already exists
@@ -319,6 +349,7 @@ void triggerAlertOutput(uint8_t pin, const String& mode, const String& durationM
     
     activeAlertOutputs.push_back(activeOut);
     Serial.printf("[GPIO] Triggered Alert Output: Pin=%d, Mode=%s, DurationMode=%s, DurSec=%d\n", pin, mode.c_str(), durationMode.c_str(), durationSec);
+    unlockGpio();
 }
 
 void checkActiveAlertOutputs() {
@@ -362,22 +393,27 @@ void checkActiveAlertOutputs() {
 // ---- GPIO schedule functions ----
 void addGpioSchedule(const GpioScheduleEntry& entry, int index) {
     if (!isValidPin(entry.pin)) return;
+    lockGpio();
     if (index >= 0 && index < (int)gpioSchedules.size()) {
         gpioSchedules[index] = entry;
     } else {
         gpioSchedules.push_back(entry);
     }
     saveGpioSchedules();
+    unlockGpio();
 }
 
 void removeGpioSchedule(int index) {
+    lockGpio();
     if (index >= 0 && index < (int)gpioSchedules.size()) {
         gpioSchedules.erase(gpioSchedules.begin() + index);
         saveGpioSchedules();
     }
+    unlockGpio();
 }
 
 String getGpioSchedulesJson() {
+    lockGpio();
     DynamicJsonDocument doc(4096);
     JsonArray arr = doc.to<JsonArray>();
     for (const auto& s : gpioSchedules) {
@@ -401,10 +437,12 @@ String getGpioSchedulesJson() {
     }
     String json;
     serializeJson(doc, json);
+    unlockGpio();
     return json;
 }
 
 void checkGpioSchedules() {
+    lockGpio();
     time_t now = time(nullptr);
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
@@ -473,9 +511,11 @@ void checkGpioSchedules() {
             sched.triggered = false;
         }
     }
+    unlockGpio();
 }
 
 void loadGpioSchedules() {
+    lockGpio();
     Preferences prefs;
     prefs.begin("gpio_sched", true);
     String json = prefs.getString("schedules", "[]");
@@ -508,6 +548,7 @@ void loadGpioSchedules() {
             gpioSchedules.push_back(e);
         }
     }
+    unlockGpio();
 }
 
 void saveGpioSchedules() {

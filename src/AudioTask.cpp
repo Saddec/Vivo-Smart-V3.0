@@ -14,14 +14,21 @@ static String normalizeAudioPath(const char* path) {
     String fullPath = String(path);
     fullPath.trim();
     if (fullPath.startsWith("http://") || fullPath.startsWith("https://")) {
-        if (fullPath.startsWith("https://")) {
-            fullPath = "http://" + fullPath.substring(8);
-        }
         return fullPath;
     }
     if (!fullPath.startsWith("/")) fullPath = "/" + fullPath;
     fullPath.replace("//", "/");
     return fullPath;
+}
+
+static String toggleUrlScheme(const String& url) {
+    if (url.startsWith("https://")) {
+        return "http://" + url.substring(8);
+    }
+    if (url.startsWith("http://")) {
+        return "https://" + url.substring(7);
+    }
+    return url;
 }
 
 static uint8_t clampPowerSafeVolume(uint8_t volume) {
@@ -57,6 +64,8 @@ void AudioManager::begin() {
         Serial.println("[Audio] SD Card OK.");
     }
     _audio = new Audio();
+    _audio->setBufsize(16384, 300000);
+    _audio->setConnectionTimeout(4000, 5000);
     _audio->setPinout(I2S_BCLK, I2S_LRCK, I2S_DOUT);
     _audio->setVolume(10); // Map initial volume 15 to library scale: (15 * 21) / 30 = 10
 
@@ -107,12 +116,29 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
         stop();
     }
 
-    if (_state != AUDIO_IDLE) _audio->stopSong();
+    if (_state != AUDIO_IDLE) {
+        bool prevWasUrl = _currentFile.startsWith("http://") || _currentFile.startsWith("https://");
+        if (!prevWasUrl) lockSD();
+        _audio->stopSong();
+        if (!prevWasUrl) unlockSD();
+    }
 
     _adhanPlaying = (priority >= 2);
+    _streamFallbackTried = false;
+    _streamRetryCount = 0;
 
     if (isUrl) {
-        if (!_audio->connecttohost(fullPath.c_str())) {
+        bool ok = _audio->connecttohost(fullPath.c_str());
+        if (!ok) {
+            String altUrl = toggleUrlScheme(fullPath);
+            if (altUrl != fullPath) {
+                Serial.printf("[Audio] Retrying stream with alternate scheme: %s\n", altUrl.c_str());
+                _streamFallbackTried = true;
+                ok = _audio->connecttohost(altUrl.c_str());
+                if (ok) fullPath = altUrl;
+            }
+        }
+        if (!ok) {
             Serial.printf("[Audio] Cannot play stream: %s\n", fullPath.c_str());
             LOG_E("AUDIO", "Cannot play stream: %s", fullPath.c_str());
             _state = AUDIO_IDLE;
@@ -125,7 +151,10 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
         }
         LOG_I("AUDIO", "Started streaming URL: %s", fullPath.c_str());
     } else {
-        if (!SD.exists(fullPath)) {
+        lockSD();
+        bool exists = SD.exists(fullPath);
+        if (!exists) {
+            unlockSD();
             Serial.printf("[Audio] Missing file: %s\n", fullPath.c_str());
             LOG_E("AUDIO", "Missing audio file: %s", fullPath.c_str());
             _state = AUDIO_IDLE;
@@ -136,7 +165,9 @@ bool AudioManager::playFile(const char* path, int priority, uint32_t duration, u
             xSemaphoreGiveRecursive(_audioMutex);
             return false;
         }
-        if (!_audio->connecttoSD(fullPath.c_str())) {
+        bool ok = _audio->connecttoSD(fullPath.c_str());
+        unlockSD();
+        if (!ok) {
             Serial.printf("[Audio] Cannot play: %s\n", fullPath.c_str());
             LOG_E("AUDIO", "Cannot play audio file: %s", fullPath.c_str());
             _state = AUDIO_IDLE;
@@ -233,8 +264,7 @@ void AudioManager::advancePlaylist() {
         }
         _currentPriority = 0;
         LOG_AUD("AUDIO", "Playlist playback completed");
-        extern String currentAudioDescription;
-        currentAudioDescription = "";
+        setAudioDescription("");
         xSemaphoreGiveRecursive(_audioMutex);
     }
 }
@@ -283,7 +313,9 @@ void AudioManager::stop() {
     }
     if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio) {
+        lockSD();
         _audio->stopSong();
+        unlockSD();
         _state = AUDIO_IDLE;
         _currentPriority = 0;
         _currentFile = "";
@@ -310,8 +342,7 @@ void AudioManager::stop() {
         _suspendedPauseAfterAdhan = 0;
         _isPlaylistSuspendedState = false;
         _waitingForResumption = false;
-        extern String currentAudioDescription;
-        currentAudioDescription = "";
+        setAudioDescription("");
         LOG_AUD("AUDIO", "Playback stopped");
     }
     xSemaphoreGiveRecursive(_audioMutex);
@@ -321,7 +352,9 @@ void AudioManager::pause() {
     if (_adhanPlaying) return;
     if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && _state == AUDIO_PLAYING) {
+        lockSD();
         _audio->pauseResume();
+        unlockSD();
         _state = AUDIO_PAUSED;
         _cachedIsRunning = false;
         LOG_AUD("AUDIO", "Playback paused");
@@ -333,7 +366,9 @@ void AudioManager::resume() {
     if (_adhanPlaying) return;
     if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && _state == AUDIO_PAUSED) {
+        lockSD();
         _audio->pauseResume();
+        unlockSD();
         _state = AUDIO_PLAYING;
         _cachedIsRunning = true;
         LOG_AUD("AUDIO", "Playback resumed");
@@ -345,7 +380,9 @@ void AudioManager::seekTo(uint16_t seconds) {
     if (_adhanPlaying) return;
     if (xSemaphoreTakeRecursive(_audioMutex, portMAX_DELAY) != pdTRUE) return;
     if (_audio && (_state == AUDIO_PLAYING || _state == AUDIO_PAUSED)) {
+        lockSD();
         _audio->setAudioPlayPosition(seconds);
+        unlockSD();
     }
     xSemaphoreGiveRecursive(_audioMutex);
 }
@@ -399,6 +436,22 @@ String AudioManager::getCurrentFile() {
     return ret;
 }
 
+String AudioManager::getAudioDescription() {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return "";
+    extern String currentAudioDescription;
+    String ret = currentAudioDescription.length() > 0 ? currentAudioDescription : ("تشغيل: " + _currentFile);
+    xSemaphoreGiveRecursive(_audioMutex);
+    return ret;
+}
+
+void AudioManager::setAudioDescription(const String& desc) {
+    if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        extern String currentAudioDescription;
+        currentAudioDescription = desc;
+        xSemaphoreGiveRecursive(_audioMutex);
+    }
+}
+
 bool AudioManager::isAdhanPlaying() {
     if (xSemaphoreTakeRecursive(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) return _adhanPlaying;
     bool ret = _adhanPlaying;
@@ -428,7 +481,16 @@ void AudioManager::audioOnStop(void *userData) {
     }
     if (self->_repeatMode) {
         String repeatPath = normalizeAudioPath(self->_currentFile.c_str());
-        if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
+        bool isUrl = repeatPath.startsWith("http://") || repeatPath.startsWith("https://");
+        bool ok = false;
+        if (isUrl) {
+            ok = self->_audio->connecttohost(repeatPath.c_str());
+        } else {
+            lockSD();
+            ok = SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str());
+            unlockSD();
+        }
+        if (ok) {
             self->_state = AUDIO_PLAYING;
             self->_playStartTime = millis();
             self->_cachedIsRunning = true;
@@ -441,7 +503,16 @@ void AudioManager::audioOnStop(void *userData) {
     if (self->_repeatCount > 0) {
         self->_repeatCount--;
         String repeatPath = normalizeAudioPath(self->_currentFile.c_str());
-        if (SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str())) {
+        bool isUrl = repeatPath.startsWith("http://") || repeatPath.startsWith("https://");
+        bool ok = false;
+        if (isUrl) {
+            ok = self->_audio->connecttohost(repeatPath.c_str());
+        } else {
+            lockSD();
+            ok = SD.exists(repeatPath) && self->_audio->connecttoSD(repeatPath.c_str());
+            unlockSD();
+        }
+        if (ok) {
             self->_state = AUDIO_PLAYING;
             self->_playStartTime = millis();
             self->_cachedIsRunning = true;
@@ -451,9 +522,18 @@ void AudioManager::audioOnStop(void *userData) {
             return;
         }
     }
-    if (self->_loopDuration > 0 && (millis() < self->_loopEndTime) && self->_lastPlayedFile.length() > 0) {
+    if (self->_loopDuration > 0 && ((int32_t)(millis() - self->_loopEndTime) < 0) && self->_lastPlayedFile.length() > 0) {
         String loopPath = normalizeAudioPath(self->_lastPlayedFile.c_str());
-        if (SD.exists(loopPath) && self->_audio->connecttoSD(loopPath.c_str())) {
+        bool isUrl = loopPath.startsWith("http://") || loopPath.startsWith("https://");
+        bool ok = false;
+        if (isUrl) {
+            ok = self->_audio->connecttohost(loopPath.c_str());
+        } else {
+            lockSD();
+            ok = SD.exists(loopPath) && self->_audio->connecttoSD(loopPath.c_str());
+            unlockSD();
+        }
+        if (ok) {
             self->_state = AUDIO_PLAYING;
             self->_cachedIsRunning = true;
             self->_cachedDuration = 0;
@@ -463,8 +543,7 @@ void AudioManager::audioOnStop(void *userData) {
             self->_cachedIsRunning = false;
             self->_cachedDuration = 0;
             self->_cachedCurrentTime = 0;
-            extern String currentAudioDescription;
-            currentAudioDescription = "";
+            self->setAudioDescription("");
         }
         xSemaphoreGiveRecursive(self->_audioMutex);
         return;
@@ -489,16 +568,16 @@ void AudioManager::audioOnStop(void *userData) {
     self->_cachedDuration = 0;
     self->_cachedCurrentTime = 0;
     self->_pendingSeekTime = 0;
-    extern String currentAudioDescription;
-    currentAudioDescription = "";
+    self->setAudioDescription("");
     xSemaphoreGiveRecursive(self->_audioMutex);
 }
 
 void AudioManager::loop() {
     if (!_audio) return;
-    lockSD();
+    bool currentIsUrl = _currentFile.startsWith("http://") || _currentFile.startsWith("https://");
+    if (!currentIsUrl) lockSD();
     _audio->loop();
-    unlockSD();
+    if (!currentIsUrl) unlockSD();
 
     if (xSemaphoreTakeRecursive(_audioMutex, 0) == pdTRUE) {
         _cachedIsRunning = _audio->isRunning();
@@ -517,28 +596,51 @@ void AudioManager::loop() {
         if (_state == AUDIO_PLAYING && _pendingSeekTime > 0 && _cachedDuration > 0) {
             Serial.printf("[Audio] Applying pending seek to %u seconds\n", _pendingSeekTime);
             if (_audio) {
+                lockSD();
                 _audio->setAudioPlayPosition(_pendingSeekTime);
+                unlockSD();
             }
             _pendingSeekTime = 0;
         }
 
-        // Manual resumption disabled: check for waitingForResumption removed.
-        /*
-        if (_waitingForResumption && _manualSuspended && _state == AUDIO_IDLE) {
-            if (millis() - _alertEndTime >= 30000) {
-                Serial.println("[Audio] 30 seconds passed. Triggering resumption of manual playback.");
-                _waitingForResumption = false;
-                resumeManualPlayback();
-            }
-        }
-        */
-
         if (_state == AUDIO_PLAYING && !_cachedIsRunning) {
+            bool isUrl = _currentFile.startsWith("http://") || _currentFile.startsWith("https://");
+            if (isUrl && !_streamFallbackTried && (millis() - _playStartTime < 10000)) {
+                _streamFallbackTried = true;
+                String altUrl = toggleUrlScheme(_currentFile);
+                if (altUrl != _currentFile) {
+                    Serial.printf("[Audio] Stream header failed, trying alternate scheme: %s\n", altUrl.c_str());
+                    if (_audio->connecttohost(altUrl.c_str())) {
+                        _currentFile = altUrl;
+                        if (_loopDuration > 0) _lastPlayedFile = altUrl;
+                        _playStartTime = millis();
+                        _cachedIsRunning = true;
+                        xSemaphoreGiveRecursive(_audioMutex);
+                        checkPlaylistResume();
+                        return;
+                    }
+                }
+            } else if (isUrl && _streamRetryCount < 3 && (millis() - _playStartTime >= 10000)) {
+                _streamRetryCount++;
+                Serial.printf("[Audio] Live stream dropped, auto-reconnecting (%u/3): %s\n", _streamRetryCount, _currentFile.c_str());
+                if (_audio->connecttohost(_currentFile.c_str())) {
+                    _playStartTime = millis();
+                    _cachedIsRunning = true;
+                    xSemaphoreGiveRecursive(_audioMutex);
+                    checkPlaylistResume();
+                    return;
+                }
+            }
             audioOnStop(this);
         }
 
         if (_state == AUDIO_PLAYING && _customDuration > 0 &&
             (millis() - _playStartTime >= _customDuration * 1000)) {
+            stop();
+        }
+
+        if (_state == AUDIO_PLAYING && _loopDuration > 0 && _loopEndTime > 0 &&
+            ((int32_t)(millis() - _loopEndTime) >= 0)) {
             stop();
         }
         xSemaphoreGiveRecursive(_audioMutex);
@@ -714,5 +816,11 @@ void audioTask(void *pvParameters) {
         }
         audioManager.loop();
         vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+}
+
+void audio_info(const char *info) {
+    if (info && info[0] != '\0') {
+        Serial.printf("[AudioLib] %s\n", info);
     }
 }

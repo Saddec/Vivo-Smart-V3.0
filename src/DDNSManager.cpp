@@ -26,7 +26,7 @@ void DDNSManager::loadConfig() {
 
 void DDNSManager::forceUpdate() {
     loadConfig();
-    if (_enabled) performUpdate();
+    _lastUpdate = 0; // Trigger update on next SystemTask loop
 }
 
 void DDNSManager::loop() {

@@ -54,6 +54,8 @@ public:
     bool getRepeatMode();
     AudioState getState();
     String getCurrentFile();
+    String getAudioDescription();
+    void setAudioDescription(const String& desc);
     bool isI2SReady() const;
     bool isAdhanPlaying();
     int getCurrentPriority();
@@ -113,6 +115,8 @@ private:
     uint8_t _cachedVolume = 0;
     bool _cachedIsRunning = false;
     unsigned long _lastInfoCacheUpdate = 0;
+    bool _streamFallbackTried = false;
+    uint8_t _streamRetryCount = 0;
 };
 
 void audioTask(void *pvParameters);

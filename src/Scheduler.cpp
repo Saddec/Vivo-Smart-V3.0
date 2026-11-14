@@ -11,10 +11,15 @@
 
 Scheduler scheduler;
 
-void Scheduler::begin() { loadFromNVS(); lastCheck = 0; }
+void Scheduler::begin() {
+    if (_schedMutex == NULL) _schedMutex = xSemaphoreCreateRecursiveMutex();
+    loadFromNVS();
+    lastCheck = 0;
+}
 
 static bool scheduledFileExists(const String& fileName) {
     if (fileName.length() == 0) return true;
+    if (fileName.startsWith("http://") || fileName.startsWith("https://")) return true;
     if (!isSDReady()) return true;
 
     int startIdx = 0;
@@ -24,6 +29,7 @@ static bool scheduledFileExists(const String& fileName) {
         startIdx = commaIdx == -1 ? fileName.length() : commaIdx + 1;
         subFile.trim();
         if (subFile.length() == 0) continue;
+        if (subFile.startsWith("http://") || subFile.startsWith("https://")) continue;
         subFile.replace("\\", "/");
         while (subFile.startsWith("/")) subFile.remove(0, 1);
         String fullPath = "/" + subFile;
@@ -35,15 +41,18 @@ static bool scheduledFileExists(const String& fileName) {
     return true;
 }
 void Scheduler::addAlert(const ScheduledAlert& alert, int index) {
+    if (_schedMutex) xSemaphoreTakeRecursive(_schedMutex, portMAX_DELAY);
     if (index >= 0 && index < (int)alerts.size()) {
         alerts[index] = alert;
     } else {
         alerts.push_back(alert);
     }
     saveToNVS();
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
 }
 
 String Scheduler::getAlertsJson() {
+    if (_schedMutex) xSemaphoreTakeRecursive(_schedMutex, portMAX_DELAY);
     DynamicJsonDocument doc(8192); JsonArray arr = doc.to<JsonArray>();
     for (const auto& a : alerts) {
         JsonObject obj = arr.createNestedObject();
@@ -54,6 +63,7 @@ String Scheduler::getAlertsJson() {
         obj["isPrayerRelative"]=a.isPrayerRelative; obj["prayerIndex"]=a.prayerIndex;
         obj["offsetSeconds"]=a.offsetSeconds; obj["validFrom"]=a.validFrom; obj["validTo"]=a.validTo;
         obj["eidOnly"]=a.eidOnly;
+        obj["bothModes"]=a.bothModes;
         obj["repeatInterval"]=a.repeatInterval;
         obj["endHour"]=a.endHour;
         obj["endMinute"]=a.endMinute;
@@ -63,25 +73,37 @@ String Scheduler::getAlertsJson() {
         obj["gpioDurationMode"]=a.gpioDurationMode;
         obj["gpioDurationSec"]=a.gpioDurationSec;
         obj["important"]=a.important;
+        obj["skipAdhan"]=a.skipAdhan;
+        obj["skipIqama"]=a.skipIqama;
     }
-    String json; serializeJson(doc, json); return json;
+    String json; serializeJson(doc, json);
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
+    return json;
 }
 
-void Scheduler::removeAlert(int index) { if(index>=0&&index<(int)alerts.size()){alerts.erase(alerts.begin()+index); saveToNVS(); } }
+void Scheduler::removeAlert(int index) {
+    if (_schedMutex) xSemaphoreTakeRecursive(_schedMutex, portMAX_DELAY);
+    if(index>=0&&index<(int)alerts.size()){alerts.erase(alerts.begin()+index); saveToNVS(); }
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
+}
 
 void Scheduler::setAlertEnabled(int index, bool enabled) {
+    if (_schedMutex) xSemaphoreTakeRecursive(_schedMutex, portMAX_DELAY);
     if (index >= 0 && index < (int)alerts.size()) {
         alerts[index].enabled = enabled;
         saveToNVS();
     }
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
 }
 
 void Scheduler::checkAndTrigger() {
     time_t now = time(nullptr); if(now - lastCheck < 1) return; lastCheck=now;
+    if (_schedMutex && xSemaphoreTakeRecursive(_schedMutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
     struct tm timeinfo; localtime_r(&now,&timeinfo);
     int curHour=timeinfo.tm_hour, curMin=timeinfo.tm_min, curWday=timeinfo.tm_wday,
         curMday=timeinfo.tm_mday, curMon=timeinfo.tm_mon+1, curYear=timeinfo.tm_year+1900;
-    extern PrayerTimesResult todayPrayer;
+    extern PrayerTimesResult getTodayPrayerSafe();
+    PrayerTimesResult curPrayer = getTodayPrayerSafe();
     bool eidActive = isEidMode();
     extern AudioManager audioManager;
 
@@ -89,10 +111,11 @@ void Scheduler::checkAndTrigger() {
     for (const auto& alert : alerts) {
         if (alert.enabled && alert.endHour == curHour && alert.endMinute == curMin && alert.repeatInterval <= 0) {
             String alertDesc = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
-            extern String currentAudioDescription;
-            if (currentAudioDescription == alertDesc && audioManager.getState() != AUDIO_IDLE) {
+            if (audioManager.getAudioDescription() == alertDesc && audioManager.getState() != AUDIO_IDLE) {
                 Serial.printf("[Scheduler] Stopping alert '%s' because its end time %02d:%02d was reached\n", alert.name.c_str(), alert.endHour, alert.endMinute);
-                audioManager.stop();
+                extern QueueHandle_t audioQueue;
+                AudioMessage msgCmd = {CMD_STOP, 0, 0, 0, 0, 0, 0};
+                xQueueSend(audioQueue, &msgCmd, 0);
             }
         }
     }
@@ -102,7 +125,7 @@ void Scheduler::checkAndTrigger() {
     if (shouldLog) {
         lastLoggedMin = timeinfo.tm_min;
         Serial.printf("[Scheduler] Time: %02d:%02d:%02d, Date: %04d-%02d-%02d, Wday: %d, Eid: %d, PrayerValid: %d\n",
-                      curHour, curMin, timeinfo.tm_sec, curYear, curMon, curMday, curWday, eidActive, todayPrayer.valid);
+                      curHour, curMin, timeinfo.tm_sec, curYear, curMon, curMday, curWday, eidActive, curPrayer.valid);
     }
 
     // Check if Adhan is playing or if we are in the Adhan-to-Iqama block period
@@ -113,9 +136,9 @@ void Scheduler::checkAndTrigger() {
     if (audioManager.isAdhanPlaying()) {
         isBlockPeriod = true;
         blockReason = "Adhan is playing";
-    } else if (todayPrayer.valid) {
+    } else if (curPrayer.valid) {
         const char* pNames[] = {"Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"};
-        String pTimes[5] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
+        String pTimes[5] = {curPrayer.fajr, curPrayer.dhuhr, curPrayer.asr, curPrayer.maghrib, curPrayer.isha};
         int curTimeMin = curHour * 60 + curMin;
 
         for (int i = 0; i < 5; i++) {
@@ -150,6 +173,7 @@ void Scheduler::checkAndTrigger() {
             lastLogTime = now;
             Serial.printf("[Scheduler] Alert blocking active: %s. Skipping all alert triggers.\n", blockReason.c_str());
         }
+        if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
         return; // Prevent alerts from interrupting the Adhan itself.
     }
 
@@ -230,14 +254,14 @@ void Scheduler::checkAndTrigger() {
             targetMin = alert.minute;
         }
         else if(alert.type=="prayer_relative" && alert.isPrayerRelative) {
-            if(!todayPrayer.valid) {
+            if(!curPrayer.valid) {
                 if (shouldLog) {
                     Serial.printf("  - Alert '%s' (prayer_relative): skipped (Prayer times invalid)\n", alert.name.c_str());
                 }
                 continue;
             }
             String pStr;
-            switch(alert.prayerIndex){ case 0:pStr=todayPrayer.fajr;break; case 1:pStr=todayPrayer.dhuhr;break; case 2:pStr=todayPrayer.asr;break; case 3:pStr=todayPrayer.maghrib;break; case 4:pStr=todayPrayer.isha;break; }
+            switch(alert.prayerIndex){ case 0:pStr=curPrayer.fajr;break; case 1:pStr=curPrayer.dhuhr;break; case 2:pStr=curPrayer.asr;break; case 3:pStr=curPrayer.maghrib;break; case 4:pStr=curPrayer.isha;break; }
             int pH = 0, pM = 0;
             if (sscanf(pStr.c_str(), "%d:%d", &pH, &pM) != 2) {
                 if (shouldLog) {
@@ -307,7 +331,7 @@ void Scheduler::checkAndTrigger() {
                         continue;
                     }
                 }
-                currentAudioDescription = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
+                audioManager.setAudioDescription(alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName));
                 LOG_SCH("SCHEDULER", "Triggering alert: '%s' (file: %s, vol: %d)", alert.name.c_str(), alert.fileName.c_str(), alert.volume);
                 if (alert.fileName.indexOf(',') != -1) {
                     extern QueueHandle_t audioQueue;
@@ -324,7 +348,7 @@ void Scheduler::checkAndTrigger() {
                         Serial.printf("[Scheduler] fileBufferMutex timeout for playlist alert '%s'\n", alert.name.c_str());
                     }
                 } else {
-                    sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, alert.loopDuration);
+                    sendPlayCommand(alert.fileName.c_str(), 1, alert.durationSec, alert.volume, (uint32_t)alert.loopDuration * 60);
                 }
                 
                 // Trigger linked GPIO output if active
@@ -337,6 +361,7 @@ void Scheduler::checkAndTrigger() {
             }
         }
     }
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
 }
 
 void Scheduler::loadFromNVS() {
@@ -398,6 +423,7 @@ void Scheduler::saveToNVS() {
 }
 
 bool Scheduler::shouldSkipAdhan(int prayerIndex) {
+    if (_schedMutex && xSemaphoreTakeRecursive(_schedMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     time_t now_ts = time(nullptr);
     struct tm t_now;
     localtime_r(&now_ts, &t_now);
@@ -416,13 +442,18 @@ bool Scheduler::shouldSkipAdhan(int prayerIndex) {
                     dayMatch = ((alert.dayOfWeek & (1 << curWday)) != 0);
                 }
             }
-            if (dayMatch) return true;
+            if (dayMatch) {
+                if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
+                return true;
+            }
         }
     }
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
     return false;
 }
 
 bool Scheduler::shouldSkipIqama(int prayerIndex) {
+    if (_schedMutex && xSemaphoreTakeRecursive(_schedMutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     time_t now_ts = time(nullptr);
     struct tm t_now;
     localtime_r(&now_ts, &t_now);
@@ -441,8 +472,12 @@ bool Scheduler::shouldSkipIqama(int prayerIndex) {
                     dayMatch = ((alert.dayOfWeek & (1 << curWday)) != 0);
                 }
             }
-            if (dayMatch) return true;
+            if (dayMatch) {
+                if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
+                return true;
+            }
         }
     }
+    if (_schedMutex) xSemaphoreGiveRecursive(_schedMutex);
     return false;
 }

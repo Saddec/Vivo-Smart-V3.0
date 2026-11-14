@@ -24,11 +24,11 @@ void setup() {
     fileBufferMutex = xSemaphoreCreateMutex();
 
     xTaskCreatePinnedToCore(
-        systemTask, "SystemTask", 16384, NULL, 4, NULL, 0
+        systemTask, "SystemTask", 20480, NULL, 4, NULL, 0
     );
 
     xTaskCreatePinnedToCore(
-        audioTask, "AudioTask", 16384, NULL, 8, NULL, 1
+        audioTask, "AudioTask", 32768, NULL, 8, NULL, 1
     );
 }
 

@@ -245,13 +245,36 @@ int PrayerTimesEngine::getDefaultMethod(const String& country) {
     return 1;
 }
 
+static String s_cachedOnlineKey;
+static PrayerTimesResult s_cachedOnlineResult;
+static SemaphoreHandle_t s_onlineCacheMutex = NULL;
+
+bool PrayerTimesEngine::getCachedOnline(const String& country, const String& city, time_t date, const PrayerConfig& config, PrayerTimesResult& result) {
+    if (s_onlineCacheMutex == NULL) s_onlineCacheMutex = xSemaphoreCreateMutex();
+    struct tm tinfo;
+    localtime_r(&date, &tinfo);
+    char dateBuf[11];
+    snprintf(dateBuf, sizeof(dateBuf), "%02d-%02d-%04d", tinfo.tm_mday, tinfo.tm_mon + 1, tinfo.tm_year + 1900);
+    String key = country + "|" + city + "|" + String(dateBuf) + "|" + String(config.method);
+    if (xSemaphoreTake(s_onlineCacheMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (s_cachedOnlineKey == key && s_cachedOnlineResult.valid) {
+            result = s_cachedOnlineResult;
+            xSemaphoreGive(s_onlineCacheMutex);
+            applyOffsets(result, config);
+            return true;
+        }
+        xSemaphoreGive(s_onlineCacheMutex);
+    }
+    return false;
+}
+
 bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, time_t date, const PrayerConfig& config, PrayerTimesResult& result) {
+    if (getCachedOnline(country, city, date, config, result)) {
+        return true;
+    }
     if (WiFi.status() != WL_CONNECTED) return false;
 
-    static String cachedKey;
-    static PrayerTimesResult cachedResult;
-    static SemaphoreHandle_t cacheMutex = NULL;
-    if (cacheMutex == NULL) cacheMutex = xSemaphoreCreateMutex();
+    if (s_onlineCacheMutex == NULL) s_onlineCacheMutex = xSemaphoreCreateMutex();
 
     struct tm tinfo;
     localtime_r(&date, &tinfo);
@@ -259,15 +282,6 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
     snprintf(dateBuf, sizeof(dateBuf), "%02d-%02d-%04d", tinfo.tm_mday, tinfo.tm_mon + 1, tinfo.tm_year + 1900);
 
     String key = country + "|" + city + "|" + String(dateBuf) + "|" + String(config.method);
-    if (xSemaphoreTake(cacheMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        if (cachedKey == key && cachedResult.valid) {
-            result = cachedResult;
-            xSemaphoreGive(cacheMutex);
-            applyOffsets(result, config);
-            return true;
-        }
-        xSemaphoreGive(cacheMutex);
-    }
 
     String url = "https://api.aladhan.com/v1/timingsByCity/" + String(dateBuf) +
                  "?city=" + urlEncode(city) +
@@ -279,6 +293,8 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
 
     HTTPClient http;
     http.setTimeout(3500);
+    http.useHTTP10(true);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.begin(client, url);
     int code = http.GET();
     if (code != 200) {
@@ -314,10 +330,10 @@ bool PrayerTimesEngine::fetchOnline(const String& country, const String& city, t
         Serial.println("[Prayer] Umm Al-Qura calibration applied: dhuhr=+1 asr=+1");
     }
 
-    if (xSemaphoreTake(cacheMutex, portMAX_DELAY) == pdTRUE) {
-        cachedKey = key;
-        cachedResult = result;
-        xSemaphoreGive(cacheMutex);
+    if (xSemaphoreTake(s_onlineCacheMutex, portMAX_DELAY) == pdTRUE) {
+        s_cachedOnlineKey = key;
+        s_cachedOnlineResult = result;
+        xSemaphoreGive(s_onlineCacheMutex);
     }
     applyOffsets(result, config);
     Serial.printf("[Prayer] Online timings loaded: %s %s %s\n", country.c_str(), city.c_str(), dateBuf);

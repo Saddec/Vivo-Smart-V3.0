@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <vector>
 #include <Preferences.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 struct DailyMaghribAlert {
     String fileName;
@@ -25,6 +27,7 @@ public:
     static int getMP3Duration(const String& path);
 private:
     DailyMaghribAlert alerts[7];
+    SemaphoreHandle_t _maghribMutex = NULL;
     time_t triggerTimeToday;
     bool triggeredToday;
     void loadFromNVS();

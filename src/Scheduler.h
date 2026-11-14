@@ -2,6 +2,8 @@
 #define SCHEDULER_H
 #include <Arduino.h>
 #include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 struct ScheduledAlert {
     String name;
@@ -47,6 +49,7 @@ public:
     bool shouldSkipIqama(int prayerIndex);
 private:
     std::vector<ScheduledAlert> alerts;
+    SemaphoreHandle_t _schedMutex = NULL;
     time_t lastCheck;
     void loadFromNVS();
     void saveToNVS();

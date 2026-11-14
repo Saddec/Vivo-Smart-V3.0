@@ -27,5 +27,7 @@ struct IqamaConfig {
 extern IqamaConfig currentIqamaConfig;
 void loadIqamaConfig();
 extern String currentAudioDescription;
+PrayerTimesResult getTodayPrayerSafe();
+void setTodayPrayerSafe(const PrayerTimesResult& p);
 
 #endif

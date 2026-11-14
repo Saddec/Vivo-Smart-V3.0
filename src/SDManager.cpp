@@ -24,6 +24,9 @@ static bool sdInitialized = false;
 static unsigned long lastSdAttempt = 0;
 static String lastSdError = "not_started";
 static SDPinSet activePins = sdPinSets[0];
+static uint32_t cachedTotalMB = 0;
+static uint32_t cachedUsedMB = 0;
+static unsigned long lastSpaceCalcMs = 0;
 
 static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
     pinMode(pins.cs, OUTPUT);
@@ -69,6 +72,9 @@ bool initSDCard(bool force) {
     lockSD();
     lastSdAttempt = nowMs;
     sdInitialized = false;
+    cachedTotalMB = 0;
+    cachedUsedMB = 0;
+    lastSpaceCalcMs = 0;
     SD.end();
 
     Serial.println("[SD] 🔄 Trying to mount SD Card...");
@@ -110,7 +116,10 @@ bool shouldRetrySDCard() {
 }
 
 const char* getSDCardTypeName() {
+    if (!sdInitialized) return "NONE";
+    lockSD();
     uint8_t cardType = SD.cardType();
+    unlockSD();
     if (cardType == CARD_MMC) return "MMC";
     if (cardType == CARD_SD) return "SDSC";
     if (cardType == CARD_SDHC) return "SDHC";
@@ -119,12 +128,24 @@ const char* getSDCardTypeName() {
 
 uint32_t getSDTotalMB() {
     if (!sdInitialized) return 0;
-    return (uint32_t)(SD.cardSize() / (1024ULL * 1024ULL));
+    if (cachedTotalMB == 0) {
+        lockSD();
+        cachedTotalMB = (uint32_t)(SD.cardSize() / (1024ULL * 1024ULL));
+        unlockSD();
+    }
+    return cachedTotalMB;
 }
 
 uint32_t getSDUsedMB() {
     if (!sdInitialized) return 0;
-    return (uint32_t)(SD.usedBytes() / (1024ULL * 1024ULL));
+    unsigned long now = millis();
+    if (lastSpaceCalcMs == 0 || (now - lastSpaceCalcMs >= 60000)) {
+        lockSD();
+        cachedUsedMB = (uint32_t)(SD.usedBytes() / (1024ULL * 1024ULL));
+        unlockSD();
+        lastSpaceCalcMs = now;
+    }
+    return cachedUsedMB;
 }
 
 const String& getLastSDError() {

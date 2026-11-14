@@ -12,6 +12,9 @@
 #include "DDNSManager.h"
 #include "EventLogger.h"
 #include <WiFi.h>
+#include <esp_netif.h>
+#include <lwip/dns.h>
+#include <lwip/ip_addr.h>
 #include <time.h>
 #include <Preferences.h>
 #include <math.h>
@@ -30,6 +33,25 @@ static const unsigned long apDisableStableMs = 5000;
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
 PrayerTimesResult todayPrayer;
+static SemaphoreHandle_t prayerDataMutex = NULL;
+static void lockPrayerData() {
+    if (prayerDataMutex == NULL) prayerDataMutex = xSemaphoreCreateRecursiveMutex();
+    xSemaphoreTakeRecursive(prayerDataMutex, portMAX_DELAY);
+}
+static void unlockPrayerData() {
+    if (prayerDataMutex != NULL) xSemaphoreGiveRecursive(prayerDataMutex);
+}
+PrayerTimesResult getTodayPrayerSafe() {
+    lockPrayerData();
+    PrayerTimesResult res = todayPrayer;
+    unlockPrayerData();
+    return res;
+}
+void setTodayPrayerSafe(const PrayerTimesResult& p) {
+    lockPrayerData();
+    todayPrayer = p;
+    unlockPrayerData();
+}
 time_t lastPrayerCalc = 0;
 static time_t lastCalendarLoad = 0;
 static time_t loadManualTimeStatus = 0;
@@ -51,10 +73,12 @@ static const unsigned long startupAlertDelayMs = 3000;
 static const unsigned long onlinePrayerStartupDelayMs = 20000;
 
 void forcePrayerRecalc() {
+    lockPrayerData();
     lastPrayerCalc = 0;
     lastCalendarLoad = 0;
     lastCSVLoad = 0;
     todayPrayer.valid = false;
+    unlockPrayerData();
     resetEidTakbeerWindow();
 }
 
@@ -80,7 +104,30 @@ static void stopSetupAp() {
 }
 
 // ---------- WiFi ----------
+static void configureIPv6DnsBackup() {
+    ip_addr_t dns6;
+    if (ipaddr_aton("2001:4860:4860::8888", &dns6)) {
+        dns_setserver(1, &dns6);
+    }
+}
+
 void setupWiFi() {
+    static bool wifiEventsRegistered = false;
+    if (!wifiEventsRegistered) {
+        wifiEventsRegistered = true;
+        WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
+            if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED || event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+                WiFi.enableIpV6();
+            } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP6) {
+                configureIPv6DnsBackup();
+                esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                esp_ip6_addr_t ip6;
+                if (netif && esp_netif_get_ip6_global(netif, &ip6) == ESP_OK) {
+                    LOG_WF("WIFI", "Global IPv6 ready: " IPV6STR, IPV62STR(ip6));
+                }
+            }
+        });
+    }
     WiFi.mode(WIFI_STA);
     Preferences prefs;
     prefs.begin("network", true);
@@ -90,7 +137,7 @@ void setupWiFi() {
         gateway.fromString(prefs.getString("gw", "192.168.1.1"));
         subnet.fromString(prefs.getString("mask", "255.255.255.0"));
         dns.fromString(prefs.getString("dns", "8.8.8.8"));
-        WiFi.config(staticIP, gateway, subnet, dns);
+        WiFi.config(staticIP, gateway, subnet, dns, gateway);
         LOG_WF("WIFI", "Configured static IP: %s", staticIP.toString().c_str());
     } else {
         LOG_WF("WIFI", "Configured DHCP IP");
@@ -102,9 +149,12 @@ void setupWiFi() {
     setLedState(LED_WIFI_CONNECTING);
     LOG_WF("WIFI", "Connecting to SSID: %s", ssid.c_str());
     WiFi.begin(ssid.c_str(), pass.c_str());
+    WiFi.enableIpV6();
     int tries = 0;
     while (WiFi.status() != WL_CONNECTED && tries < 30) { vTaskDelay(500 / portTICK_PERIOD_MS); tries++; }
     if (WiFi.status() == WL_CONNECTED) {
+        WiFi.enableIpV6();
+        configureIPv6DnsBackup();
         setLedState(LED_WIFI_OK);
         lastWifiConnected = true;
         wifiConnectedAt = millis();
@@ -127,6 +177,8 @@ void maintainWiFi() {
             lastWifiConnected = true;
             wifiConnectedAt = nowMs;
             lastHardReconnect = 0;
+            WiFi.enableIpV6();
+            configureIPv6DnsBackup();
             setLedState(LED_WIFI_OK);
             LOG_WF("WIFI", "WiFi reconnected. IP: %s", WiFi.localIP().toString().c_str());
             syncTimeFromNTP();
@@ -177,7 +229,17 @@ void maintainWiFi() {
     }
 }
 
+static SemaphoreHandle_t nvsTzMutex = NULL;
+static void lockNvsTz() {
+    if (nvsTzMutex == NULL) nvsTzMutex = xSemaphoreCreateRecursiveMutex();
+    xSemaphoreTakeRecursive(nvsTzMutex, portMAX_DELAY);
+}
+static void unlockNvsTz() {
+    if (nvsTzMutex != NULL) xSemaphoreGiveRecursive(nvsTzMutex);
+}
+
 void applyConfiguredTimezone() {
+    lockNvsTz();
     Preferences prefs;
     prefs.begin("prayer_cfg", true);
     String country = prefs.getString("country", "Egypt");
@@ -193,6 +255,7 @@ void applyConfiguredTimezone() {
     }
     setenv("TZ", tzBuf, 1);
     tzset();
+    unlockNvsTz();
     Serial.printf("[Time] Timezone applied: country=%s, egyptDst=%d, TZ=%s\n", country.c_str(), egyptDst, tzBuf);
     LOG_SYS("SYSTEM", "Timezone applied: country=%s, egyptDst=%d, TZ=%s", country.c_str(), egyptDst, tzBuf);
 }
@@ -383,14 +446,20 @@ static String getIqamaFile() {
 
 void checkPrayerTimes() {
     time_t now = time(nullptr);
+    bool calOnly = CSVManager::isCalendarOnly();
+    bool csvEnabledAndAvail = (!calOnly && CSVManager::isEnabled() && CSVManager::isAvailable());
 
+    lockPrayerData();
     if (loadManualPrayerTimes(todayPrayer)) {
         // already filled
     }
-    else if (CSVManager::isCalendarOnly()) {
+    else if (calOnly) {
         if (!todayPrayer.valid || now - lastCalendarLoad > 60) {
+            unlockPrayerData();
             DailyData csv;
-            if (CSVManager::getCalendarData(csv)) {
+            bool hasCal = CSVManager::getCalendarData(csv);
+            lockPrayerData();
+            if (hasCal) {
                 applyDailyData(csv);
                 Serial.println("[Prayer] Using SD calendar only");
                 LOG_PR("PRAYER", "Using SD calendar timing data");
@@ -402,9 +471,11 @@ void checkPrayerTimes() {
             lastCalendarLoad = now;
         }
     }
-    else if (CSVManager::isEnabled() && CSVManager::isAvailable()) {
+    else if (csvEnabledAndAvail) {
         if (!todayPrayer.valid || now - lastCSVLoad > 60) {
+            unlockPrayerData();
             DailyData csv = CSVManager::getTodayData();
+            lockPrayerData();
             applyDailyData(csv);
             LOG_PR("PRAYER", "Loaded daily prayer times from SD CSV database");
             lastCSVLoad = now;
@@ -412,6 +483,7 @@ void checkPrayerTimes() {
     }
     else {
         if (!todayPrayer.valid || now - lastPrayerCalc > 3600) {
+            unlockPrayerData();
             String country, city;
             Preferences prefs;
             prefs.begin("prayer_cfg", true);
@@ -420,10 +492,11 @@ void checkPrayerTimes() {
             prefs.end();
 
             PrayerTimesResult online;
-            bool allowOnlineFetch = millis() > onlinePrayerStartupDelayMs && WiFi.status() == WL_CONNECTED;
+            bool allowOnlineFetch = millis() > onlinePrayerStartupDelayMs && WiFi.status() == WL_CONNECTED && audioManager.getState() == AUDIO_IDLE;
             if (allowOnlineFetch && PrayerTimesEngine::fetchOnline(country, city, now, currentPrayerConfig, online)) {
                 PrayerTimesEngine::applyDailyOffsets(online, now);
                 online.source = "انترنت";
+                lockPrayerData();
                 todayPrayer = online;
                 todayHijri = "";
                 Serial.println("[Prayer] System task using online timings");
@@ -431,13 +504,16 @@ void checkPrayerTimes() {
             } else {
                 DailyData csv;
                 if (CSVManager::isCalendarFallback() && CSVManager::getCalendarData(csv)) {
+                    lockPrayerData();
                     applyDailyData(csv);
                     Serial.println("[Prayer] System task using SD calendar fallback");
                     LOG_PR("PRAYER", "Online timing failed. Using SD calendar fallback data");
                 } else {
-                    todayPrayer = PrayerTimesEngine::calculate(now, currentPrayerConfig);
-                    PrayerTimesEngine::applyDailyOffsets(todayPrayer, now);
-                    todayPrayer.source = "محلي";
+                    PrayerTimesResult localCalc = PrayerTimesEngine::calculate(now, currentPrayerConfig);
+                    PrayerTimesEngine::applyDailyOffsets(localCalc, now);
+                    localCalc.source = "محلي";
+                    lockPrayerData();
+                    todayPrayer = localCalc;
                     todayHijri = "";
                     Serial.println("[Prayer] System task using local calculated timings");
                     if (allowOnlineFetch) {
@@ -453,13 +529,17 @@ void checkPrayerTimes() {
         }
     }
 
-    if (!todayPrayer.valid) return;
+    if (!todayPrayer.valid) {
+        unlockPrayerData();
+        return;
+    }
 
     time_t now_ts = time(nullptr);
     struct tm t_now;
     localtime_r(&now_ts, &t_now);
     int curMin = t_now.tm_hour * 60 + t_now.tm_min;
     const String prayers[5] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
+    unlockPrayerData();
 
     static int activePrayerIndex = -1;
     const String prayerNames[5] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
@@ -502,7 +582,7 @@ void checkPrayerTimes() {
                 LOG_PR("PRAYER", "Skipping Adhan for prayer %s due to radio schedule override", prayerNames[i].c_str());
             } else {
                 String file = getAdhanFile(i);
-                currentAudioDescription = "يرفع الآن أذان " + prayerNames[i];
+                audioManager.setAudioDescription("يرفع الآن أذان " + prayerNames[i]);
                 LOG_PR("PRAYER", "Triggering Adhan play command for: %s, file: %s", prayerNames[i].c_str(), file.c_str());
                 sendPlayCommand(file.c_str(), 3, 0, 0);
                 setLedState(LED_ADHAN);
@@ -519,7 +599,7 @@ void checkPrayerTimes() {
                 unsigned long delayMs = (unsigned long)currentIqamaConfig.delayMin[i] * 60000UL;
                 if (millis() - adhanStartTime >= delayMs) {
                     String iqamaFile = getIqamaFile();
-                    currentAudioDescription = "تقام الآن صلاة " + prayerNames[i];
+                    audioManager.setAudioDescription("تقام الآن صلاة " + prayerNames[i]);
                     LOG_PR("PRAYER", "Triggering Iqama play command for: %s, file: %s", prayerNames[i].c_str(), iqamaFile.c_str());
                     sendPlayCommand(iqamaFile.c_str(), 2, 0, 0);
                     iqamaPlayed[i] = true;
@@ -549,7 +629,7 @@ void playStartupAlert() {
     String file = prefs.getString("file", "");
     prefs.end();
     if (enabled && file.length() > 0) {
-        currentAudioDescription = "تنبيه بدء التشغيل";
+        audioManager.setAudioDescription("تنبيه بدء التشغيل");
         sendPlayCommand(file.c_str(), 1, 0, 30, 0);
     }
 }
@@ -578,6 +658,7 @@ void systemTask(void *pvParameters) {
     setupWiFi();
     syncTimeFromNTP();
     startWebServer();
+    initEidMode();
     maghribManager.begin();
     scheduler.begin();
     ddnsManager.begin();
@@ -589,7 +670,7 @@ void systemTask(void *pvParameters) {
     for (;;) {
         updateLEDTask();
         maintainWiFi();
-        if (shouldRetrySDCard()) {
+        if (shouldRetrySDCard() && audioManager.getState() == AUDIO_IDLE) {
             LOG_SYS("SYSTEM", "Retrying SD card initialization... Last error: %s", getLastSDError().c_str());
             initSDCard(false);
         }

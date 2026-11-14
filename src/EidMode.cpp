@@ -94,9 +94,13 @@ static int prayerWindowPhase(int prayerIndex, int pHour, int pMin, int beforeMin
 
     if (beforeMin > 0) {
         if (takbeerFile != lastLoadedTakbeerFile || takbeerDurationSec < 0) {
-            takbeerDurationSec = MaghribManager::getMP3Duration(takbeerFile);
-            lastLoadedTakbeerFile = takbeerFile;
-            LOG_SYS("EID", "Cached Takbeer file duration: %d seconds", takbeerDurationSec);
+            if (audioManager.getState() == AUDIO_IDLE) {
+                takbeerDurationSec = MaghribManager::getMP3Duration(takbeerFile);
+                lastLoadedTakbeerFile = takbeerFile;
+                LOG_SYS("EID", "Cached Takbeer file duration: %d seconds", takbeerDurationSec);
+            } else if (takbeerDurationSec < 0) {
+                takbeerDurationSec = 180; // Default fallback while audio is busy
+            }
         }
         int durationSec = takbeerDurationSec;
         int durationMin = (durationSec + 59) / 60; // ceiling division
@@ -133,6 +137,14 @@ static int prayerWindowPhase(int prayerIndex, int pHour, int pMin, int beforeMin
 }
 
 // ---- public functions ----
+void initEidMode() {
+    loadEidSettings();
+}
+
+void reloadEidSettings() {
+    loadEidSettings();
+}
+
 bool isEidMode() {
     return eidModeEnabled;
 }
@@ -163,6 +175,7 @@ void saveEidTakbeerConfigJson(const String& json) {
         prayerTakbeer[i].afterMin = obj["after"] | 15;
     }
     saveTakbeerConfigNVS();
+    reloadEidSettings();
 }
 
 void setEidMode(bool enable) {
@@ -174,7 +187,6 @@ void setEidMode(bool enable) {
 }
 
 void checkEidSchedule() {
-    loadEidSettings();
     if (!eidModeEnabled) return;
 
     time_t now = time(nullptr);
@@ -186,10 +198,10 @@ void checkEidSchedule() {
 
     if (now - lastTakbeer < 60) return;
 
-    extern PrayerTimesResult todayPrayer;
-    if (!todayPrayer.valid) return;
+    PrayerTimesResult curPrayer = getTodayPrayerSafe();
+    if (!curPrayer.valid) return;
 
-    const String prayers[] = {todayPrayer.fajr, todayPrayer.dhuhr, todayPrayer.asr, todayPrayer.maghrib, todayPrayer.isha};
+    const String prayers[] = {curPrayer.fajr, curPrayer.dhuhr, curPrayer.asr, curPrayer.maghrib, curPrayer.isha};
 
     for (int i = 0; i < 5; i++) {
         if (!prayerTakbeer[i].enabled) continue;
@@ -206,7 +218,7 @@ void checkEidSchedule() {
                 lastTakbeer = now;
                 continue;
             }
-            currentAudioDescription = "تشغيل تكبيرات العيد";
+            audioManager.setAudioDescription("تشغيل تكبيرات العيد");
             sendPlayCommand(takbeerFile.c_str(), 1, 0, takbeerVolume);
             lastTakbeer = now;
             lastTakbeerDayForWindow[windowId] = curDay;
