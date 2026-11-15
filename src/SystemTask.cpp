@@ -124,6 +124,9 @@ void setupWiFi() {
                 esp_ip6_addr_t ip6;
                 if (netif && esp_netif_get_ip6_global(netif, &ip6) == ESP_OK) {
                     LOG_WF("WIFI", "Global IPv6 ready: " IPV6STR, IPV62STR(ip6));
+                    if (!isSystemTimeValid()) {
+                        syncTimeFromNTP();
+                    }
                 }
             }
         });
@@ -187,6 +190,20 @@ void maintainWiFi() {
         if (setupApActive && nowMs - wifiConnectedAt >= apDisableStableMs) {
             LOG_WF("WIFI", "WiFi connection stable, stopping Setup AP");
             stopSetupAp();
+        }
+
+        static unsigned long lastNtpCheck = 0;
+        if (!isSystemTimeValid()) {
+            if (nowMs - lastNtpCheck >= 20000 || lastNtpCheck == 0) {
+                lastNtpCheck = nowMs;
+                LOG_SYS("SYSTEM", "Retrying NTP synchronization (clock still invalid)...");
+                syncTimeFromNTP();
+            }
+        } else {
+            if (nowMs - lastNtpCheck >= 43200000) { // 12 hours periodic refresh
+                lastNtpCheck = nowMs;
+                syncTimeFromNTP();
+            }
         }
         return;
     }
@@ -260,7 +277,7 @@ void applyConfiguredTimezone() {
     LOG_SYS("SYSTEM", "Timezone applied: country=%s, egyptDst=%d, TZ=%s", country.c_str(), egyptDst, tzBuf);
 }
 
-static bool isSystemTimeValid() {
+bool isSystemTimeValid() {
     time_t now = time(nullptr);
     struct tm tinfo;
     localtime_r(&now, &tinfo);
@@ -335,11 +352,11 @@ void syncTimeFromNTP() {
         int tzOffset = currentPrayerConfig.timezone;
         snprintf(tzBuf, sizeof(tzBuf), "UTC%+d", -tzOffset);
     }
-    configTzTime(tzBuf, "pool.ntp.org", "time.nist.gov");
+    configTzTime(tzBuf, "time.google.com", "time.cloudflare.com", "pool.ntp.org");
     Serial.println("[Time] NTP sync requested");
     LOG_SYS("SYSTEM", "NTP time synchronization requested");
     struct tm tinfo;
-    if (getLocalTime(&tinfo, 3000)) {
+    if (getLocalTime(&tinfo, 6000)) {
         Serial.printf("[Time] NTP time valid: %04d-%02d-%02d %02d:%02d\n",
                       tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
                       tinfo.tm_hour, tinfo.tm_min);

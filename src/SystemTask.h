@@ -12,6 +12,7 @@ void maintainWiFi();
 void applyConfiguredTimezone();
 void syncTimeFromNTP();
 bool syncTimeFromBrowser(time_t browserEpoch);
+bool isSystemTimeValid();
 String getCurrentTimeStr();
 String getCurrentDateStr();
 void forcePrayerRecalc();
