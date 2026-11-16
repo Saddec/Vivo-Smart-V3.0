@@ -133,6 +133,9 @@ void initPresenceManager() {
     if (bleScanMutex == NULL) bleScanMutex = xSemaphoreCreateMutex();
     lockPresence();
     loadPresenceConfig();
+    lastTriggerTime = millis();     // Prevent firing welcome immediately at boot
+    lastScanTime = millis() + 20000; // Grace period: 20 seconds after boot before first presence check
+    currentState = PRESENCE_PRESENT; // Default to PRESENT at boot so existing devices don't double-trigger
     unlockPresence();
 }
 
@@ -578,7 +581,6 @@ static bool checkWifiPresence(const String& targetMac, String& lastIp) {
             udp.write(0);
             udp.endPacket();
             udp.stop();
-            vTaskDelay(pdMS_TO_TICKS(30));
 
             ip4_addr_t tip4;
             tip4.addr = (uint32_t)tip;
@@ -615,7 +617,7 @@ void updatePresenceManager() {
 
     if (!cfg.enabled) {
         currentState = PRESENCE_AWAY;
-        if (bleInitialized) {
+        if (bleInitialized && !bleScanRunning) {
             BLEDevice::deinit(true);
             bleInitialized = false;
         }
@@ -634,11 +636,18 @@ void updatePresenceManager() {
     }
     lastScanTime = now;
 
+    // 1. Wi-Fi Presence Check (zero heap allocation, instantaneous)
+    bool wifiMatched = false;
+    if (cfg.mode == 0 || cfg.mode == 2) {
+        wifiMatched = checkWifiPresence(cfg.targetMac, lastKnownIp);
+    }
+
+    // 2. BLE Proximity Check
     bool bleMatched = false;
     int detectedRssi = -100;
 
-    // 1. BLE Proximity Check
-    if (cfg.mode == 0 || cfg.mode == 1) {
+    // Only invoke BLE if explicitly in BLE mode OR (Hybrid and Wi-Fi not matched)
+    if ((cfg.mode == 1 || (cfg.mode == 0 && !wifiMatched)) && (cfg.targetMac.length() > 0 || cfg.targetName.length() > 0)) {
         if (!bleInitialized) {
             BLEDevice::init("VivoSmart-Presence");
             bleInitialized = true;
@@ -669,12 +678,12 @@ void updatePresenceManager() {
             }
         }
         pScan->clearResults();
-    }
-
-    // 2. Wi-Fi Presence Check
-    bool wifiMatched = false;
-    if (cfg.mode == 0 || cfg.mode == 2) {
-        wifiMatched = checkWifiPresence(cfg.targetMac, lastKnownIp);
+    } else {
+        // Free BLE memory if not in BLE mode to preserve heap for audio & web server
+        if (bleInitialized && !bleScanRunning) {
+            BLEDevice::deinit(true);
+            bleInitialized = false;
+        }
     }
 
     // 3. Final Decision Logic
