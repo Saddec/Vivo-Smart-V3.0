@@ -501,17 +501,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
+      constraints: const BoxConstraints(maxWidth: 620),
       builder: (sheetCtx) {
         return Directionality(
           textDirection: TextDirection.rtl,
           child: Container(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.of(context).size.height * 0.75,
-              maxWidth: 880,
-            ),
-            margin: EdgeInsets.only(
-              left: MediaQuery.of(context).size.width > 900 ? (MediaQuery.of(context).size.width - 880) / 2 : 0,
-              right: MediaQuery.of(context).size.width > 900 ? (MediaQuery.of(context).size.width - 880) / 2 : 0,
             ),
             decoration: const BoxDecoration(
               color: Color(0xFF1C132E),
@@ -635,11 +631,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                           fontWeight: FontWeight.bold,
                                           fontSize: 15,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    if (isActive)
+                                    if (isActive) ...[
+                                      const SizedBox(width: 8),
                                       Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                         decoration: BoxDecoration(
                                           color: const Color(0xFF00F2FE),
                                           borderRadius: BorderRadius.circular(8),
@@ -649,20 +648,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                           style: GoogleFonts.cairo(
                                             color: Colors.black,
                                             fontWeight: FontWeight.bold,
-                                            fontSize: 10,
+                                            fontSize: 11,
                                           ),
                                         ),
                                       ),
+                                    ],
                                   ],
                                 ),
-                                subtitle: Text(
-                                  dev.ip,
-                                  style: GoogleFonts.cairo(
-                                    color: Colors.white60,
-                                    fontSize: 12,
-                                  ),
-                                  textDirection: TextDirection.ltr,
-                                ),
+                                subtitle: dev.name.isNotEmpty
+                                    ? Text(
+                                        dev.ip,
+                                        style: GoogleFonts.cairo(
+                                          color: Colors.white60,
+                                          fontSize: 13,
+                                        ),
+                                        textDirection: TextDirection.ltr,
+                                        maxLines: 1,
+                                      )
+                                    : null,
                                 trailing: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
