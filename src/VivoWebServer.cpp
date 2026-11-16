@@ -10,6 +10,7 @@
 #include "SDManager.h"
 #include "DDNSManager.h"
 #include "EventLogger.h"
+#include "PresenceManager.h"
 #include <SD.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -1814,6 +1815,67 @@ void startWebServer() {
         prefs.begin("maghrib", false);
         prefs.putInt("offset", postValue(request, "offset", "1").toInt());
         prefs.end();
+        sendOk(request);
+    });
+
+    // ---- Presence Manager Endpoints ----
+    server.on("/api/presence/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", getPresenceConfigJson());
+    });
+    server.on("/api/presence/config", HTTP_POST, [](AsyncWebServerRequest *request) {
+        PresenceConfig cfg = getPresenceConfig();
+        if (request->hasParam("enabled", true) || request->hasParam("enabled")) 
+            cfg.enabled = postBool(request, "enabled");
+        if (request->hasParam("mode", true) || request->hasParam("mode")) 
+            cfg.mode = postValue(request, "mode").toInt();
+        if (request->hasParam("targetMac", true) || request->hasParam("targetMac")) 
+            cfg.targetMac = postValue(request, "targetMac");
+        else if (request->hasParam("bleMac", true) || request->hasParam("bleMac")) 
+            cfg.targetMac = postValue(request, "bleMac");
+        if (request->hasParam("targetName", true) || request->hasParam("targetName")) 
+            cfg.targetName = postValue(request, "targetName");
+        else if (request->hasParam("bleName", true) || request->hasParam("bleName")) 
+            cfg.targetName = postValue(request, "bleName");
+        if (request->hasParam("rssiThresh", true) || request->hasParam("rssiThresh")) 
+            cfg.rssiThreshold = postValue(request, "rssiThresh").toInt();
+        if (request->hasParam("welcomeFile", true) || request->hasParam("welcomeFile")) 
+            cfg.welcomeFile = postValue(request, "welcomeFile");
+        if (request->hasParam("volume", true) || request->hasParam("volume")) 
+            cfg.volume = postValue(request, "volume").toInt();
+        if (request->hasParam("cooldownMinutes", true) || request->hasParam("cooldownMinutes")) 
+            cfg.cooldownMinutes = postValue(request, "cooldownMinutes").toInt();
+        if (request->hasParam("vacateMinutes", true) || request->hasParam("vacateMinutes")) 
+            cfg.vacateMinutes = postValue(request, "vacateMinutes").toInt();
+        if (request->hasParam("quietEn", true) || request->hasParam("quietEn")) 
+            cfg.quietHoursEnabled = postBool(request, "quietEn");
+        if (request->hasParam("qStartH", true) || request->hasParam("qStartH")) 
+            cfg.quietStartHour = postValue(request, "qStartH").toInt();
+        if (request->hasParam("qStartM", true) || request->hasParam("qStartM")) 
+            cfg.quietStartMin = postValue(request, "qStartM").toInt();
+        if (request->hasParam("qEndH", true) || request->hasParam("qEndH")) 
+            cfg.quietEndHour = postValue(request, "qEndH").toInt();
+        if (request->hasParam("qEndM", true) || request->hasParam("qEndM")) 
+            cfg.quietEndMin = postValue(request, "qEndM").toInt();
+
+        setPresenceConfig(cfg);
+        sendOk(request);
+    });
+    server.on("/api/presence/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", getPresenceStatusJson());
+    });
+    server.on("/api/presence/scan-wifi", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", scanNetworkDevicesJson());
+    });
+    server.on("/api/presence/scan-ble", HTTP_GET, [](AsyncWebServerRequest *request) {
+        if (request->hasParam("start")) {
+            triggerBleScanAsync(2);
+            request->send(200, "application/json", "{\"status\":\"started\"}");
+        } else {
+            request->send(200, "application/json", getDiscoveredBleDevicesJson());
+        }
+    });
+    server.on("/api/presence/test", HTTP_POST, [](AsyncWebServerRequest *request) {
+        testPlayWelcome();
         sendOk(request);
     });
 

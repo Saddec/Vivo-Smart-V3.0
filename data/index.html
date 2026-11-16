@@ -65,6 +65,7 @@
     <a href="#player" onclick="showTab('player')"><i class="fas fa-music"></i> مشغل الموسيقى</a>
     <div class="section-label">التحكم</div>
     <a href="#gpio" onclick="showTab('gpio')"><i class="fas fa-microchip"></i> GPIO</a>
+    <a href="#presence" onclick="showTab('presence')"><i class="fas fa-user-check"></i> الترحيب الذكي</a>
     <a href="#eid" onclick="showTab('eid')"><i class="fas fa-star-and-crescent"></i> العيد</a>
     <div class="section-label">الشبكة والإعدادات</div>
     <a href="#network" onclick="showTab('network')"><i class="fas fa-wifi"></i> الشبكة</a>
@@ -681,6 +682,212 @@
     </div>
     <!-- GPIO Schedule (merged into scheduler) -->
     <div id="tab-gpio_schedule" class="tab" style="display:none"></div>
+    <!-- Smart Presence & Welcome -->
+    <div id="tab-presence" class="tab">
+      <h1><i class="fas fa-user-check"></i> الترحيب الذكي وحساس التواجد</h1>
+      
+      <!-- Status Card -->
+      <div class="glass-card" style="margin-bottom: 20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin-bottom:5px;"><i class="fas fa-satellite-dish"></i> حالة التواجد الحالية</h3>
+            <div id="presenceLiveStateBadge" style="display:inline-block; padding:5px 12px; border-radius:15px; font-weight:bold; font-size:14px; background:rgba(255,255,255,0.1); color:#fff;">
+              <i class="fas fa-spinner fa-spin"></i> جاري فحص الحالة...
+            </div>
+            <span id="presenceRssiText" style="margin-right:15px; font-size:13px; color:rgba(255,255,255,0.8);"></span>
+          </div>
+          <button class="btn" type="button" onclick="refreshPresenceStatus()" style="padding:6px 12px; font-size:13px;"><i class="fas fa-sync-alt"></i> تحديث الحالة</button>
+        </div>
+      </div>
+
+      <!-- Main Config Card -->
+      <div class="glass-card">
+        <h3><i class="fas fa-sliders-h"></i> إعدادات الترحيب والاقتراب</h3>
+        
+        <div style="margin-bottom: 20px;">
+          <label class="switch">
+            <input type="checkbox" id="presenceEnabled" onchange="togglePresenceFields()">
+            <span class="slider"></span>
+          </label>
+          <strong style="font-size:16px; margin-right:10px;">تفعيل ميزة الترحيب الذكي عند الاقتراب</strong>
+        </div>
+
+        <div id="presenceFieldsContainer">
+          <div class="row">
+            <div class="col">
+              <label><i class="fas fa-broadcast-tower"></i> طريقة رصد التواجد</label>
+              <select id="presenceMode" onchange="onPresenceModeChange()">
+                <option value="0">الهجين الذكي (BLE + Wi-Fi) [موصى به]</option>
+                <option value="1">بلوتوث فقط (BLE RSSI Proximity)</option>
+                <option value="2">واي فاي فقط (Wi-Fi Presence)</option>
+              </select>
+            </div>
+            <div class="col" id="presenceRssiCol">
+              <label><i class="fas fa-signal"></i> حساسية مسافة الاقتراب (BLE RSSI)</label>
+              <select id="presenceRssi">
+                <option value="-55">قريب جداً (~1 متر - إشارة قوية جداً)</option>
+                <option value="-65" selected>مسافة قريبة (~1.5 إلى 2 متر)</option>
+                <option value="-75">مسافة متوسطة (~3 إلى 4 أمتار - نفس الغرفة)</option>
+                <option value="-85">مسافة عامة (~5 أمتار وأكثر)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Target Device Config -->
+          <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px; margin:15px 0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+              <h4 style="margin:0;"><i class="fas fa-mobile-alt"></i> تحديد الهاتف أو الجهاز المستهدف</h4>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn" type="button" onclick="openWifiScanModal()" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; font-weight:bold; padding:6px 14px; font-size:13px;">
+                  <i class="fas fa-network-wired"></i> فحص أجهزة شبكة الواي فاي
+                </button>
+                <button class="btn" type="button" onclick="openBleScanModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold; padding:6px 14px; font-size:13px;">
+                  <i class="fab fa-bluetooth-b"></i> فحص أجهزة البلوتوث
+                </button>
+              </div>
+            </div>
+            
+            <div class="row">
+              <div class="col">
+                <label><i class="fas fa-fingerprint"></i> عنوان الماك المستهدف (Target MAC Address)</label>
+                <input type="text" id="presenceTargetMac" placeholder="مثال: aa:bb:cc:dd:ee:ff (اختر من الفحص أعلاه)">
+              </div>
+              <div class="col">
+                <label><i class="fas fa-tag"></i> اسم الجهاز / الهاتف المستهدف</label>
+                <input type="text" id="presenceTargetName" placeholder="مثال: هاتف صديق أو Honor X9d">
+              </div>
+            </div>
+            <small style="color:rgba(255,255,255,0.7); display:block; margin-top:6px;">
+              <i class="fas fa-info-circle" style="color:#00f2fe;"></i> يتم حفظ وتتبع الجهاز عبر عنوان الماك (MAC Address) لضمان استمرار رصد الهاتف بدقة حتى لو تغيّر عنوان الـ IP من الراوتر (DHCP).
+            </small>
+          </div>
+
+          <!-- Audio & Volume -->
+          <div class="row">
+            <div class="col">
+              <label><i class="fas fa-music"></i> ملف الترحيب الصوتي (أدنى أولوية 0)</label>
+              <div style="display:flex; gap:8px;">
+                <select id="presenceAudioFile" style="flex:1;"></select>
+                <button class="btn" type="button" onclick="testPresenceAudio()" title="تجربة تشغيل الصوت" style="padding:0 15px;">
+                  <i class="fas fa-play"></i> تجربة
+                </button>
+              </div>
+            </div>
+            <div class="col">
+              <div class="dashboard-volume-row">
+                <span><i class="fas fa-volume-down"></i> مستوى صوت الترحيب</span>
+                <strong id="presenceVolValue">20</strong>
+              </div>
+              <input type="range" id="presenceVolume" min="0" max="30" value="20" oninput="if($('presenceVolValue')) $('presenceVolValue').textContent=this.value">
+            </div>
+          </div>
+
+          <!-- Anti-spam & Cooldown Settings -->
+          <div style="background:rgba(0,242,254,0.05); border:1px solid rgba(0,242,254,0.15); padding:15px; border-radius:12px; margin:15px 0;">
+            <h4 style="margin:0 0 10px 0; color:#00f2fe;"><i class="fas fa-shield-alt"></i> إعدادات منع التكرار والإزعاج الذكية</h4>
+            <div class="row">
+              <div class="col">
+                <label><i class="fas fa-hourglass-half"></i> فترة عدم التكرار (Cooldown)</label>
+                <select id="presenceCooldown">
+                  <option value="15">15 دقيقة</option>
+                  <option value="30" selected>30 دقيقة (موصى به)</option>
+                  <option value="60">ساعة كاملة</option>
+                  <option value="120">ساعتين</option>
+                  <option value="240">4 ساعات</option>
+                </select>
+                <small style="color:rgba(255,255,255,0.6); display:block; margin-top:4px;">لن يتم الترحيب مرة أخرى حتى بعد مغادرتك إلا بعد مرور هذا الوقت.</small>
+              </div>
+              <div class="col">
+                <label><i class="fas fa-walking"></i> تأكيد مغادرة المكان (Vacate Timeout)</label>
+                <select id="presenceVacate">
+                  <option value="1">دقيقة واحدة</option>
+                  <option value="2">دقيقتان</option>
+                  <option value="3" selected>3 دقائق (موصى به)</option>
+                  <option value="5">5 دقائق</option>
+                </select>
+                <small style="color:rgba(255,255,255,0.6); display:block; margin-top:4px;">يجب ابتعاد الهاتف لهذه المدة للتأكد من خروجك من المكان.</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quiet Hours -->
+          <div class="glass-card" style="background:rgba(255,255,255,0.03); margin-top:15px;">
+            <div style="margin-bottom:12px;">
+              <label class="switch">
+                <input type="checkbox" id="presenceQuietEn">
+                <span class="slider"></span>
+              </label>
+              <strong style="margin-right:8px;"><i class="fas fa-moon"></i> تفعيل ساعات الهدوء (عدم الإزعاج ليلاً)</strong>
+            </div>
+            <div class="row">
+              <div class="col">
+                <label>بداية الهدوء</label>
+                <input type="time" id="presenceQuietStart" value="23:00">
+              </div>
+              <div class="col">
+                <label>نهاية الهدوء</label>
+                <input type="time" id="presenceQuietEnd" value="07:00">
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:25px; display:flex; gap:10px;">
+            <button class="btn btn-save" type="button" onclick="savePresenceConfig()" style="flex:1; padding:12px; font-size:16px;">
+              <i class="fas fa-save"></i> حفظ إعدادات الترحيب الذكي
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for Wi-Fi Device Scanner -->
+    <div id="wifiScanModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
+      <div class="glass-card" style="max-width:580px; width:92%; max-height:85vh; overflow-y:auto; padding:25px; border:1px solid rgba(46,204,113,0.4);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+          <h3 style="margin:0; color:#2ecc71;"><i class="fas fa-network-wired"></i> أجهزة شبكة الواي فاي المتصلة</h3>
+          <button class="btn" type="button" onclick="closeWifiScanModal()" style="padding:4px 10px; background:rgba(255,255,255,0.1);"><i class="fas fa-times"></i></button>
+        </div>
+        <p style="font-size:13px; color:rgba(255,255,255,0.8); margin-bottom:15px;">
+          يتم فحص جميع الأجهزة المتصلة بنفس شبكة الواي فاي وقراءة عنوان الـ MAC الثابت الخاص بكل جهاز. اضغط على <strong>"اختيار"</strong> لحفظ الماك مباشرةً:
+        </p>
+        <div id="wifiScanLoading" style="text-align:center; padding:20px; display:none;">
+          <i class="fas fa-spinner fa-spin" style="font-size:32px; color:#2ecc71; margin-bottom:10px;"></i>
+          <p>جاري فحص أجهزة الشبكة واكتشاف عناوين الماك (ARP Scan)...</p>
+        </div>
+        <div id="wifiScanResultsList" style="margin-top:10px; max-height:320px; overflow-y:auto;"></div>
+        <div style="margin-top:20px; text-align:left; display:flex; gap:10px; justify-content:flex-end;">
+          <button class="btn" type="button" onclick="startWifiScan()" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; font-weight:bold;">
+            <i class="fas fa-redo"></i> إعادة فحص الشبكة
+          </button>
+          <button class="btn" type="button" onclick="closeWifiScanModal()" style="background:transparent; border:1px solid rgba(255,255,255,0.2);">إغلاق</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for BLE Device Scanner -->
+    <div id="bleScanModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center;">
+      <div class="glass-card" style="max-width:550px; width:92%; max-height:85vh; overflow-y:auto; padding:25px; border:1px solid rgba(0,242,254,0.3);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+          <h3 style="margin:0; color:#00f2fe;"><i class="fab fa-bluetooth-b"></i> فحص أجهزة البلوتوث المجاورة</h3>
+          <button class="btn" type="button" onclick="closeBleScanModal()" style="padding:4px 10px; background:rgba(255,255,255,0.1);"><i class="fas fa-times"></i></button>
+        </div>
+        <p style="font-size:13px; color:rgba(255,255,255,0.8); margin-bottom:15px;">
+          تأكد من فتح شاشة البلوتوث في هاتفك لجعله قابلاً للاكتشاف، ثم اختر جهازك من القائمة أدناه:
+        </p>
+        <div id="bleScanLoading" style="text-align:center; padding:20px; display:none;">
+          <i class="fas fa-spinner fa-spin" style="font-size:32px; color:#00f2fe; margin-bottom:10px;"></i>
+          <p>جاري البحث عن أجهزة البلوتوث القريبة (2 ثانية)...</p>
+        </div>
+        <div id="bleScanResultsList" style="margin-top:10px; max-height:300px; overflow-y:auto;"></div>
+        <div style="margin-top:20px; text-align:left; display:flex; gap:10px; justify-content:flex-end;">
+          <button class="btn" type="button" onclick="startBleScan()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold;">
+            <i class="fas fa-redo"></i> إعادة الفحص
+          </button>
+          <button class="btn" type="button" onclick="closeBleScanModal()" style="background:transparent; border:1px solid rgba(255,255,255,0.2);">إغلاق</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Eid -->
     <div id="tab-eid" class="tab">
       <h1><i class="fas fa-star-and-crescent"></i> وضع العيد</h1>

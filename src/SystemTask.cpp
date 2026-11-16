@@ -11,6 +11,7 @@
 #include "SDManager.h"
 #include "DDNSManager.h"
 #include "EventLogger.h"
+#include "PresenceManager.h"
 #include <WiFi.h>
 #include <esp_netif.h>
 #include <lwip/dns.h>
@@ -681,6 +682,7 @@ void systemTask(void *pvParameters) {
     ddnsManager.begin();
     initGPIO();
     loadGpioSchedules();
+    initPresenceManager();
 
     systemReadyAtMs = millis();
 
@@ -700,6 +702,7 @@ void systemTask(void *pvParameters) {
         }
         checkEidSchedule();
         checkGPIOInputs();
+        updatePresenceManager();
         ddnsManager.loop();
         if (!startupAlertQueued && millis() - systemReadyAtMs >= startupAlertDelayMs) {
             startupAlertQueued = true;

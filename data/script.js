@@ -126,6 +126,7 @@ function showTab(tabName) {
   if (tabName === 'prayer') { loadPrayerTab(previousTab !== 'prayer'); }
   if (tabName === 'settings') { loadStartupSettings(); loadSessionTimeout(); loadManualTimeStatus(); }
   if (tabName === 'eid') { loadEidSchedules(); loadEidTakbeerConfig(); }
+  if (tabName === 'presence') { loadPresenceConfig(); refreshPresenceStatus(); }
   if (tabName === 'logs') { fetchLogs(); }
 
   // Auto-activate first sub-tab when showing a main tab
@@ -1070,7 +1071,7 @@ function populateFileSelects() {
 
   [
     'fajrAdhanFileSelect', 'adhanFileSelect', 'iqamaFileSelect', 'singleAlertFile',
-    'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect'
+    'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect', 'presenceAudioFile'
   ].forEach((id) => { if ($(id)) $(id).innerHTML = options; });
 
   [
@@ -3944,5 +3945,276 @@ function populateRadioDropdowns() {
     select.value = previousVal;
   }
 }
+
+// ==================== Smart Presence & Welcome ====================
+let presenceSavedConfig = {};
+
+function togglePresenceFields() {
+  const en = $('presenceEnabled')?.checked;
+  const container = $('presenceFieldsContainer');
+  if (container) {
+    container.style.opacity = en ? '1' : '0.4';
+    container.style.pointerEvents = en ? 'auto' : 'none';
+  }
+}
+
+function onPresenceModeChange() {
+  const mode = parseInt($('presenceMode')?.value || '0', 10);
+  const rssiCol = $('presenceRssiCol');
+
+  if (mode === 2) { // WiFi only
+    if (rssiCol) rssiCol.style.display = 'none';
+  } else { // Hybrid or BLE
+    if (rssiCol) rssiCol.style.display = 'block';
+  }
+}
+
+function loadPresenceConfig() {
+  apiGet('/api/presence/config').then((cfg) => {
+    if (!cfg) return;
+    presenceSavedConfig = cfg;
+    if ($('presenceEnabled')) $('presenceEnabled').checked = !!cfg.enabled;
+    if ($('presenceMode')) $('presenceMode').value = cfg.mode !== undefined ? cfg.mode : 0;
+    if ($('presenceRssi')) $('presenceRssi').value = cfg.rssiThresh !== undefined ? cfg.rssiThresh : -65;
+    if ($('presenceTargetMac')) $('presenceTargetMac').value = cfg.targetMac || cfg.bleMac || '';
+    if ($('presenceTargetName')) $('presenceTargetName').value = cfg.targetName || cfg.bleName || '';
+    if ($('presenceAudioFile')) $('presenceAudioFile').value = cfg.welcomeFile || '';
+    if ($('presenceVolume')) $('presenceVolume').value = cfg.volume !== undefined ? cfg.volume : 20;
+    if ($('presenceVolValue')) $('presenceVolValue').textContent = cfg.volume !== undefined ? cfg.volume : 20;
+    if ($('presenceCooldown')) $('presenceCooldown').value = cfg.cooldownMinutes !== undefined ? cfg.cooldownMinutes : 30;
+    if ($('presenceVacate')) $('presenceVacate').value = cfg.vacateMinutes !== undefined ? cfg.vacateMinutes : 3;
+    if ($('presenceQuietEn')) $('presenceQuietEn').checked = !!cfg.quietEn;
+    
+    const pad = (n) => String(n).padStart(2, '0');
+    if ($('presenceQuietStart')) {
+      $('presenceQuietStart').value = `${pad(cfg.qStartH !== undefined ? cfg.qStartH : 23)}:${pad(cfg.qStartM !== undefined ? cfg.qStartM : 0)}`;
+    }
+    if ($('presenceQuietEnd')) {
+      $('presenceQuietEnd').value = `${pad(cfg.qEndH !== undefined ? cfg.qEndH : 7)}:${pad(cfg.qEndM !== undefined ? cfg.qEndM : 0)}`;
+    }
+
+    togglePresenceFields();
+    onPresenceModeChange();
+  }).catch((err) => {
+    console.warn("Failed to load presence config:", err);
+  });
+}
+
+function savePresenceConfig() {
+  const qStart = ($('presenceQuietStart')?.value || '23:00').split(':');
+  const qEnd = ($('presenceQuietEnd')?.value || '07:00').split(':');
+
+  const params = new URLSearchParams();
+  params.append('enabled', $('presenceEnabled')?.checked ? '1' : '0');
+  params.append('mode', $('presenceMode')?.value || '0');
+  params.append('rssiThresh', $('presenceRssi')?.value || '-65');
+  params.append('targetMac', ($('presenceTargetMac')?.value || '').trim());
+  params.append('targetName', ($('presenceTargetName')?.value || '').trim());
+  params.append('welcomeFile', $('presenceAudioFile')?.value || '');
+  params.append('volume', $('presenceVolume')?.value || '20');
+  params.append('cooldownMinutes', $('presenceCooldown')?.value || '30');
+  params.append('vacateMinutes', $('presenceVacate')?.value || '3');
+  params.append('quietEn', $('presenceQuietEn')?.checked ? '1' : '0');
+  params.append('qStartH', qStart[0] || '23');
+  params.append('qStartM', qStart[1] || '0');
+  params.append('qEndH', qEnd[0] || '7');
+  params.append('qEndM', qEnd[1] || '0');
+
+  apiPost('/api/presence/config', params).then(() => {
+    toast('تم حفظ إعدادات الترحيب الذكي وعنوان الماك بنجاح');
+    refreshPresenceStatus();
+  }).catch((err) => {
+    toast(`فشل الحفظ: ${err.message}`);
+  });
+}
+
+function refreshPresenceStatus() {
+  apiGet('/api/presence/status').then((st) => {
+    const badge = $('presenceLiveStateBadge');
+    const rssiTxt = $('presenceRssiText');
+    if (!badge) return;
+
+    if (st.state === 'present') {
+      badge.style.background = 'rgba(46, 204, 113, 0.2)';
+      badge.style.border = '1px solid rgba(46, 204, 113, 0.6)';
+      badge.style.color = '#2ecc71';
+      badge.innerHTML = '<i class="fas fa-check-circle"></i> متواجد بالقرب (جلسة نشطة)';
+    } else if (st.state === 'cooldown') {
+      badge.style.background = 'rgba(241, 196, 15, 0.2)';
+      badge.style.border = '1px solid rgba(241, 196, 15, 0.6)';
+      badge.style.color = '#f1c40f';
+      badge.innerHTML = '<i class="fas fa-hourglass-half"></i> فترة الهدوء (Cooldown نشط)';
+    } else {
+      badge.style.background = 'rgba(255, 255, 255, 0.08)';
+      badge.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+      badge.style.color = '#bbb';
+      badge.innerHTML = '<i class="fas fa-walking"></i> غير متواجد (بانتظار الاقتراب)';
+    }
+
+    if (rssiTxt) {
+      let extra = [];
+      if (st.targetMac) extra.push(`الماك: ${st.targetMac}`);
+      if (st.lastKnownIp) extra.push(`IP: ${st.lastKnownIp}`);
+      if (st.lastRssi && st.lastRssi > -99) extra.push(`إشارة: ${st.lastRssi} dBm`);
+      rssiTxt.textContent = extra.join(' | ');
+    }
+  }).catch(() => {});
+}
+
+function testPresenceAudio() {
+  const file = $('presenceAudioFile')?.value;
+  if (!file) {
+    toast('يرجى اختيار ملف صوتي أولاً');
+    return;
+  }
+  apiPost('/api/presence/test', new URLSearchParams()).then(() => {
+    toast('جاري تجربة تشغيل ملف الترحيب...');
+  }).catch((err) => {
+    toast(`فشل التشغيل: ${err.message}`);
+  });
+}
+
+// ---- Wi-Fi Network Devices Scanner ----
+function openWifiScanModal() {
+  const modal = $('wifiScanModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    startWifiScan();
+  }
+}
+
+function closeWifiScanModal() {
+  const modal = $('wifiScanModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function startWifiScan() {
+  const loading = $('wifiScanLoading');
+  const list = $('wifiScanResultsList');
+  if (loading) loading.style.display = 'block';
+  if (list) list.innerHTML = '';
+
+  apiGet('/api/presence/scan-wifi').then((devices) => {
+    if (loading) loading.style.display = 'none';
+    if (!list) return;
+
+    if (!Array.isArray(devices) || devices.length === 0) {
+      list.innerHTML = '<div style="text-align:center; padding:15px; color:rgba(255,255,255,0.5);">لم يتم العثور على أجهزة على الشبكة المحلية حالياً.</div>';
+      return;
+    }
+
+    let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+    devices.forEach((dev) => {
+      const isSelf = dev.type === 'self';
+      const isGw = dev.type === 'gateway';
+      const badgeColor = isGw ? '#f39c12' : (isSelf ? '#3498db' : '#2ecc71');
+      const icon = isGw ? 'fa-broadcast-tower' : (isSelf ? 'fa-microchip' : 'fa-mobile-alt');
+      
+      html += `
+        <div class="glass-card" style="margin:0; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); border-radius:8px;">
+          <div>
+            <div style="font-weight:bold; font-size:14px; color:${badgeColor};">
+              <i class="fas ${icon}"></i> ${safeText(dev.name || 'جهاز شبكة')}
+            </div>
+            <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:3px; font-family:monospace;">
+              <span style="color:#00f2fe; font-weight:bold;">${safeText(dev.mac)}</span> ${dev.ip ? `| IP: ${safeText(dev.ip)}` : ''}
+            </div>
+          </div>
+          ${!isSelf ? `
+            <button class="btn" type="button" style="margin:0; padding:5px 14px; font-size:12px; background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; font-weight:bold;"
+                    onclick="selectWifiDevice('${safeAttr(dev.mac)}', '${safeAttr(dev.name || '')}', '${safeAttr(dev.ip || '')}')">
+              <i class="fas fa-check"></i> اختيار هذا الجهاز
+            </button>
+          ` : `<span style="font-size:11px; opacity:0.6;">(هذا الجهاز)</span>`}
+        </div>
+      `;
+    });
+    html += '</div>';
+    list.innerHTML = html;
+  }).catch((err) => {
+    if (loading) loading.style.display = 'none';
+    if (list) list.innerHTML = `<div style="color:#e74c3c; text-align:center; padding:10px;">فشل فحص الشبكة: ${err.message}</div>`;
+  });
+}
+
+function selectWifiDevice(mac, name, ip) {
+  if ($('presenceTargetMac')) $('presenceTargetMac').value = mac;
+  if ($('presenceTargetName')) $('presenceTargetName').value = name || ip || 'هاتف محمول';
+  closeWifiScanModal();
+  toast(`تم حفظ عنوان الماك: ${mac}`);
+}
+
+// ---- BLE Devices Scanner ----
+function openBleScanModal() {
+  const modal = $('bleScanModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    startBleScan();
+  }
+}
+
+function closeBleScanModal() {
+  const modal = $('bleScanModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function startBleScan() {
+  const loading = $('bleScanLoading');
+  const list = $('bleScanResultsList');
+  if (loading) loading.style.display = 'block';
+  if (list) list.innerHTML = '';
+
+  apiGet('/api/presence/scan-ble?start=1').then(() => {
+    setTimeout(() => {
+      apiGet('/api/presence/scan-ble').then((devices) => {
+        if (loading) loading.style.display = 'none';
+        if (!list) return;
+
+        if (!Array.isArray(devices) || devices.length === 0) {
+          list.innerHTML = '<div style="text-align:center; padding:15px; color:rgba(255,255,255,0.6);">لم يتم العثور على أجهزة بلوتوث تبث حالياً. تأكد من فتح شاشة البلوتوث بهاتفك ليصبح مرئياً، أو استخدم <strong>"فحص أجهزة شبكة الواي فاي"</strong> بدلاً منه.</div>';
+          return;
+        }
+
+        let html = '<div style="display:flex; flex-direction:column; gap:8px;">';
+        devices.forEach((dev) => {
+          const isKnown = dev.name && dev.name !== 'Unknown Device';
+          const nameDisp = isKnown ? safeText(dev.name) : 'جهاز بلوتوث';
+          html += `
+            <div class="glass-card" style="margin:0; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.04); border-radius:8px;">
+              <div>
+                <div style="font-weight:bold; font-size:14px; color:${isKnown ? '#00f2fe' : '#ddd'};">
+                  <i class="fab fa-bluetooth"></i> ${nameDisp}
+                </div>
+                <div style="font-size:12px; color:rgba(255,255,255,0.7); font-family:monospace; margin-top:2px;">
+                  <span style="color:#00f2fe; font-weight:bold;">${safeText(dev.mac)}</span> | <span style="color:#2ecc71;">${dev.rssi} dBm</span>
+                </div>
+              </div>
+              <button class="btn" type="button" style="margin:0; padding:5px 14px; font-size:12px; background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold;"
+                      onclick="selectBleDevice('${safeAttr(dev.mac)}', '${safeAttr(dev.name)}')">
+                <i class="fas fa-check"></i> اختيار هذا الجهاز
+              </button>
+            </div>
+          `;
+        });
+        html += '</div>';
+        list.innerHTML = html;
+      }).catch((err) => {
+        if (loading) loading.style.display = 'none';
+        if (list) list.innerHTML = `<div style="color:#e74c3c; text-align:center; padding:10px;">فشل قراءة النتائج: ${err.message}</div>`;
+      });
+    }, 2200);
+  }).catch((err) => {
+    if (loading) loading.style.display = 'none';
+    if (list) list.innerHTML = `<div style="color:#e74c3c; text-align:center; padding:10px;">فشل الفحص: ${err.message}</div>`;
+  });
+}
+
+function selectBleDevice(mac, name) {
+  if ($('presenceTargetMac')) $('presenceTargetMac').value = mac;
+  if ($('presenceTargetName')) $('presenceTargetName').value = (name && name !== 'Unknown Device') ? name : 'هاتف بلوتوث';
+  closeBleScanModal();
+  toast(`تم اختيار الجهاز: ${name || mac}`);
+}
+
 
 
