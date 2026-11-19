@@ -33,6 +33,7 @@ static bool chunkUploadOk = false;
 static String chunkUploadPath;
 static String calendarDownloadError;
 static bool uploadBusy = false;
+static unsigned long lastUploadActivity = 0;
 static SemaphoreHandle_t uploadMutex = NULL;
 static SemaphoreHandle_t sessionMutex = NULL;
 static String cachedFileListJson;
@@ -760,10 +761,21 @@ static void handleSdDownload(AsyncWebServerRequest *request) {
 
 static void handleSdUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
     if (!sdReady()) return;
+    if (audioManager.isAdhanPlaying()) return;
     if (!lockUpload()) return;
     if (!index) {
+        if (uploadBusy && (millis() - lastUploadActivity > 15000)) {
+            Serial.println("[Upload] Previous upload timed out, auto-recovering busy state");
+            if (uploadFile) {
+                lockSD();
+                uploadFile.close();
+                unlockSD();
+            }
+            uploadBusy = false;
+        }
         if (uploadBusy) { Serial.println("[Upload] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
+        lastUploadActivity = millis();
         String folder = "/";
         if (request->hasHeader("X-Folder")) {
             folder = urlDecode(request->getHeader("X-Folder")->value());
@@ -780,6 +792,7 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
         lockSD();
         size_t written = uploadFile.write(data, len);
         unlockSD();
+        lastUploadActivity = millis();
         if (written != len) {
             lockSD();
             uploadFile.close();
@@ -800,42 +813,73 @@ static void handleSdUpload(AsyncWebServerRequest *request, String filename, size
 static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
     if (!sdReady()) {
         chunkUploadOk = false;
+        EventLogger::getInstance().log(LOG_LEVEL_ERROR, "FILES", "Upload chunk failed: SD not ready");
         return;
     }
 
-    if (!lockUpload()) {
+    if (audioManager.isAdhanPlaying()) {
         chunkUploadOk = false;
+        EventLogger::getInstance().log(LOG_LEVEL_WARNING, "FILES", "Upload chunk rejected: Adhan is playing");
         return;
     }
+
+    if (!lockUpload(1000)) {
+        chunkUploadOk = false;
+        EventLogger::getInstance().log(LOG_LEVEL_ERROR, "FILES", "Upload chunk failed: Lock timeout");
+        return;
+    }
+
+    lastUploadActivity = millis();
 
     if (index == 0) {
-        if (uploadBusy) { chunkUploadOk = false; unlockUpload(); return; }
+        // If a previous upload file handle was left open (e.g. from aborted attempt or retry), close it cleanly
+        if (chunkUploadFile) {
+            lockSD();
+            chunkUploadFile.flush();
+            chunkUploadFile.close();
+            unlockSD();
+        }
         uploadBusy = true;
-        String name = request->hasParam("name") ? request->getParam("name")->value() : "";
-        String folder = request->hasParam("folder") ? request->getParam("folder")->value() : "/";
+
+        String name = request->hasParam("name") ? urlDecode(request->getParam("name")->value()) : "";
+        String folder = request->hasParam("folder") ? urlDecode(request->getParam("folder")->value()) : "/";
         size_t offset = request->hasParam("offset") ? (size_t)request->getParam("offset")->value().toInt() : 0;
 
         chunkUploadPath = cleanPath(folder + "/" + name);
         lockSD();
         ensureDirExists(chunkUploadPath);
-        if (offset == 0 && SD.exists(chunkUploadPath)) SD.remove(chunkUploadPath);
+        if (offset == 0 && SD.exists(chunkUploadPath)) {
+            SD.remove(chunkUploadPath);
+        }
 
         if (offset == 0) {
             chunkUploadFile = SD.open(chunkUploadPath, FILE_WRITE);
         } else {
             chunkUploadFile = SD.open(chunkUploadPath, "r+");
+            if (!chunkUploadFile) {
+                chunkUploadFile = SD.open(chunkUploadPath, FILE_APPEND);
+            }
         }
-        chunkUploadOk = chunkUploadFile;
-        if (chunkUploadOk && offset > 0) chunkUploadFile.seek(offset);
+        chunkUploadOk = (bool)chunkUploadFile;
+        if (chunkUploadOk && offset > 0) {
+            chunkUploadFile.seek(offset);
+        }
         unlockSD();
-        if (!chunkUploadOk) uploadBusy = false;
-        Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
+
+        if (!chunkUploadOk) {
+            uploadBusy = false;
+            EventLogger::getInstance().log(LOG_LEVEL_ERROR, "FILES", "Upload failed: Cannot open '%s' at offset %u", chunkUploadPath.c_str(), (unsigned)offset);
+            Serial.printf("[Files] Failed to open %s for chunk upload (offset=%u)\n", chunkUploadPath.c_str(), (unsigned)offset);
+        } else {
+            Serial.printf("[Files] Chunk upload start: %s offset=%u chunk=%u\n", chunkUploadPath.c_str(), (unsigned)offset, (unsigned)total);
+        }
     }
 
     if (chunkUploadOk && chunkUploadFile && len) {
         lockSD();
         size_t written = chunkUploadFile.write(data, len);
         unlockSD();
+        lastUploadActivity = millis();
         if (written != len) {
             chunkUploadOk = false;
             if (chunkUploadFile) {
@@ -844,6 +888,7 @@ static void handleChunkUploadBody(AsyncWebServerRequest *request, uint8_t *data,
                 unlockSD();
             }
             uploadBusy = false;
+            EventLogger::getInstance().log(LOG_LEVEL_ERROR, "FILES", "Chunk write failed: wrote=%u expected=%u path=%s", (unsigned)written, (unsigned)len, chunkUploadPath.c_str());
             Serial.printf("[Files] Chunk write failed: wrote=%u expected=%u\n", (unsigned)written, (unsigned)len);
         }
     }
@@ -1213,6 +1258,51 @@ void startWebServer() {
         sendJson(request, doc);
     });
 
+    server.on("/api/ap/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
+        prefs.begin("setup_ap", true);
+        String apSsid = prefs.getString("ssid", "VivoSmart-Setup");
+        String apPass = prefs.getString("pass", "");
+        prefs.end();
+        DynamicJsonDocument doc(256);
+        doc["ssid"] = apSsid;
+        doc["hasPass"] = apPass.length() > 0;
+        doc["active"] = (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA);
+        doc["stations"] = WiFi.softAPgetStationNum();
+        doc["ip"] = WiFi.softAPIP().toString();
+        sendJson(request, doc);
+    });
+
+    server.on("/api/ap/config", HTTP_POST, [](AsyncWebServerRequest *request) {
+        String ssid = postValue(request, "ssid", "");
+        String pass = postValue(request, "pass", "");
+        if (ssid.length() < 3) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"اسم نقطة الاتصال يجب ألا يقل عن 3 أحرف\"}");
+            return;
+        }
+        if (pass.length() > 0 && pass.length() < 8) {
+            request->send(400, "application/json", "{\"ok\":false,\"error\":\"كلمة المرور يجب ألا تقل عن 8 أحرف\"}");
+            return;
+        }
+        Preferences prefs;
+        prefs.begin("setup_ap", false);
+        prefs.putString("ssid", ssid);
+        prefs.putString("pass", pass);
+        prefs.end();
+        sendOk(request);
+    });
+
+    // Captive portal probes for phones and laptops
+    auto captiveRedirect = [](AsyncWebServerRequest *request) {
+        request->redirect("http://192.168.4.1/");
+    };
+    server.on("/generate_204", HTTP_GET, captiveRedirect);
+    server.on("/gen_204", HTTP_GET, captiveRedirect);
+    server.on("/hotspot-detect.html", HTTP_GET, captiveRedirect);
+    server.on("/canonical.html", HTTP_GET, captiveRedirect);
+    server.on("/connecttest.txt", HTTP_GET, captiveRedirect);
+    server.on("/ncsi.txt", HTTP_GET, captiveRedirect);
+
     server.on("/api/location/countries", HTTP_GET, [](AsyncWebServerRequest *request) {
         DynamicJsonDocument doc(2048);
         JsonArray arr = doc.createNestedArray("countries");
@@ -1547,28 +1637,47 @@ void startWebServer() {
         size_t actualSize = 0;
         String path;
         bool okState = false;
-        if (lockUpload()) {
+
+        if (lockUpload(1000)) {
             path = chunkUploadPath;
             okState = chunkUploadOk;
+            // Clean up any remaining file handle and reset busy flag on chunk completion
+            if (chunkUploadFile) {
+                lockSD();
+                chunkUploadFile.flush();
+                chunkUploadFile.close();
+                unlockSD();
+            }
+            uploadBusy = false;
             unlockUpload();
         }
-        lockSD();
-        if (SD.exists(path)) {
-            File f = SD.open(path);
-            if (f) {
-                actualSize = f.size();
-                f.close();
+
+        if (finalChunk && okState) {
+            lockSD();
+            if (SD.exists(path)) {
+                File f = SD.open(path);
+                if (f) {
+                    actualSize = f.size();
+                    f.close();
+                }
             }
+            unlockSD();
         }
-        unlockSD();
+
         if (!okState || (finalChunk && totalSize > 0 && actualSize != totalSize)) {
-            Serial.printf("[Files] Chunk upload failed: path=%s size=%u expected=%u\n", path.c_str(), (unsigned)actualSize, (unsigned)totalSize);
+            EventLogger::getInstance().log(LOG_LEVEL_ERROR, "FILES", "Chunk upload failed: ok=%d, path=%s, size=%u, expected=%u", okState, path.c_str(), (unsigned)actualSize, (unsigned)totalSize);
+            Serial.printf("[Files] Chunk upload failed: ok=%d path=%s size=%u expected=%u\n", okState, path.c_str(), (unsigned)actualSize, (unsigned)totalSize);
             request->send(500, "application/json", "{\"ok\":false,\"error\":\"write_failed\"}");
             return;
         }
+
+        if (finalChunk) {
+            EventLogger::getInstance().log(LOG_LEVEL_INFO, "FILES", "File uploaded successfully: %s (%u bytes)", path.c_str(), (unsigned)actualSize);
+        }
+
         DynamicJsonDocument doc(192);
         doc["ok"] = true;
-        doc["size"] = actualSize;
+        doc["size"] = finalChunk ? actualSize : 0;
         sendJson(request, doc);
     }, NULL, handleChunkUploadBody);
     server.on("/api/files/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1576,7 +1685,7 @@ void startWebServer() {
             request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
             return;
         }
-        String path = cleanPath(postValue(request, "name", ""));
+        String path = cleanPath(urlDecode(postValue(request, "name", "")));
         bool ok = deleteRecursively(path);
         if (ok) cachedFileListAt = 0;
         request->send(ok ? 200 : 404, "application/json", ok ? "{\"ok\":true}" : "{\"ok\":false}");
@@ -1586,7 +1695,7 @@ void startWebServer() {
             request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
             return;
         }
-        String path = cleanPath(postValue(request, "name", ""));
+        String path = cleanPath(urlDecode(postValue(request, "name", "")));
         lockSD();
         bool ok = SD.mkdir(path);
         unlockSD();
@@ -1598,8 +1707,8 @@ void startWebServer() {
             request->send(503, "application/json", "{\"ok\":false,\"error\":\"sd_not_connected\"}");
             return;
         }
-        String oldName = cleanPath(postValue(request, "old", ""));
-        String newName = cleanPath(postValue(request, "new", ""));
+        String oldName = cleanPath(urlDecode(postValue(request, "old", "")));
+        String newName = cleanPath(urlDecode(postValue(request, "new", "")));
         if (oldName.length() == 0 || newName.length() == 0) {
             request->send(400, "application/json", "{\"ok\":false}");
             return;
@@ -2603,6 +2712,13 @@ void startWebServer() {
         if (request->url().startsWith("/sd/")) {
             handleSdDownload(request);
             return;
+        }
+        if ((WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) && !request->url().startsWith("/api/")) {
+            String host = request->host();
+            if (host != "192.168.4.1" && host != "vivosmart.local") {
+                request->redirect("http://192.168.4.1/");
+                return;
+            }
         }
         request->send(404, "text/plain", "Not Found");
     });

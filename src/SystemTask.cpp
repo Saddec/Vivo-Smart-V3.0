@@ -20,6 +20,9 @@
 #include <Preferences.h>
 #include <math.h>
 #include <freertos/semphr.h>
+#include <HTTPClient.h>
+#include <WiFiClient.h>
+#include <DNSServer.h>
 
 extern Preferences prefs;
 extern QueueHandle_t audioQueue;
@@ -28,8 +31,9 @@ extern char fileBuffer[256];
 static const char* defaultSSID = "HONOR X9d";
 static const char* defaultPass = "123456789";
 static const char* setupApName = "VivoSmart-Setup";
+static DNSServer dnsServer;
 static const unsigned long reconnectIntervalMs = 15000;
-static const unsigned long apEnableDelayMs = 30000;
+static const unsigned long apEnableDelayMs = 15000;
 static const unsigned long apDisableStableMs = 5000;
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
@@ -91,17 +95,41 @@ static bool isApModeActive() {
 static void startSetupAp() {
     if (!isApModeActive()) WiFi.mode(WIFI_AP_STA);
     if (!setupApActive) {
-        WiFi.softAP(setupApName);
+        Preferences prefsAp;
+        prefsAp.begin("setup_ap", true);
+        String apSsid = prefsAp.getString("ssid", setupApName);
+        String apPass = prefsAp.getString("pass", "");
+        prefsAp.end();
+
+        IPAddress apIP(192, 168, 4, 1);
+        IPAddress netMsk(255, 255, 255, 0);
+        WiFi.softAPConfig(apIP, apIP, netMsk);
+
+        if (apPass.length() >= 8) {
+            WiFi.softAP(apSsid.c_str(), apPass.c_str());
+        } else {
+            WiFi.softAP(apSsid.c_str());
+        }
+
+        dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
+        dnsServer.start(53, "*", apIP);
         setupApActive = true;
+        LOG_WF("WIFI", "Setup AP active: %s (IP: 192.168.4.1, Captive Portal started)", apSsid.c_str());
+        Serial.printf("[WiFi] Setup AP started: %s (192.168.4.1, DNS active)\n", apSsid.c_str());
     }
 }
 
 static void stopSetupAp() {
-    if (isApModeActive()) {
-        WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_STA);
+    if (setupApActive) {
+        dnsServer.stop();
+        if (isApModeActive()) {
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_STA);
+        }
+        setupApActive = false;
+        LOG_WF("WIFI", "Setup AP stopped");
+        Serial.println("[WiFi] Setup AP stopped");
     }
-    setupApActive = false;
 }
 
 // ---------- WiFi ----------
@@ -175,6 +203,11 @@ void maintainWiFi() {
     bool connected = WiFi.status() == WL_CONNECTED;
     unsigned long nowMs = millis();
     static unsigned long lastHardReconnect = 0;
+    static unsigned long lastTimeSave = 0;
+
+    if (setupApActive) {
+        dnsServer.processNextRequest();
+    }
 
     if (connected) {
         if (!lastWifiConnected) {
@@ -189,21 +222,28 @@ void maintainWiFi() {
         }
 
         if (setupApActive && nowMs - wifiConnectedAt >= apDisableStableMs) {
-            LOG_WF("WIFI", "WiFi connection stable, stopping Setup AP");
-            stopSetupAp();
+            // Only stop Setup AP if no client is actively connected to it
+            if (WiFi.softAPgetStationNum() == 0) {
+                LOG_WF("WIFI", "WiFi connection stable and no client on AP, stopping Setup AP");
+                stopSetupAp();
+            }
         }
 
         static unsigned long lastNtpCheck = 0;
         if (!isSystemTimeValid()) {
-            if (nowMs - lastNtpCheck >= 20000 || lastNtpCheck == 0) {
+            if (nowMs - lastNtpCheck >= 15000 || lastNtpCheck == 0) {
                 lastNtpCheck = nowMs;
-                LOG_SYS("SYSTEM", "Retrying NTP synchronization (clock still invalid)...");
+                LOG_SYS("SYSTEM", "Clock invalid, synchronizing time (NTP / HTTP fallback)...");
                 syncTimeFromNTP();
             }
         } else {
             if (nowMs - lastNtpCheck >= 43200000) { // 12 hours periodic refresh
                 lastNtpCheck = nowMs;
                 syncTimeFromNTP();
+            }
+            if (nowMs - lastTimeSave >= 300000 || lastTimeSave == 0) { // 5 minutes periodic NVS save
+                lastTimeSave = nowMs;
+                saveTimeBackupToNVS();
             }
         }
         return;
@@ -220,11 +260,15 @@ void maintainWiFi() {
 
     if (!setupApActive && nowMs - wifiDisconnectedAt >= apEnableDelayMs) {
         setLedState(LED_ERROR);
-        LOG_W("WIFI", "WiFi disconnected for too long, starting Setup AP");
+        LOG_W("WIFI", "WiFi disconnected, starting Setup AP");
         startSetupAp();
     }
 
-    if (nowMs - wifiDisconnectedAt >= 180000 && (lastHardReconnect == 0 || nowMs - lastHardReconnect >= 180000)) {
+    // Check if a client is connected to Setup AP
+    bool clientOnAp = setupApActive && (WiFi.softAPgetStationNum() > 0);
+    unsigned long effectiveInterval = clientOnAp ? 90000UL : reconnectIntervalMs;
+
+    if (!clientOnAp && nowMs - wifiDisconnectedAt >= 180000 && (lastHardReconnect == 0 || nowMs - lastHardReconnect >= 180000)) {
         lastHardReconnect = nowMs;
         lastReconnectAttempt = nowMs; // delay next reconnect call
         LOG_W("WIFI", "WiFi disconnected for over 3 minutes. Performing hard reconnect...");
@@ -239,7 +283,7 @@ void maintainWiFi() {
 
         WiFi.begin(ssid.c_str(), pass.c_str());
     } 
-    else if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
+    else if (nowMs - lastReconnectAttempt >= effectiveInterval) {
         lastReconnectAttempt = nowMs;
         if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
         LOG_WF("WIFI", "Attempting WiFi reconnection...");
@@ -285,6 +329,82 @@ bool isSystemTimeValid() {
     return (tinfo.tm_year + 1900) >= 2024;
 }
 
+void saveTimeBackupToNVS() {
+    time_t now = time(nullptr);
+    if (now >= 1704067200) { // >= 2024
+        Preferences prefs;
+        prefs.begin("time_backup", false);
+        prefs.putULong("lastEpoch", (uint32_t)now);
+        prefs.end();
+    }
+}
+
+void restoreTimeBackupFromNVS() {
+    if (isSystemTimeValid()) return;
+    Preferences prefs;
+    prefs.begin("time_backup", true);
+    uint32_t lastEpoch = prefs.getULong("lastEpoch", 0);
+    prefs.end();
+
+    if (lastEpoch >= 1704067200) {
+        struct timeval tv = {(time_t)lastEpoch, 0};
+        settimeofday(&tv, NULL);
+        applyConfiguredTimezone();
+        forcePrayerRecalc();
+        LOG_SYS("SYSTEM", "Restored time backup from NVS: epoch=%lu", (unsigned long)lastEpoch);
+        Serial.printf("[Time] Restored last known epoch from NVS: %lu\n", (unsigned long)lastEpoch);
+    }
+}
+
+static time_t parseHttpDate(const String& dateStr) {
+    // Format: "Day, DD Mon YYYY HH:MM:SS GMT"
+    int comma = dateStr.indexOf(',');
+    if (comma < 0 || dateStr.length() < comma + 20) return 0;
+    String rest = dateStr.substring(comma + 2);
+    rest.trim();
+
+    int day = 0, year = 0, hour = 0, min = 0, sec = 0;
+    char monStr[8] = {0};
+    if (sscanf(rest.c_str(), "%d %3s %d %d:%d:%d", &day, monStr, &year, &hour, &min, &sec) < 6) {
+        return 0;
+    }
+
+    const char* months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    int month = -1;
+    for (int m = 0; m < 12; m++) {
+        if (strcasecmp(monStr, months[m]) == 0) {
+            month = m;
+            break;
+        }
+    }
+    if (month < 0 || year < 2024 || day < 1 || day > 31) return 0;
+
+    struct tm tm_utc;
+    memset(&tm_utc, 0, sizeof(tm_utc));
+    tm_utc.tm_year = year - 1900;
+    tm_utc.tm_mon = month;
+    tm_utc.tm_mday = day;
+    tm_utc.tm_hour = hour;
+    tm_utc.tm_min = min;
+    tm_utc.tm_sec = sec;
+    tm_utc.tm_isdst = 0;
+
+    char oldTz[64] = {0};
+    const char* curTz = getenv("TZ");
+    if (curTz) strncpy(oldTz, curTz, sizeof(oldTz)-1);
+    setenv("TZ", "UTC0", 1);
+    tzset();
+    time_t epoch = mktime(&tm_utc);
+    if (oldTz[0]) {
+        setenv("TZ", oldTz, 1);
+    } else {
+        unsetenv("TZ");
+    }
+    tzset();
+
+    return epoch;
+}
+
 static bool setSystemEpoch(time_t epoch, const char *source) {
     if (epoch < 1704067200) {
         Serial.printf("[Time] Ignored invalid %s epoch: %ld\n", source, (long)epoch);
@@ -293,10 +413,50 @@ static bool setSystemEpoch(time_t epoch, const char *source) {
     }
     struct timeval tv = {epoch, 0};
     settimeofday(&tv, NULL);
+    applyConfiguredTimezone();
     forcePrayerRecalc();
+    saveTimeBackupToNVS();
     Serial.printf("[Time] System time set from %s: epoch=%ld\n", source, (long)epoch);
     LOG_SYS("SYSTEM", "System time updated from %s: epoch=%ld", source, (long)epoch);
     return true;
+}
+
+bool syncTimeFromHttp() {
+    if (WiFi.status() != WL_CONNECTED) return false;
+
+    const char* endpoints[] = {
+        "http://connectivitycheck.gstatic.com/generate_204",
+        "http://www.google.com",
+        "http://api.aladhan.com"
+    };
+
+    const char* headerKeys[] = {"Date"};
+
+    for (int i = 0; i < 3; i++) {
+        HTTPClient http;
+        http.setTimeout(3500);
+        http.collectHeaders(headerKeys, 1);
+        if (http.begin(endpoints[i])) {
+            int code = http.GET();
+            if (code > 0 && http.hasHeader("Date")) {
+                String dStr = http.header("Date");
+                http.end();
+                time_t epoch = parseHttpDate(dStr);
+                if (epoch >= 1704067200) {
+                    applyConfiguredTimezone();
+                    bool ok = setSystemEpoch(epoch, "HTTP-Date");
+                    if (ok) {
+                        Serial.printf("[Time] HTTP Date sync success from %s: %s (epoch=%ld)\n", endpoints[i], dStr.c_str(), (long)epoch);
+                        LOG_SYS("SYSTEM", "HTTP Date sync success from %s: %s", endpoints[i], dStr.c_str());
+                        return true;
+                    }
+                }
+            } else {
+                http.end();
+            }
+        }
+    }
+    return false;
 }
 
 bool syncTimeFromBrowser(time_t browserEpoch) {
@@ -357,16 +517,22 @@ void syncTimeFromNTP() {
     Serial.println("[Time] NTP sync requested");
     LOG_SYS("SYSTEM", "NTP time synchronization requested");
     struct tm tinfo;
-    if (getLocalTime(&tinfo, 6000)) {
+    bool ntpOk = getLocalTime(&tinfo, 3000);
+    if (ntpOk && (tinfo.tm_year + 1900) >= 2024) {
         Serial.printf("[Time] NTP time valid: %04d-%02d-%02d %02d:%02d\n",
                       tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
                       tinfo.tm_hour, tinfo.tm_min);
         LOG_SYS("SYSTEM", "NTP sync successful: %04d-%02d-%02d %02d:%02d",
                 tinfo.tm_year + 1900, tinfo.tm_mon + 1, tinfo.tm_mday,
                 tinfo.tm_hour, tinfo.tm_min);
+        saveTimeBackupToNVS();
     } else {
-        Serial.println("[Time] NTP sync failed or timed out");
-        LOG_E("SYSTEM", "NTP time synchronization failed or timed out");
+        Serial.println("[Time] NTP sync failed or timed out, trying HTTP Date fallback...");
+        if (syncTimeFromHttp()) {
+            saveTimeBackupToNVS();
+        } else {
+            LOG_E("SYSTEM", "Both NTP and HTTP time synchronization failed");
+        }
     }
     forcePrayerRecalc();
 }
@@ -655,6 +821,8 @@ void playStartupAlert() {
 void systemTask(void *pvParameters) {
     EventLogger::getInstance().begin();
     LOG_SYS("SYSTEM", "System task starting...");
+
+    restoreTimeBackupFromNVS();
 
     Preferences prefs;
     prefs.begin("prayer_cfg", true);

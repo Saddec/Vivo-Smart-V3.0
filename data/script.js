@@ -313,6 +313,7 @@ function initDashboard() {
     loadStartupSettings,
     loadSessionTimeout,
     loadWifiStatus,
+    loadApConfig,
     loadEidModeStatus,
     loadEidSchedules,
     loadEidTakbeerConfig,
@@ -322,6 +323,14 @@ function initDashboard() {
   startupJobs.forEach((job, index) => setTimeout(job, 150 + (index * 180)));
   setTimeout(loadCsvStatus, 1200);
   setTimeout(loadFileList, 3000);
+
+  // Periodic background time sync every 10 minutes
+  if (!window._periodicTimeSyncTimer) {
+    window._periodicTimeSyncTimer = setInterval(() => {
+      const epochSecs = Math.floor(Date.now() / 1000);
+      apiPost('/api/time/sync_browser', { timestamp: epochSecs });
+    }, 600000);
+  }
 }
 
 function format12Hour(time24) {
@@ -370,6 +379,17 @@ function fetchStatus() {
     
     // Update local clock using data directly from status response
     updateClock(data);
+
+    // Auto-sync if device lost its clock (year 1970)
+    if (data.greg && data.greg.startsWith('1970')) {
+      const nowEpoch = Math.floor(Date.now() / 1000);
+      if (!window._lastAutoSync || (Date.now() - window._lastAutoSync > 15000)) {
+        window._lastAutoSync = Date.now();
+        apiPost('/api/time/sync_browser', { timestamp: nowEpoch }).then(() => {
+          setTimeout(fetchPrayerTimes, 600);
+        });
+      }
+    }
 
     const isAdhan = data.adhan === true;
     const statusCard = $('playbackStatusCard');
@@ -679,6 +699,38 @@ function loadWifiStatus() {
       if (title) { title.className = 'network-title disconnected'; title.textContent = 'غير متصل'; }
       if (detail) detail.textContent = `نقطة الإعداد: ${data.apIp || '192.168.4.1'}`;
       if (ssidEl) ssidEl.textContent = data.savedSsid ? `محفوظة: ${data.savedSsid}` : '';
+    }
+  });
+}
+
+function loadApConfig() {
+  apiGet('/api/ap/config', {}).then((data) => {
+    if ($('apSsid')) $('apSsid').value = data.ssid || 'VivoSmart-Setup';
+    if ($('apPass')) $('apPass').placeholder = data.hasPass ? '•••••••• (محمية بكلمة مرور)' : 'بدون كلمة مرور (شبكة مفتوحة)';
+    if ($('apStatusBadge')) {
+      $('apStatusBadge').textContent = data.active ? `نشطة (${data.stations || 0} أجهزة متصلة)` : 'متوقفة';
+      $('apStatusBadge').style.background = data.active ? '#28a745' : '#6c757d';
+    }
+  });
+}
+
+function saveApConfig() {
+  const ssid = ($('apSsid') ? $('apSsid').value.trim() : '');
+  const pass = ($('apPass') ? $('apPass').value.trim() : '');
+  if (!ssid || ssid.length < 3) {
+    toast('اسم نقطة الاتصال يجب ألا يقل عن 3 أحرف', 'error');
+    return;
+  }
+  if (pass && pass.length < 8) {
+    toast('كلمة المرور يجب ألا تقل عن 8 أحرف أو اتركها فارغة لشبكة مفتوحة', 'error');
+    return;
+  }
+  apiPost('/api/ap/config', { ssid, pass }).then((res) => {
+    if (res && res.ok) {
+      toast('تم حفظ إعدادات نقطة الاتصال (Setup AP) بنجاح');
+      loadApConfig();
+    } else {
+      toast('فشل الحفظ: ' + (res.error || 'خطأ غير معروف'), 'error');
     }
   });
 }
@@ -1118,6 +1170,7 @@ function uploadFile() {
       statusDiv.textContent = 'جاري الرفع... 0%';
   }
 
+  // 64KB chunk size for rock-solid stability on ESP32 SPI SD card
   const chunkSize = 64 * 1024;
   let offset = 0;
   const startTime = Date.now();
@@ -1131,7 +1184,12 @@ function uploadFile() {
       const url = `/api/files/upload_chunk?name=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(folder)}&offset=${offset}&total=${file.size}&final=${finalChunk}`;
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url, true);
+      xhr.timeout = 30000; // 30s timeout per chunk
       xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      xhr.ontimeout = function() {
+          handleFailure('انتهت مهلة اتصال الشريحة، إعادة المحاولة...');
+      };
 
       xhr.upload.onprogress = function(e) {
           const loaded = offset + (e.lengthComputable ? e.loaded : 0);
@@ -1161,7 +1219,7 @@ function uploadFile() {
                   statusDiv.style.color = '#f39c12';
                   statusDiv.textContent = `فشل مؤقت، إعادة المحاولة ${retryCount}/${maxRetries}...`;
               }
-              setTimeout(sendChunk, 1500);
+              setTimeout(sendChunk, 1000);
           } else {
               if (statusDiv) {
                   statusDiv.style.color = '#e74c3c';
@@ -1173,7 +1231,12 @@ function uploadFile() {
 
       xhr.onload = function() {
           if (xhr.status !== 200) {
-              handleFailure('فشل الرفع. خطأ من السيرفر: ' + xhr.status);
+              let detail = xhr.status;
+              try {
+                  const res = JSON.parse(xhr.responseText);
+                  if (res && res.error) detail += ' (' + res.error + ')';
+              } catch(e) {}
+              handleFailure('فشل الرفع. خطأ من السيرفر: ' + detail);
               return;
           }
 

@@ -617,15 +617,11 @@ void updatePresenceManager() {
 
     if (!cfg.enabled) {
         currentState = PRESENCE_AWAY;
-        if (bleInitialized && !bleScanRunning) {
-            BLEDevice::deinit(true);
-            bleInitialized = false;
-        }
         return;
     }
 
-    // Audio protection: never interrupt higher priority audio (adhan, iqama, alert, radio)
-    if (audioManager.getState() == AUDIO_PLAYING && audioManager.getCurrentPriority() > 0) {
+    // Audio protection: never run presence scans or triggers while ANY audio is playing
+    if (audioManager.getState() != AUDIO_IDLE) {
         return;
     }
 
@@ -678,12 +674,6 @@ void updatePresenceManager() {
             }
         }
         pScan->clearResults();
-    } else {
-        // Free BLE memory if not in BLE mode to preserve heap for audio & web server
-        if (bleInitialized && !bleScanRunning) {
-            BLEDevice::deinit(true);
-            bleInitialized = false;
-        }
     }
 
     // 3. Final Decision Logic

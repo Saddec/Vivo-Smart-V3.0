@@ -174,6 +174,18 @@
         <button class="btn" onclick="connectNetwork()"><i class="fas fa-wifi"></i> اتصال الآن</button>
       </div>
       <div class="glass-card">
+        <h3><i class="fas fa-broadcast-tower"></i> نقطة اتصال الطوارئ (Setup AP)</h3>
+        <p style="font-size:0.85rem; color:#aaa; margin-bottom:10px;">تعمل هذه الشبكة تلقائياً عند انقطاع الواي فاي أو الإنترنت للتحكم في الجهاز بالكامل محلياً عبر 192.168.4.1 مع بوابة الدخول المباشر (Captive Portal).</p>
+        <div style="margin-bottom:12px;">
+          <span>الحالة الحالية: </span><span id="apStatusBadge" class="badge" style="background:#555; padding:4px 8px; border-radius:4px;">فحص...</span>
+        </div>
+        <label>اسم الشبكة (SSID)</label>
+        <input type="text" id="apSsid" placeholder="VivoSmart-Setup">
+        <label>كلمة المرور (اتركها فارغة لشبكة مفتوحة)</label>
+        <input type="password" id="apPass" placeholder="بدون كلمة مرور">
+        <button class="btn" onclick="saveApConfig()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ إعدادات الهوتسبوت</button>
+      </div>
+      <div class="glass-card">
         <h3><i class="fas fa-globe"></i> إعدادات DDNS (NO-IP)</h3>
         <label class="switch"><input type="checkbox" id="ddnsToggle" onchange="toggleDDNS(true)"><span class="slider"></span></label> تفعيل الخدمة
         <div id="ddnsFields" style="display:none; margin-top:15px;">
@@ -1349,6 +1361,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.17"></script>
+  <script src="/script.js?v=3.18"></script>
 </body>
 </html>
