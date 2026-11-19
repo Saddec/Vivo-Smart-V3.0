@@ -359,19 +359,47 @@ class ApiService {
     }
   }
 
-  Future<bool> uploadFile(
-    List<int> bytes,
-    String filename,
-    String folder, {
+  Future<bool> uploadFile({
+    List<int>? bytes,
+    String? filePath,
+    required String filename,
+    required String folder,
     void Function(int count, int total, double speedBps, String statusText)? onSendProgress,
     bool Function()? isCancelled,
   }) async {
+    HttpClient? client;
+    RandomAccessFile? raf;
     try {
-      final total = bytes.length;
-      // 64KB chunks to match ESP32 buffer, drastically speeding up upload (4x faster than 16KB)
+      int total = 0;
+      if (filePath != null && filePath.isNotEmpty) {
+        final f = File(filePath);
+        if (!await f.exists()) {
+          debugPrint('File does not exist: $filePath');
+          return false;
+        }
+        total = await f.length();
+        raf = await f.open(mode: FileMode.read);
+      } else if (bytes != null) {
+        total = bytes.length;
+      } else {
+        return false;
+      }
+
+      if (total <= 0) return false;
+
+      // 64KB chunk size matching script.js & ESP32 SPI SD card buffer
       const chunkSize = 65536;
       int offset = 0;
       final startTime = DateTime.now();
+
+      final baseUrlStr = _dio.options.baseUrl.isNotEmpty
+          ? _dio.options.baseUrl
+          : (_ipAddress != null ? _formatBaseUrl(_ipAddress!) : '');
+      if (baseUrlStr.isEmpty) return false;
+
+      client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 30);
+      client.idleTimeout = const Duration(seconds: 30);
 
       while (offset < total) {
         if (isCancelled?.call() == true) {
@@ -380,9 +408,17 @@ class ApiService {
         }
 
         final end = (offset + chunkSize < total) ? offset + chunkSize : total;
-        final chunk = bytes is Uint8List
-            ? bytes.sublist(offset, end)
-            : Uint8List.fromList(bytes.sublist(offset, end));
+        final currentChunkLen = end - offset;
+
+        Uint8List chunk;
+        if (raf != null) {
+          await raf.setPosition(offset);
+          chunk = await raf.read(currentChunkLen);
+        } else {
+          final sub = bytes!.sublist(offset, end);
+          chunk = sub is Uint8List ? sub : Uint8List.fromList(sub);
+        }
+
         final isFinal = (end == total);
 
         bool chunkUploaded = false;
@@ -393,31 +429,46 @@ class ApiService {
           if (isCancelled?.call() == true) return false;
 
           try {
-            final response = await _dio.post(
-              '/api/files/upload_chunk',
-              queryParameters: {
-                'name': filename,
-                'folder': folder,
-                'offset': offset,
-                'total': total,
-                'final': isFinal ? 1 : 0,
-              },
-              data: Stream.fromIterable([chunk]),
-              options: Options(
-                sendTimeout: const Duration(seconds: 45),
-                receiveTimeout: const Duration(seconds: 45),
-                headers: {
-                  'Content-Type': 'application/octet-stream',
-                  'Content-Length': chunk.length,
-                },
-              ),
+            final queryParams = <String, String>{
+              'name': filename,
+              'folder': folder,
+              'offset': offset.toString(),
+              'total': total.toString(),
+              'final': isFinal ? '1' : '0',
+            };
+            if (_sessionToken != null && _sessionToken!.isNotEmpty) {
+              queryParams['token'] = _sessionToken!;
+            }
+
+            final baseUri = Uri.parse(baseUrlStr);
+            final pathPrefix = baseUri.path.endsWith('/')
+                ? baseUri.path.substring(0, baseUri.path.length - 1)
+                : baseUri.path;
+            final targetUri = baseUri.replace(
+              path: '$pathPrefix/api/files/upload_chunk',
+              queryParameters: queryParams,
             );
 
-            final data = response.data is String ? jsonDecode(response.data) : response.data;
-            if (data != null && data['ok'] == true) {
-              chunkUploaded = true;
+            final request = await client.postUrl(targetUri).timeout(const Duration(seconds: 35));
+            request.headers.set('Content-Type', 'application/octet-stream');
+            if (_sessionToken != null && _sessionToken!.isNotEmpty) {
+              request.headers.set('X-Session-Token', _sessionToken!);
+            }
+            request.contentLength = chunk.length;
+            request.add(chunk);
+
+            final response = await request.close().timeout(const Duration(seconds: 35));
+            final responseBody = await response.transform(utf8.decoder).join();
+
+            if (response.statusCode == 200) {
+              final data = jsonDecode(responseBody);
+              if (data != null && data['ok'] == true) {
+                chunkUploaded = true;
+              } else {
+                throw Exception(data?['error'] ?? 'write_failed');
+              }
             } else {
-              throw Exception(data?['error'] ?? 'write_failed');
+              throw Exception('HTTP ${response.statusCode}: $responseBody');
             }
           } catch (e) {
             retries++;
@@ -431,7 +482,7 @@ class ApiService {
               final speed = elapsedSec > 0.3 ? (offset / elapsedSec) : 0.0;
               onSendProgress(offset, total, speed, retryText);
             }
-            await Future.delayed(const Duration(milliseconds: 1200));
+            await Future.delayed(const Duration(milliseconds: 1000));
           }
         }
 
@@ -441,14 +492,22 @@ class ApiService {
           final speed = elapsedSec > 0.3 ? (offset / elapsedSec) : 0.0;
           onSendProgress(offset, total, speed, 'جاري الرفع...');
         }
-        // Small yield to let ESP32 FreeRTOS tasks handle background audio/wifi
-        await Future.delayed(const Duration(milliseconds: 10));
+
+        // Brief delay between chunks to allow ESP32 FreeRTOS tasks & SD flush
+        await Future.delayed(const Duration(milliseconds: 15));
       }
 
       return true;
     } catch (e) {
       debugPrint('Error uploading file chunks: $e');
       return false;
+    } finally {
+      try {
+        await raf?.close();
+      } catch (_) {}
+      try {
+        client?.close(force: true);
+      } catch (_) {}
     }
   }
 

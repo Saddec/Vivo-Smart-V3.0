@@ -844,6 +844,62 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  void _showSetupApDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Dialog(
+            backgroundColor: const Color(0xFF1C132E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(color: Colors.white.withOpacity(0.1)),
+            ),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Container(
+              width: 520,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.cell_tower, color: Color(0xFF00F2FE), size: 24),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'نقطة اتصال الطوارئ (Setup AP)',
+                            style: GoogleFonts.cairo(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white10),
+                    const SizedBox(height: 10),
+                    const _ApSettingsCard(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _handleRefreshAll(BuildContext context) async {
     try {
       await ref.read(statusPollingProvider.notifier).pollStatus();
@@ -1016,6 +1072,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       onSelected: (value) async {
                         if (value == 'switch_device') {
                           _showSwitchDevicesDialog(context);
+                        } else if (value == 'setup_ap') {
+                          _showSetupApDialog(context);
                         } else if (value == 'refresh') {
                           await _handleRefreshAll(context);
                         } else if (value == 'rename') {
@@ -1032,6 +1090,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               const Icon(Icons.devices, color: Color(0xFF00F2FE)),
                               const SizedBox(width: 10),
                               Text('تبديل / إدارة الأجهزة', style: GoogleFonts.cairo(color: Colors.white)),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'setup_ap',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.cell_tower, color: Color(0xFF00F2FE)),
+                              const SizedBox(width: 10),
+                              Text('نقطة اتصال الطوارئ (Setup AP)', style: GoogleFonts.cairo(color: Colors.white)),
                             ],
                           ),
                         ),
@@ -3319,24 +3387,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Future<void> _handleFileUpload(BuildContext context) async {
     try {
       final result = await FilePicker.platform.pickFiles(
-        withData: true,
+        withData: false, // Stream chunk-by-chunk from disk to prevent OOM
         type: FileType.custom,
         allowedExtensions: ['mp3', 'wav', 'csv'],
       );
 
       if (result != null && result.files.isNotEmpty) {
         final file = result.files.first;
-        List<int>? bytes = file.bytes;
         final name = file.name;
+        final filePath = file.path;
+        List<int>? bytes = file.bytes;
 
-        // Fallback for file.bytes if null (e.g. desktop/large files)
-        if (bytes == null && file.path != null) {
+        int totalBytes = file.size;
+        if (totalBytes <= 0 && filePath != null) {
           try {
-            bytes = await File(file.path!).readAsBytes();
+            totalBytes = File(filePath).lengthSync();
           } catch (_) {}
         }
+        if (totalBytes <= 0 && bytes != null) {
+          totalBytes = bytes.length;
+        }
 
-        if (bytes == null) {
+        if (filePath == null && bytes == null) {
           if (context.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('تعذر قراءة بيانات الملف المختار'), backgroundColor: Colors.redAccent),
@@ -3347,7 +3419,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
         double uploadProgress = 0.0;
         int sentBytes = 0;
-        int totalBytes = bytes.length;
         String speedText = '';
         String uploadStatusText = 'جاري الرفع...';
         bool isCancelledByUser = false;
@@ -3460,15 +3531,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         // Upload to active folder relative path (stripping leading slash for uploadFolder parameter)
         final serverFolder = _currentFolder == '/' ? '/' : _currentFolder.substring(0, _currentFolder.length - 1);
         final success = await ref.read(filesProvider.notifier).uploadFile(
-          bytes,
-          name,
-          serverFolder,
+          bytes: bytes,
+          filePath: filePath,
+          filename: name,
+          folder: serverFolder,
           isCancelled: () => isCancelledByUser,
           onSendProgress: (sent, total, speedBps, statusMsg) {
             if (dialogSetState != null) {
               dialogSetState!(() {
                 sentBytes = sent;
-                totalBytes = total > 0 ? total : (bytes?.length ?? 0);
+                totalBytes = total > 0 ? total : totalBytes;
                 uploadProgress = (totalBytes > 0) ? (sent / totalBytes).clamp(0.0, 1.0) : 0.0;
                 uploadStatusText = statusMsg;
                 if (speedBps > 1024 * 1024) {
@@ -8110,6 +8182,72 @@ class _WifiCardState extends ConsumerState<_WifiCard> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               side: BorderSide(color: Colors.white.withOpacity(0.08)),
               elevation: 8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (dialogCtx) => Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Dialog(
+                    backgroundColor: const Color(0xFF1C132E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                      side: BorderSide(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                    child: Container(
+                      width: 520,
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.85,
+                      ),
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.cell_tower, color: Color(0xFF00F2FE), size: 24),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'نقطة اتصال الطوارئ (Setup AP)',
+                                    style: GoogleFonts.cairo(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                                ),
+                              ],
+                            ),
+                            const Divider(color: Colors.white10),
+                            const SizedBox(height: 10),
+                            const _ApSettingsCard(),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.cell_tower, color: Color(0xFF00FFCC), size: 20),
+            label: Text(
+              'إعدادات نقطة اتصال الطوارئ (Setup AP)',
+              style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              side: const BorderSide(color: Color(0xFF00FFCC), width: 1.2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
           ),
 

@@ -241,7 +241,19 @@ class StatusPollingNotifier extends StateNotifier<DeviceStatusModel> {
 
   ApiService get _api => _ref.read(apiServiceProvider);
 
+  bool _isPaused = false;
+
+  void pausePolling() {
+    _isPaused = true;
+  }
+
+  void resumePolling() {
+    _isPaused = false;
+    pollStatus();
+  }
+
   void startPolling() {
+    _isPaused = false;
     _pollingTimer?.cancel();
     // Poll immediately
     pollStatus();
@@ -259,12 +271,14 @@ class StatusPollingNotifier extends StateNotifier<DeviceStatusModel> {
   }
 
   void stopPolling() {
+    _isPaused = false;
     _pollingTimer?.cancel();
     _countdownTimer?.cancel();
     state = DeviceStatusModel();
   }
 
   Future<void> pollStatus() async {
+    if (_isPaused) return;
     final statusFuture = _api.getStatus(isUserActive: true);
     final clockFuture = _api.getClock();
     final prayersFuture = _api.getPrayerTimes();
@@ -482,24 +496,31 @@ class FilesStateNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>>>
     return success;
   }
 
-  Future<bool> uploadFile(
-    List<int> bytes,
-    String filename,
-    String folder, {
+  Future<bool> uploadFile({
+    List<int>? bytes,
+    String? filePath,
+    required String filename,
+    required String folder,
     void Function(int count, int total, double speedBps, String statusText)? onSendProgress,
     bool Function()? isCancelled,
   }) async {
-    final success = await _api.uploadFile(
-      bytes,
-      filename,
-      folder,
-      onSendProgress: onSendProgress,
-      isCancelled: isCancelled,
-    );
-    if (success) {
-      await refresh();
+    _ref.read(statusPollingProvider.notifier).pausePolling();
+    try {
+      final success = await _api.uploadFile(
+        bytes: bytes,
+        filePath: filePath,
+        filename: filename,
+        folder: folder,
+        onSendProgress: onSendProgress,
+        isCancelled: isCancelled,
+      );
+      if (success) {
+        await refresh();
+      }
+      return success;
+    } finally {
+      _ref.read(statusPollingProvider.notifier).resumePolling();
     }
-    return success;
   }
 
   Future<bool> playFile(String path) async {
