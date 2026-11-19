@@ -5679,7 +5679,18 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          Center(
+            child: Text(
+              'Vivo Smart App • الإصدار v1.0.4',
+              style: GoogleFonts.cairo(
+                color: Colors.white38,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );

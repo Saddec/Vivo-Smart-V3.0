@@ -555,6 +555,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                       ),
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            Center(
+                              child: Text(
+                                'Vivo Smart v1.0.4',
+                                style: GoogleFonts.cairo(
+                                  color: Colors.white38,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
                           ],
                         ),
                       ),
