@@ -497,233 +497,272 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
   void _showSwitchDevicesDialog(BuildContext context) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      constraints: const BoxConstraints(maxWidth: 620),
-      builder: (sheetCtx) {
+      builder: (dialogCtx) {
         return Directionality(
           textDirection: TextDirection.rtl,
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.75,
+          child: Dialog(
+            backgroundColor: const Color(0xFF1C132E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(color: Colors.white.withOpacity(0.1)),
             ),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1C132E),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Consumer(
-              builder: (ctx, refConsumer, _) {
-                final savedDevices = refConsumer.watch(savedDevicesProvider);
-                final currentConn = refConsumer.watch(connectionStateProvider);
-                final currentIp = currentConn.ip ?? '';
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Container(
+              width: 540,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
+              ),
+              child: Consumer(
+                builder: (ctx, refConsumer, _) {
+                  final savedDevices = refConsumer.watch(savedDevicesProvider);
+                  final currentConn = refConsumer.watch(connectionStateProvider);
+                  final currentIp = currentConn.ip ?? '';
 
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 12),
-                    Center(
-                      child: Container(
-                        width: 48,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Colors.white24,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.devices, color: Color(0xFF00F2FE), size: 24),
-                          const SizedBox(width: 10),
-                          Text(
-                            'الأجهزة المحفوظة والتبديل',
-                            style: GoogleFonts.cairo(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const Spacer(),
-                          IconButton(
-                            icon: const Icon(Icons.add_circle, color: Color(0xFF00F2FE), size: 28),
-                            tooltip: 'إضافة جهاز جديد',
-                            onPressed: () => _showAddOrEditDeviceDialog(context),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(color: Colors.white10),
-                    if (savedDevices.isEmpty)
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                       Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Column(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 20, 12),
+                        child: Row(
                           children: [
-                            const Icon(Icons.router_outlined, color: Colors.white30, size: 48),
-                            const SizedBox(height: 12),
-                            Text(
-                              'لا توجد أجهزة ESP محفوظة حالياً',
-                              style: GoogleFonts.cairo(color: Colors.white54, fontSize: 14),
-                            ),
-                            const SizedBox(height: 16),
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF00F2FE),
-                                foregroundColor: Colors.black,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00F2FE).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: const Icon(Icons.devices, color: Color(0xFF00F2FE), size: 24),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'الأجهزة المحفوظة والتبديل',
+                                    style: GoogleFonts.cairo(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    'اختر جهازاً للاتصال السريع أو أضف جهازاً جديداً',
+                                    style: GoogleFonts.cairo(
+                                      color: Colors.white54,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle, color: Color(0xFF00F2FE), size: 28),
+                              tooltip: 'إضافة جهاز جديد',
                               onPressed: () => _showAddOrEditDeviceDialog(context),
-                              icon: const Icon(Icons.add),
-                              label: Text('إضافة جهاز جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                              tooltip: 'إغلاق',
+                              onPressed: () => Navigator.of(dialogCtx).pop(),
                             ),
                           ],
                         ),
-                      )
-                    else
-                      Flexible(
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          itemCount: savedDevices.length,
-                          separatorBuilder: (_, __) => const SizedBox(height: 8),
-                          itemBuilder: (ctx, index) {
-                            final dev = savedDevices[index];
-                            final isActive = dev.ip == currentIp;
-
-                            return Container(
-                              decoration: BoxDecoration(
-                                color: isActive
-                                    ? const Color(0x3300F2FE)
-                                    : const Color(0x7316132C),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: isActive
-                                      ? const Color(0xFF00F2FE)
-                                      : Colors.white.withOpacity(0.08),
-                                  width: isActive ? 1.5 : 1.0,
-                                ),
-                              ),
-                              child: ListTile(
-                                leading: Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: isActive
-                                        ? const Color(0xFF00F2FE).withOpacity(0.2)
-                                        : Colors.white.withOpacity(0.05),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    isActive ? Icons.check_circle : Icons.router,
-                                    color: isActive ? const Color(0xFF00F2FE) : Colors.white60,
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        dev.name.isNotEmpty ? dev.name : dev.ip,
-                                        style: GoogleFonts.cairo(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 15,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    if (isActive) ...[
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF00F2FE),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: Text(
-                                          'متصل حالياً',
-                                          style: GoogleFonts.cairo(
-                                            color: Colors.black,
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                subtitle: dev.name.isNotEmpty
-                                    ? Text(
-                                        dev.ip,
-                                        style: GoogleFonts.cairo(
-                                          color: Colors.white60,
-                                          fontSize: 13,
-                                        ),
-                                        textDirection: TextDirection.ltr,
-                                        maxLines: 1,
-                                      )
-                                    : null,
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.edit, color: Colors.white54, size: 20),
-                                      tooltip: 'تعديل',
-                                      onPressed: () => _showAddOrEditDeviceDialog(context, existingDevice: dev),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                      tooltip: 'حذف',
-                                      onPressed: () async {
-                                        await refConsumer.read(savedDevicesProvider.notifier).removeDevice(dev.ip);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                onTap: isActive
-                                    ? null
-                                    : () async {
-                                        Navigator.of(sheetCtx).pop();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text('جاري التبديل إلى: ${dev.name.isNotEmpty ? dev.name : dev.ip}...'),
-                                            backgroundColor: const Color(0xFF1C132E),
-                                            duration: const Duration(seconds: 2),
-                                          ),
-                                        );
-                                        final success = await refConsumer
-                                            .read(connectionStateProvider.notifier)
-                                            .switchToDevice(dev.ip, dev.password);
-                                        if (context.mounted) {
-                                          if (success) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(
-                                                content: Text('تم الاتصال بنجاح بـ ${dev.name.isNotEmpty ? dev.name : dev.ip}'),
-                                                backgroundColor: Colors.green,
-                                              ),
-                                            );
-                                          } else {
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(
-                                                content: Text('فشل الاتصال بـ ${dev.ip}. تحقق من الشبكة وكلمة المرور.'),
-                                                backgroundColor: Colors.redAccent,
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                              ),
-                            );
-                          },
-                        ),
                       ),
-                    const SizedBox(height: 16),
-                  ],
-                );
-              },
+                      const Divider(color: Colors.white10, height: 1),
+                      if (savedDevices.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(32.0),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.router_outlined, color: Colors.white30, size: 48),
+                              const SizedBox(height: 12),
+                              Text(
+                                'لا توجد أجهزة ESP محفوظة حالياً',
+                                style: GoogleFonts.cairo(color: Colors.white54, fontSize: 14),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF00F2FE),
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () => _showAddOrEditDeviceDialog(context),
+                                icon: const Icon(Icons.add),
+                                label: Text('إضافة جهاز جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            itemCount: savedDevices.length,
+                            separatorBuilder: (_, __) => const SizedBox(height: 10),
+                            itemBuilder: (ctx, index) {
+                              final dev = savedDevices[index];
+                              final isActive = dev.ip == currentIp;
+
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: isActive
+                                      ? null
+                                      : () async {
+                                          Navigator.of(dialogCtx).pop();
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('جاري التبديل إلى: ${dev.name.isNotEmpty ? dev.name : dev.ip}...'),
+                                              backgroundColor: const Color(0xFF1C132E),
+                                              duration: const Duration(seconds: 2),
+                                            ),
+                                          );
+                                          final success = await refConsumer
+                                              .read(connectionStateProvider.notifier)
+                                              .switchToDevice(dev.ip, dev.password);
+                                          if (context.mounted) {
+                                            if (success) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('تم الاتصال بنجاح بـ ${dev.name.isNotEmpty ? dev.name : dev.ip}'),
+                                                  backgroundColor: Colors.green,
+                                                ),
+                                              );
+                                            } else {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(
+                                                  content: Text('فشل الاتصال بـ ${dev.ip}. تحقق من الشبكة وكلمة المرور.'),
+                                                  backgroundColor: Colors.redAccent,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: isActive
+                                          ? const Color(0x3300F2FE)
+                                          : const Color(0x7316132C),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(
+                                        color: isActive
+                                            ? const Color(0xFF00F2FE)
+                                            : Colors.white.withOpacity(0.08),
+                                        width: isActive ? 1.5 : 1.0,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: isActive
+                                                ? const Color(0xFF00F2FE).withOpacity(0.2)
+                                                : Colors.white.withOpacity(0.05),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Icon(
+                                            isActive ? Icons.check_circle : Icons.router,
+                                            color: isActive ? const Color(0xFF00F2FE) : Colors.white60,
+                                            size: 22,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Flexible(
+                                                    child: Text(
+                                                      dev.name.isNotEmpty ? dev.name : dev.ip,
+                                                      style: GoogleFonts.cairo(
+                                                        color: Colors.white,
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 15,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                  ),
+                                                  if (isActive) ...[
+                                                    const SizedBox(width: 8),
+                                                    Container(
+                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                                      decoration: BoxDecoration(
+                                                        color: const Color(0xFF00F2FE),
+                                                        borderRadius: BorderRadius.circular(6),
+                                                      ),
+                                                      child: Text(
+                                                        'متصل حالياً',
+                                                        style: GoogleFonts.cairo(
+                                                          color: Colors.black,
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 11,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                dev.ip,
+                                                style: GoogleFonts.cairo(
+                                                  color: Colors.white60,
+                                                  fontSize: 13,
+                                                ),
+                                                textDirection: TextDirection.ltr,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 20),
+                                              tooltip: 'تعديل',
+                                              visualDensity: VisualDensity.compact,
+                                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                              onPressed: () => _showAddOrEditDeviceDialog(context, existingDevice: dev),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                              tooltip: 'حذف',
+                                              visualDensity: VisualDensity.compact,
+                                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                              onPressed: () async {
+                                                await refConsumer.read(savedDevicesProvider.notifier).removeDevice(dev.ip);
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                },
+              ),
             ),
           ),
         );
@@ -3309,6 +3348,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         double uploadProgress = 0.0;
         int sentBytes = 0;
         int totalBytes = bytes.length;
+        String speedText = '';
+        String uploadStatusText = 'جاري الرفع...';
+        bool isCancelledByUser = false;
         StateSetter? dialogSetState;
         bool isDialogShowing = false;
 
@@ -3374,8 +3416,37 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               ),
                             ],
                           ),
+                          if (speedText.isNotEmpty || uploadStatusText.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  uploadStatusText,
+                                  style: GoogleFonts.cairo(
+                                    color: uploadStatusText.contains('إعادة') ? const Color(0xFFF39C12) : const Color(0xFFADCCFF),
+                                    fontSize: 11,
+                                  ),
+                                ),
+                                if (speedText.isNotEmpty)
+                                  Text(
+                                    speedText,
+                                    style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            isCancelledByUser = true;
+                            Navigator.of(context, rootNavigator: true).pop();
+                          },
+                          child: Text('إلغاء الرفع', style: GoogleFonts.cairo(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
                     ),
                   );
                 },
@@ -3392,12 +3463,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           bytes,
           name,
           serverFolder,
-          onSendProgress: (sent, total) {
+          isCancelled: () => isCancelledByUser,
+          onSendProgress: (sent, total, speedBps, statusMsg) {
             if (dialogSetState != null) {
               dialogSetState!(() {
                 sentBytes = sent;
-                totalBytes = total > 0 ? total : bytes!.length;
+                totalBytes = total > 0 ? total : (bytes?.length ?? 0);
                 uploadProgress = (totalBytes > 0) ? (sent / totalBytes).clamp(0.0, 1.0) : 0.0;
+                uploadStatusText = statusMsg;
+                if (speedBps > 1024 * 1024) {
+                  speedText = '${(speedBps / (1024 * 1024)).toStringAsFixed(1)} MB/s';
+                } else if (speedBps > 0) {
+                  speedText = '${(speedBps / 1024).toStringAsFixed(0)} KB/s';
+                }
               });
             }
           },
@@ -3407,12 +3485,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (isDialogShowing) {
             Navigator.of(context, rootNavigator: true).pop(); // Close progress dialog
           }
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(success ? 'تم رفع الملف بنجاح!' : 'فشل رفع الملف إلى الذاكرة'),
-              backgroundColor: success ? Colors.green : Colors.redAccent,
-            ),
-          );
+          if (!isCancelledByUser) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? 'تم رفع الملف بنجاح!' : 'فشل رفع الملف إلى الذاكرة'),
+                backgroundColor: success ? Colors.green : Colors.redAccent,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
@@ -5441,6 +5521,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const _WifiCard(),
           const SizedBox(height: 20),
           const _NetworkSettingsCard(),
+          const SizedBox(height: 20),
+          const _ApSettingsCard(),
           const SizedBox(height: 20),
           const _DdnsSettingsCard(),
           const SizedBox(height: 20),
@@ -8614,6 +8696,225 @@ class _NetworkSettingsCardState extends ConsumerState<_NetworkSettingsCard> {
   }
 }
 
+class _ApSettingsCard extends ConsumerStatefulWidget {
+  const _ApSettingsCard();
+
+  @override
+  ConsumerState<_ApSettingsCard> createState() => _ApSettingsCardState();
+}
+
+class _ApSettingsCardState extends ConsumerState<_ApSettingsCard> {
+  final _ssidController = TextEditingController(text: 'VivoSmart-Setup');
+  final _passController = TextEditingController();
+  bool _obscurePass = true;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _isActive = false;
+  int _stations = 0;
+  bool _hasPass = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadApConfig();
+  }
+
+  Future<void> _loadApConfig() async {
+    setState(() => _isLoading = true);
+    final cfg = await ref.read(apiServiceProvider).getApConfig();
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+        if (cfg.containsKey('ssid') && cfg['ssid'].toString().isNotEmpty) {
+          _ssidController.text = cfg['ssid'].toString();
+        }
+        _hasPass = cfg['hasPass'] == true;
+        _isActive = cfg['active'] == true;
+        _stations = cfg['stations'] is int ? cfg['stations'] : 0;
+      });
+    }
+  }
+
+  Future<void> _saveApConfig() async {
+    final ssid = _ssidController.text.trim();
+    final pass = _passController.text.trim();
+
+    if (ssid.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('اسم نقطة الاتصال يجب ألا يقل عن 3 أحرف'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    if (pass.isNotEmpty && pass.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('كلمة المرور يجب ألا تقل عن 8 أحرف أو اتركها فارغة لشبكة مفتوحة'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+    final ok = await ref.read(apiServiceProvider).saveApConfig(ssid: ssid, pass: pass);
+    setState(() => _isSaving = false);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok ? 'تم حفظ إعدادات نقطة الاتصال (Setup AP) بنجاح' : 'فشل حفظ إعدادات نقطة الاتصال'),
+          backgroundColor: ok ? Colors.green : Colors.redAccent,
+        ),
+      );
+      if (ok) {
+        _loadApConfig();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0x7316132C),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.cell_tower, color: Color(0xFF00F2FE), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'نقطة اتصال الطوارئ (Setup AP)',
+                  style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+              if (_isLoading)
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Color(0xFF00F2FE), strokeWidth: 2))
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isActive ? const Color(0x332ECC71) : Colors.white10,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _isActive ? const Color(0xFF2ECC71) : Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _isActive ? const Color(0xFF2ECC71) : Colors.white38,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _isActive ? 'نشطة ($_stations متصل)' : 'متوقفة',
+                        style: GoogleFonts.cairo(
+                          color: _isActive ? const Color(0xFF2ECC71) : Colors.white60,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'تعمل هذه الشبكة تلقائياً عند انقطاع الواي فاي أو الإنترنت للتحكم في الجهاز بالكامل محلياً عبر 192.168.4.1 مع بوابة الدخول المباشر (Captive Portal).',
+            style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, height: 1.5),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _ssidController,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'اسم الشبكة (SSID)',
+              labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+              hintText: 'VivoSmart-Setup',
+              hintStyle: const TextStyle(color: Colors.white24),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.04),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: Color(0xFF00F2FE), width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passController,
+            obscureText: _obscurePass,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              labelText: 'كلمة المرور',
+              labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+              hintText: _hasPass ? '•••••••• (محمية بكلمة مرور)' : 'بدون كلمة مرور (شبكة مفتوحة)',
+              hintStyle: TextStyle(color: _hasPass ? Colors.white54 : Colors.white24),
+              suffixIcon: IconButton(
+                icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                onPressed: () => setState(() => _obscurePass = !_obscurePass),
+              ),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.04),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: const BorderSide(color: Color(0xFF00F2FE), width: 1.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _isSaving ? null : _saveApConfig,
+            icon: _isSaving
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.save),
+            label: Text('حفظ إعدادات نقطة الاتصال (Setup AP)', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00F2FE),
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              elevation: 8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DdnsSettingsCard extends ConsumerStatefulWidget {
   const _DdnsSettingsCard();
 
@@ -8838,6 +9139,7 @@ class _ClockSettingsCardState extends ConsumerState<_ClockSettingsCard> {
   final _timeController = TextEditingController(text: '12:00');
   final _dateController = TextEditingController(text: '2026-05-29');
   bool _isSaving = false;
+  bool _isSyncingBrowser = false;
   bool _initialized = false;
 
   @override
@@ -8981,6 +9283,45 @@ class _ClockSettingsCardState extends ConsumerState<_ClockSettingsCard> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               side: BorderSide(color: Colors.white.withOpacity(0.08)),
               elevation: 8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _isSyncingBrowser
+                ? null
+                : () async {
+                    setState(() => _isSyncingBrowser = true);
+                    final ok = await ref.read(apiServiceProvider).syncBrowserTime();
+                    setState(() => _isSyncingBrowser = false);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            ok
+                                ? 'تمت مزامنة الوقت والتاريخ فوراً مع هذا الجهاز بنجاح'
+                                : 'فشلت مزامنة الوقت والتاريخ مع الجهاز',
+                          ),
+                          backgroundColor: ok ? Colors.green : Colors.redAccent,
+                        ),
+                      );
+                    }
+                    ref.read(statusPollingProvider.notifier).pollStatus();
+                  },
+            icon: _isSyncingBrowser
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(color: Color(0xFF00FFCC), strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync_rounded, color: Color(0xFF00FFCC)),
+            label: Text(
+              'مزامنة الوقت والتاريخ مع هذا الجهاز الآن',
+              style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              side: const BorderSide(color: Color(0xFF00FFCC), width: 1.2),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
           ),
         ],

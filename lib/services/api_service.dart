@@ -363,49 +363,86 @@ class ApiService {
     List<int> bytes,
     String filename,
     String folder, {
-    void Function(int count, int total)? onSendProgress,
+    void Function(int count, int total, double speedBps, String statusText)? onSendProgress,
+    bool Function()? isCancelled,
   }) async {
     try {
       final total = bytes.length;
-      // 16KB chunks to prevent ESP32 memory overflow, watchdog resets, and instant-100% upload
-      const chunkSize = 16384;
+      // 64KB chunks to match ESP32 buffer, drastically speeding up upload (4x faster than 16KB)
+      const chunkSize = 65536;
       int offset = 0;
+      final startTime = DateTime.now();
 
       while (offset < total) {
+        if (isCancelled?.call() == true) {
+          debugPrint('Upload cancelled by user');
+          return false;
+        }
+
         final end = (offset + chunkSize < total) ? offset + chunkSize : total;
-        final chunk = bytes.sublist(offset, end);
+        final chunk = bytes is Uint8List
+            ? bytes.sublist(offset, end)
+            : Uint8List.fromList(bytes.sublist(offset, end));
         final isFinal = (end == total);
 
-        final response = await _dio.post(
-          '/api/files/upload_chunk',
-          queryParameters: {
-            'name': filename,
-            'folder': folder,
-            'offset': offset,
-            'total': total,
-            'final': isFinal ? 1 : 0,
-          },
-          data: Stream.fromIterable([chunk]),
-          options: Options(
-            headers: {
-              'Content-Type': 'application/octet-stream',
-              'Content-Length': chunk.length,
-            },
-          ),
-        );
+        bool chunkUploaded = false;
+        int retries = 0;
+        const maxRetries = 3;
 
-        final data = response.data is String ? jsonDecode(response.data) : response.data;
-        if (data == null || data['ok'] != true) {
-          debugPrint('Chunk upload failed at offset $offset');
-          return false;
+        while (!chunkUploaded && retries <= maxRetries) {
+          if (isCancelled?.call() == true) return false;
+
+          try {
+            final response = await _dio.post(
+              '/api/files/upload_chunk',
+              queryParameters: {
+                'name': filename,
+                'folder': folder,
+                'offset': offset,
+                'total': total,
+                'final': isFinal ? 1 : 0,
+              },
+              data: Stream.fromIterable([chunk]),
+              options: Options(
+                sendTimeout: const Duration(seconds: 45),
+                receiveTimeout: const Duration(seconds: 45),
+                headers: {
+                  'Content-Type': 'application/octet-stream',
+                  'Content-Length': chunk.length,
+                },
+              ),
+            );
+
+            final data = response.data is String ? jsonDecode(response.data) : response.data;
+            if (data != null && data['ok'] == true) {
+              chunkUploaded = true;
+            } else {
+              throw Exception(data?['error'] ?? 'write_failed');
+            }
+          } catch (e) {
+            retries++;
+            if (retries > maxRetries) {
+              debugPrint('Chunk upload failed after $maxRetries retries at offset $offset: $e');
+              return false;
+            }
+            final retryText = 'إعادة المحاولة $retries/$maxRetries...';
+            if (onSendProgress != null) {
+              final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
+              final speed = elapsedSec > 0.3 ? (offset / elapsedSec) : 0.0;
+              onSendProgress(offset, total, speed, retryText);
+            }
+            await Future.delayed(const Duration(milliseconds: 1200));
+          }
         }
 
         offset = end;
         if (onSendProgress != null) {
-          onSendProgress(offset, total);
+          final elapsedSec = DateTime.now().difference(startTime).inMilliseconds / 1000.0;
+          final speed = elapsedSec > 0.3 ? (offset / elapsedSec) : 0.0;
+          onSendProgress(offset, total, speed, 'جاري الرفع...');
         }
-        // Yield time to ESP32 FreeRTOS tasks to prevent watchdog resets
-        await Future.delayed(const Duration(milliseconds: 25));
+        // Small yield to let ESP32 FreeRTOS tasks handle background audio/wifi
+        await Future.delayed(const Duration(milliseconds: 10));
       }
 
       return true;
@@ -1659,6 +1696,58 @@ class ApiService {
       return data['ok'] == true;
     } catch (e) {
       debugPrint('Error testing presence welcome: $e');
+      return false;
+    }
+  }
+
+  // --- Setup AP (Emergency Hotspot) APIs ---
+  Future<Map<String, dynamic>> getApConfig() async {
+    try {
+      final response = await _dio.get('/api/ap/config');
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return Map<String, dynamic>.from(data ?? {});
+    } catch (e) {
+      debugPrint('Error getting AP config: $e');
+      return {};
+    }
+  }
+
+  Future<bool> saveApConfig({required String ssid, String pass = ''}) async {
+    try {
+      final response = await _dio.post(
+        '/api/ap/config',
+        data: 'ssid=${Uri.encodeComponent(ssid)}&pass=${Uri.encodeComponent(pass)}',
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data['ok'] == true;
+    } catch (e) {
+      debugPrint('Error saving AP config: $e');
+      return false;
+    }
+  }
+
+  // --- Browser/Phone Clock Auto-Sync API ---
+  Future<bool> syncBrowserTime([int? epochSeconds]) async {
+    try {
+      final timestamp = epochSeconds ?? (DateTime.now().millisecondsSinceEpoch ~/ 1000);
+      final response = await _dio.post(
+        '/api/time/sync_browser',
+        data: 'timestamp=$timestamp',
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data['ok'] == true;
+    } catch (e) {
+      debugPrint('Error syncing browser time: $e');
       return false;
     }
   }

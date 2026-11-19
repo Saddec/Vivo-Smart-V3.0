@@ -235,6 +235,7 @@ class StatusPollingNotifier extends StateNotifier<DeviceStatusModel> {
   final Ref _ref;
   Timer? _pollingTimer;
   Timer? _countdownTimer;
+  DateTime? _lastAutoTimeSync;
 
   StatusPollingNotifier(this._ref) : super(DeviceStatusModel());
 
@@ -278,6 +279,16 @@ class StatusPollingNotifier extends StateNotifier<DeviceStatusModel> {
       if (status['ok'] == false && status['error'] != null) {
         // Connection issue
         return;
+      }
+
+      // Auto-sync time if ESP clock is reset to 1970 or lost
+      final greg = clock['greg']?.toString() ?? '';
+      if (greg.startsWith('1970')) {
+        final now = DateTime.now();
+        if (_lastAutoTimeSync == null || now.difference(_lastAutoTimeSync!).inSeconds > 20) {
+          _lastAutoTimeSync = now;
+          _api.syncBrowserTime();
+        }
       }
 
       // Parse prayer times
@@ -475,9 +486,16 @@ class FilesStateNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>>>
     List<int> bytes,
     String filename,
     String folder, {
-    void Function(int count, int total)? onSendProgress,
+    void Function(int count, int total, double speedBps, String statusText)? onSendProgress,
+    bool Function()? isCancelled,
   }) async {
-    final success = await _api.uploadFile(bytes, filename, folder, onSendProgress: onSendProgress);
+    final success = await _api.uploadFile(
+      bytes,
+      filename,
+      folder,
+      onSendProgress: onSendProgress,
+      isCancelled: isCancelled,
+    );
     if (success) {
       await refresh();
     }
