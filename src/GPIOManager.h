@@ -41,6 +41,7 @@ struct GpioScheduleEntry {
     int volume = 20;
     bool enabled;
     bool triggered = false; // for audio trigger rising-edge check (not saved to NVS)
+    bool wasActive = false; // tracks whether this schedule is actively driving its pin (not saved to NVS)
 };
 
 // ---- function declarations ----

@@ -92,9 +92,18 @@ static bool isApModeActive() {
     return mode == WIFI_AP || mode == WIFI_AP_STA;
 }
 
+static unsigned long apReconnectTryStartedAt = 0;
+static bool apStaTryActive = false;
+
 static void startSetupAp() {
-    if (!isApModeActive()) WiFi.mode(WIFI_AP_STA);
     if (!setupApActive) {
+        // Stop background STA auto-reconnect loop so the shared 2.4GHz radio stays on the SoftAP channel
+        WiFi.setAutoReconnect(false);
+        WiFi.disconnect(false);
+        vTaskDelay(pdMS_TO_TICKS(50));
+
+        if (!isApModeActive()) WiFi.mode(WIFI_AP_STA);
+
         Preferences prefsAp;
         prefsAp.begin("setup_ap", true);
         String apSsid = prefsAp.getString("ssid", setupApName);
@@ -103,17 +112,20 @@ static void startSetupAp() {
 
         IPAddress apIP(192, 168, 4, 1);
         IPAddress netMsk(255, 255, 255, 0);
-        WiFi.softAPConfig(apIP, apIP, netMsk);
 
         if (apPass.length() >= 8) {
-            WiFi.softAP(apSsid.c_str(), apPass.c_str());
+            WiFi.softAP(apSsid.c_str(), apPass.c_str(), 1, 0, 4);
         } else {
-            WiFi.softAP(apSsid.c_str());
+            WiFi.softAP(apSsid.c_str(), NULL, 1, 0, 4);
         }
+        vTaskDelay(pdMS_TO_TICKS(100));
+        WiFi.softAPConfig(apIP, apIP, netMsk);
 
         dnsServer.setErrorReplyCode(DNSReplyCode::NoError);
         dnsServer.start(53, "*", apIP);
         setupApActive = true;
+        apStaTryActive = false;
+        lastReconnectAttempt = millis();
         LOG_WF("WIFI", "Setup AP active: %s (IP: 192.168.4.1, Captive Portal started)", apSsid.c_str());
         Serial.printf("[WiFi] Setup AP started: %s (192.168.4.1, DNS active)\n", apSsid.c_str());
     }
@@ -126,7 +138,9 @@ static void stopSetupAp() {
             WiFi.softAPdisconnect(true);
             WiFi.mode(WIFI_STA);
         }
+        WiFi.setAutoReconnect(true);
         setupApActive = false;
+        apStaTryActive = false;
         LOG_WF("WIFI", "Setup AP stopped");
         Serial.println("[WiFi] Setup AP stopped");
     }
@@ -214,6 +228,8 @@ void maintainWiFi() {
             lastWifiConnected = true;
             wifiConnectedAt = nowMs;
             lastHardReconnect = 0;
+            apStaTryActive = false;
+            WiFi.setAutoReconnect(true);
             WiFi.enableIpV6();
             configureIPv6DnsBackup();
             setLedState(LED_WIFI_OK);
@@ -252,7 +268,7 @@ void maintainWiFi() {
     if (lastWifiConnected) {
         lastWifiConnected = false;
         wifiDisconnectedAt = nowMs;
-        lastReconnectAttempt = 0;
+        lastReconnectAttempt = nowMs;
         lastHardReconnect = 0;
         setLedState(LED_WIFI_CONNECTING);
         LOG_W("WIFI", "WiFi disconnected");
@@ -262,28 +278,49 @@ void maintainWiFi() {
         setLedState(LED_ERROR);
         LOG_W("WIFI", "WiFi disconnected, starting Setup AP");
         startSetupAp();
+        return;
     }
 
-    // Check if a client is connected to Setup AP
-    bool clientOnAp = setupApActive && (WiFi.softAPgetStationNum() > 0);
-    unsigned long effectiveInterval = clientOnAp ? 90000UL : reconnectIntervalMs;
+    if (setupApActive) {
+        bool clientOnAp = (WiFi.softAPgetStationNum() > 0);
+        if (clientOnAp) {
+            // A phone/laptop is connected to VivoSmart-Setup: abort any background STA scan immediately
+            // so the shared 2.4GHz radio stays 100% locked on Channel 1 for DHCP and Web UI (192.168.4.1)
+            if (apStaTryActive) {
+                WiFi.setAutoReconnect(false);
+                WiFi.disconnect(false);
+                apStaTryActive = false;
+            }
+            lastReconnectAttempt = nowMs;
+            return;
+        }
 
-    if (!clientOnAp && nowMs - wifiDisconnectedAt >= 180000 && (lastHardReconnect == 0 || nowMs - lastHardReconnect >= 180000)) {
-        lastHardReconnect = nowMs;
-        lastReconnectAttempt = nowMs; // delay next reconnect call
-        LOG_W("WIFI", "WiFi disconnected for over 3 minutes. Performing hard reconnect...");
-        WiFi.disconnect();
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        // No client connected to Setup AP: allow a brief 5s check every 30s, then silence STA scanning for 25s
+        if (apStaTryActive) {
+            if (nowMs - apReconnectTryStartedAt >= 5000) {
+                WiFi.setAutoReconnect(false);
+                WiFi.disconnect(false);
+                apStaTryActive = false;
+                lastReconnectAttempt = nowMs;
+            }
+        } else if (nowMs - lastReconnectAttempt >= 30000) {
+            lastReconnectAttempt = nowMs;
+            apReconnectTryStartedAt = nowMs;
+            apStaTryActive = true;
 
-        Preferences prefs;
-        prefs.begin("network", true);
-        String ssid = prefs.getString("ssid", defaultSSID);
-        String pass = prefs.getString("pass", defaultPass);
-        prefs.end();
+            Preferences prefs;
+            prefs.begin("network", true);
+            String ssid = prefs.getString("ssid", defaultSSID);
+            String pass = prefs.getString("pass", defaultPass);
+            prefs.end();
 
-        WiFi.begin(ssid.c_str(), pass.c_str());
-    } 
-    else if (nowMs - lastReconnectAttempt >= effectiveInterval) {
+            LOG_WF("WIFI", "Checking if saved WiFi (%s) is available...", ssid.c_str());
+            WiFi.begin(ssid.c_str(), pass.c_str());
+        }
+        return;
+    }
+
+    if (nowMs - lastReconnectAttempt >= reconnectIntervalMs) {
         lastReconnectAttempt = nowMs;
         if (WiFi.getMode() == WIFI_OFF) WiFi.mode(WIFI_STA);
         LOG_WF("WIFI", "Attempting WiFi reconnection...");
@@ -842,7 +879,11 @@ void systemTask(void *pvParameters) {
 
     initLED(); setLedState(LED_BOOTING);
     setupWiFi();
-    syncTimeFromNTP();
+    if (WiFi.status() == WL_CONNECTED) {
+        syncTimeFromNTP();
+    } else {
+        applyConfiguredTimezone();
+    }
     startWebServer();
     initEidMode();
     maghribManager.begin();
@@ -863,19 +904,24 @@ void systemTask(void *pvParameters) {
         }
         checkPrayerTimes();
         checkGpioSchedules();
-        checkOutputTimers();
         scheduler.checkAndTrigger();
         if (!isEidMode()) {
             maghribManager.checkAndTrigger();
         }
         checkEidSchedule();
-        checkGPIOInputs();
         updatePresenceManager();
         ddnsManager.loop();
         if (!startupAlertQueued && millis() - systemReadyAtMs >= startupAlertDelayMs) {
             startupAlertQueued = true;
             playStartupAlert();
         }
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        for (int step = 0; step < 20; ++step) {
+            checkGPIOInputs();
+            checkOutputTimers();
+            if (setupApActive) {
+                dnsServer.processNextRequest();
+            }
+            vTaskDelay(50 / portTICK_PERIOD_MS);
+        }
     }
 }

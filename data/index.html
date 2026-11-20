@@ -186,14 +186,47 @@
         <button class="btn" onclick="saveApConfig()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ إعدادات الهوتسبوت</button>
       </div>
       <div class="glass-card">
-        <h3><i class="fas fa-globe"></i> إعدادات DDNS (NO-IP)</h3>
-        <label class="switch"><input type="checkbox" id="ddnsToggle" onchange="toggleDDNS(true)"><span class="slider"></span></label> تفعيل الخدمة
-        <div id="ddnsFields" style="display:none; margin-top:15px;">
-          <label>النطاق (Domain)</label><input type="text" id="ddnsDomain" placeholder="example.ddns.net">
-          <label>اسم المستخدم</label><input type="text" id="ddnsUser" placeholder="username">
-          <label>كلمة المرور</label><input type="password" id="ddnsPass" placeholder="password">
+        <h3><i class="fas fa-globe"></i> الوصول العالمي المباشر و DDNS (No-IP / DuckDNS / Dynu)</h3>
+        <p style="font-size:0.85rem; color:#aaa; margin-bottom:10px;">يدعم التحديث التلقائي لعنوان <strong>IPv6 العالمي المباشر</strong> (لتخطي جدار CGNAT على شبكات الجوال والهوتسبوت بدون Port Forwarding) بالإضافة إلى IPv4.</p>
+        <div id="globalIpv6Banner" style="margin-bottom:12px; padding:10px; border-radius:8px; background:rgba(46, 204, 113, 0.12); border:1px solid rgba(46, 204, 113, 0.35); display:none;">
+          <div style="font-size:0.85rem; color:#2ecc71; font-weight:bold;"><i class="fas fa-link"></i> رابط الوصول العالمي المباشر للجهاز (IPv6):</div>
+          <a id="globalIpv6Link" href="#" target="_blank" style="color:#00f2fe; word-break:break-all; font-family:monospace; font-size:0.9rem;">--</a>
         </div>
-        <button class="btn" onclick="saveDDNS()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ الإعدادات</button>
+        <div style="margin-bottom:12px;">
+          <span>حالة DDNS: </span><span id="ddnsStatusBadge" class="badge" style="background:#555; padding:4px 8px; border-radius:4px;">غير مفعل</span>
+        </div>
+        <label class="switch"><input type="checkbox" id="ddnsToggle" onchange="toggleDDNS(false)"><span class="slider"></span></label> تفعيل خدمة DDNS
+        <div id="ddnsFields" style="display:none; margin-top:15px;">
+          <label>مزود الخدمة (Provider)</label>
+          <select id="ddnsProvider">
+            <option value="noip">No-IP (ddns.net)</option>
+            <option value="duckdns">DuckDNS (duckdns.org)</option>
+            <option value="dynu">Dynu DNS (dynu.net)</option>
+          </select>
+          <label>النطاق (Domain)</label><input type="text" id="ddnsDomain" placeholder="example.ddns.net أو example.duckdns.org">
+          <label>اسم المستخدم (أو اتركه فارغاً لـ DuckDNS)</label><input type="text" id="ddnsUser" placeholder="username">
+          <label>كلمة المرور (أو Token لـ DuckDNS)</label><input type="password" id="ddnsPass" placeholder="password / token">
+          <div style="margin-top:10px; display:flex; align-items:center; gap:10px;">
+            <label class="switch"><input type="checkbox" id="ddnsUseIpv6" checked><span class="slider"></span></label>
+            <span>ربط النطاق بعنوان IPv6 العالمي للجهاز تلقائياً (أفضل للهوتسبوت و 4G/5G)</span>
+          </div>
+        </div>
+        <button class="btn" onclick="saveDDNS()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ وتحديث DDNS الآن</button>
+      </div>
+      <div class="glass-card">
+        <h3><i class="fab fa-telegram-plane"></i> التحكم عن بعد من أي مكان في العالم (Telegram Bot)</h3>
+        <p style="font-size:0.85rem; color:#aaa; margin-bottom:10px;">يعمل من خلف أي شبكة أو هوتسبوت (حتى مع CGNAT وبدون IP عام أو فتح بورتات)! أنشئ بوت مجاني عبر <strong>@BotFather</strong> في تيليجرام وضع التوكن هنا للتحكم الكامل في الجهاز من أي مكان في العالم.</p>
+        <div style="margin-bottom:12px;">
+          <span>حالة البوت: </span><span id="tgStatusBadge" class="badge" style="background:#555; padding:4px 8px; border-radius:4px;">غير مفعل</span>
+        </div>
+        <label class="switch"><input type="checkbox" id="tgToggle" onchange="toggleTelegramFields()"><span class="slider"></span></label> تفعيل التحكم عبر تيليجرام
+        <div id="tgFields" style="display:none; margin-top:15px;">
+          <label>توكن البوت (Bot Token من @BotFather)</label>
+          <input type="password" id="tgToken" placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ">
+          <label>معرف المحادثة المسموح له (Chat ID - اتركه فارغاً ليتم حفظ أول حساب يراسل البوت تلقائياً)</label>
+          <input type="text" id="tgChatId" placeholder="سيتم تعبئته تلقائياً عند إرسال /start للبوت">
+        </div>
+        <button class="btn" onclick="saveTelegramConfig()" style="margin-top:15px;"><i class="fas fa-save"></i> حفظ إعدادات تيليجرام</button>
       </div>
     </div>
     <!-- Prayer -->
@@ -904,7 +937,17 @@
     <div id="tab-eid" class="tab">
       <h1><i class="fas fa-star-and-crescent"></i> وضع العيد</h1>
       <div class="glass-card">
-        <label class="switch"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label> تفعيل وضع العيد
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="switch" style="margin:0;"><input type="checkbox" id="eidModeToggle" onchange="toggleEidMode()"><span class="slider"></span></label>
+            <span><strong>تفعيل وضع العيد يدوياً الآن</strong></span>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="switch" style="margin:0;"><input type="checkbox" id="eidAutoToggle" checked onchange="toggleEidMode()"><span class="slider"></span></label>
+            <span><strong>تفعيل أوتوماتيكي عند قدوم أيام العيد</strong> (عيد الفطر 1–3 شوال، وعيد الأضحى 9–13 ذو الحجة)</span>
+          </div>
+          <div id="eidAutoStatusBadge" style="padding:8px 12px; border-radius:8px; background:rgba(255,255,255,0.06); font-size:var(--fs-small); color:rgba(255,255,255,0.85);"></div>
+        </div>
       </div>
 
       <div class="sub-tabs-nav">
@@ -1361,6 +1404,6 @@
     </div>
   </main>
 
-  <script src="/script.js?v=3.18"></script>
+  <script src="/script.js?v=3.19"></script>
 </body>
 </html>

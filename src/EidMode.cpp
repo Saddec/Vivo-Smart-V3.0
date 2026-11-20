@@ -11,12 +11,15 @@
 #include <time.h>
 
 static bool eidModeEnabled = false;
+static bool eidAutoEnabled = true;
 static time_t lastTakbeer = 0;
 static int lastTakbeerDayForWindow[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 static String takbeerFile = "takbeer.mp3";
 static uint8_t takbeerVolume = 15;
 static int takbeerDurationSec = -1;
 static String lastLoadedTakbeerFile = "";
+
+extern String todayHijri;
 
 static bool eidTakbeerFileExists(const String& fileName) {
     if (fileName.length() == 0 || !isSDReady()) return false;
@@ -29,6 +32,75 @@ static bool eidTakbeerFileExists(const String& fileName) {
     bool exists = SD.exists(path);
     unlockSD();
     return exists;
+}
+
+String getResolvedEidTakbeerFile() {
+    if (!isSDReady()) return takbeerFile;
+    if (eidTakbeerFileExists(takbeerFile)) return takbeerFile;
+
+    // Auto-resolve from "/Eid Takbeers" folder if configured file is missing
+    String foundFile = "";
+    lockSD();
+    if (SD.exists("/Eid Takbeers")) {
+        File dir = SD.open("/Eid Takbeers");
+        if (dir && dir.isDirectory()) {
+            File f = dir.openNextFile();
+            while (f) {
+                if (!f.isDirectory()) {
+                    String fn = String(f.name());
+                    int slash = fn.lastIndexOf('/');
+                    if (slash >= 0) fn = fn.substring(slash + 1);
+                    String lower = fn;
+                    lower.toLowerCase();
+                    if (lower.endsWith(".mp3") || lower.endsWith(".wav")) {
+                        foundFile = "Eid Takbeers/" + fn;
+                        f.close();
+                        break;
+                    }
+                }
+                f.close();
+                f = dir.openNextFile();
+            }
+            dir.close();
+        }
+    }
+    unlockSD();
+
+    if (foundFile.length() > 0) {
+        LOG_SYS("EID", "Auto-resolved missing takbeer file '%s' -> '%s'", takbeerFile.c_str(), foundFile.c_str());
+        takbeerFile = foundFile;
+        Preferences prefs;
+        prefs.begin("eid", false);
+        prefs.putString("takbeer_file", takbeerFile);
+        prefs.end();
+    }
+    return takbeerFile;
+}
+
+bool isHijriEidDay(String* outReason) {
+    if (!isSystemTimeValid()) return false;
+    String hijri = todayHijri;
+    if (hijri.length() < 10) {
+        hijri = PrayerTimesEngine::gregorianToHijri(time(nullptr));
+    }
+    int d = 0, m = 0, y = 0;
+    if (sscanf(hijri.c_str(), "%d-%d-%d", &d, &m, &y) != 3) {
+        return false;
+    }
+    // Eid al-Fitr: 1 to 3 Shawwal (Hijri month 10)
+    if (m == 10 && d >= 1 && d <= 3) {
+        if (outReason) *outReason = "عيد الفطر المبارك (" + String(d) + " شوال)";
+        return true;
+    }
+    // Day of Arafah + Eid al-Adha & Tashreeq days: 9 to 13 Dhu al-Hijjah (Hijri month 12)
+    if (m == 12 && d >= 9 && d <= 13) {
+        if (outReason) {
+            if (d == 9) *outReason = "يوم عرفة (9 ذو الحجة)";
+            else *outReason = "عيد الأضحى المبارك (" + String(d) + " ذو الحجة)";
+        }
+        return true;
+    }
+    return false;
 }
 
 // ---- per-prayer takbeer config ----
@@ -80,10 +152,12 @@ static void loadEidSettings() {
     Preferences pref;
     pref.begin("eid", true);
     eidModeEnabled = pref.getBool("enabled", false);
+    eidAutoEnabled = pref.getBool("auto_en", true);
     takbeerFile = pref.getString("takbeer_file", "takbeer.mp3");
     takbeerVolume = (uint8_t)pref.getUChar("takbeer_volume", 15);
     pref.end();
     loadTakbeerConfig();
+    getResolvedEidTakbeerFile();
 }
 
 // ---- helper: check if current time falls in a window around a prayer ----
@@ -93,24 +167,31 @@ static int prayerWindowPhase(int prayerIndex, int pHour, int pMin, int beforeMin
     int curTotal = curHour * 60 + curMin;
 
     if (beforeMin > 0) {
-        if (takbeerFile != lastLoadedTakbeerFile || takbeerDurationSec < 0) {
+        String resolvedFile = getResolvedEidTakbeerFile();
+        if (resolvedFile != lastLoadedTakbeerFile || takbeerDurationSec <= 0) {
             if (audioManager.getState() == AUDIO_IDLE) {
-                takbeerDurationSec = MaghribManager::getMP3Duration(takbeerFile);
-                lastLoadedTakbeerFile = takbeerFile;
-                LOG_SYS("EID", "Cached Takbeer file duration: %d seconds", takbeerDurationSec);
-            } else if (takbeerDurationSec < 0) {
+                int dur = MaghribManager::getMP3Duration(resolvedFile);
+                if (dur > 0) {
+                    takbeerDurationSec = dur;
+                    lastLoadedTakbeerFile = resolvedFile;
+                    LOG_SYS("EID", "Cached Takbeer file duration: %d seconds (%s)", takbeerDurationSec, resolvedFile.c_str());
+                } else if (takbeerDurationSec <= 0) {
+                    takbeerDurationSec = 180;
+                }
+            } else if (takbeerDurationSec <= 0) {
                 takbeerDurationSec = 180; // Default fallback while audio is busy
             }
         }
         int durationSec = takbeerDurationSec;
         int durationMin = (durationSec + 59) / 60; // ceiling division
-        
+        if (durationMin > 20) durationMin = 20;    // Cap pre-prayer duration offset so long files don't shift too far back
+
         int targetBeforeMin = prayerTotal - beforeMin;
         if (targetBeforeMin < 0) targetBeforeMin += 1440;
-        
+
         int startBeforeMin = targetBeforeMin - durationMin;
         if (startBeforeMin < 0) startBeforeMin += 1440;
-        
+
         int diffBefore = (curTotal - startBeforeMin + 1440) % 1440;
         if (diffBefore >= 0 && diffBefore < 5) {
             return 0;
@@ -145,8 +226,18 @@ void reloadEidSettings() {
     loadEidSettings();
 }
 
-bool isEidMode() {
+bool isManualEidMode() {
     return eidModeEnabled;
+}
+
+bool isAutoEidEnabled() {
+    return eidAutoEnabled;
+}
+
+bool isEidMode() {
+    if (eidModeEnabled) return true;
+    if (eidAutoEnabled && isHijriEidDay()) return true;
+    return false;
 }
 
 String getEidTakbeerConfigJson() {
@@ -184,10 +275,40 @@ void setEidMode(bool enable) {
     prefs.begin("eid", false);
     prefs.putBool("enabled", enable);
     prefs.end();
+    resetEidTakbeerWindow();
+    LOG_SYS("EID", "Manual Eid Mode %s", enable ? "ENABLED" : "DISABLED");
+}
+
+void setAutoEidMode(bool enable) {
+    eidAutoEnabled = enable;
+    Preferences prefs;
+    prefs.begin("eid", false);
+    prefs.putBool("auto_en", enable);
+    prefs.end();
+    resetEidTakbeerWindow();
+    LOG_SYS("EID", "Auto Hijri Eid Mode %s", enable ? "ENABLED" : "DISABLED");
 }
 
 void checkEidSchedule() {
-    if (!eidModeEnabled) return;
+    static bool lastEffectiveEidState = false;
+    String autoReason = "";
+    bool autoToday = eidAutoEnabled && isHijriEidDay(&autoReason);
+    bool effectiveActive = eidModeEnabled || autoToday;
+
+    if (effectiveActive != lastEffectiveEidState) {
+        lastEffectiveEidState = effectiveActive;
+        if (effectiveActive) {
+            if (autoToday && !eidModeEnabled) {
+                LOG_SYS("EID", "Eid Mode automatically activated for: %s", autoReason.c_str());
+            } else {
+                LOG_SYS("EID", "Eid Mode active (Manual)");
+            }
+        } else {
+            LOG_SYS("EID", "Eid Mode deactivated");
+        }
+    }
+
+    if (!effectiveActive) return;
 
     time_t now = time(nullptr);
     struct tm t;
@@ -202,6 +323,7 @@ void checkEidSchedule() {
     if (!curPrayer.valid) return;
 
     const String prayers[] = {curPrayer.fajr, curPrayer.dhuhr, curPrayer.asr, curPrayer.maghrib, curPrayer.isha};
+    const char* prayerNamesAr[] = {"الفجر", "الظهر", "العصر", "المغرب", "العشاء"};
 
     for (int i = 0; i < 5; i++) {
         if (!prayerTakbeer[i].enabled) continue;
@@ -213,13 +335,17 @@ void checkEidSchedule() {
             int windowId = (i * 2) + phase;
             if (lastTakbeerDayForWindow[windowId] == curDay) continue;
             if (audioManager.getState() != AUDIO_IDLE && audioManager.getCurrentPriority() > 0) continue;
-            if (!eidTakbeerFileExists(takbeerFile)) {
-                LOG_E("EID", "Eid takbeer file is missing: %s", takbeerFile.c_str());
+            String fileToPlay = getResolvedEidTakbeerFile();
+            if (!eidTakbeerFileExists(fileToPlay)) {
+                LOG_E("EID", "Eid takbeer file is missing: %s", fileToPlay.c_str());
                 lastTakbeer = now;
                 continue;
             }
-            audioManager.setAudioDescription("تشغيل تكبيرات العيد");
-            sendPlayCommand(takbeerFile.c_str(), 1, 0, takbeerVolume);
+            String desc = String("تكبيرات العيد (") + (phase == 0 ? "قبل " : "بعد ") + prayerNamesAr[i] + ")";
+            audioManager.setAudioDescription(desc);
+            LOG_SYS("EID", "Triggering Eid Takbeerat (%s %s): file=%s, vol=%u",
+                    phase == 0 ? "before" : "after", prayerNamesAr[i], fileToPlay.c_str(), takbeerVolume);
+            sendPlayCommand(fileToPlay.c_str(), 1, 0, takbeerVolume);
             lastTakbeer = now;
             lastTakbeerDayForWindow[windowId] = curDay;
             break;

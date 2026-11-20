@@ -955,7 +955,10 @@ static void handleOtaUpload(AsyncWebServerRequest *request, String filename, siz
     if (!index) {
         if (uploadBusy) { Serial.println("[OTA] Busy, rejecting"); unlockUpload(); return; }
         uploadBusy = true;
-        if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+        String lowerName = filename;
+        lowerName.toLowerCase();
+        int cmd = (lowerName.indexOf("littlefs") >= 0 || lowerName.indexOf("spiffs") >= 0) ? U_SPIFFS : U_FLASH;
+        if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) {
             Serial.println("[OTA] Begin failed, not enough space or partition not found");
             uploadBusy = false;
             unlockUpload();
@@ -990,6 +993,10 @@ void startWebServer() {
         Serial.println("LittleFS Mount Failed");
         return;
     }
+    // Remove stale pre-compressed .gz duplicates so LittleFS always serves the latest index.html/script.js/style.css
+    if (LittleFS.exists("/index.html") && LittleFS.exists("/index.html.gz")) LittleFS.remove("/index.html.gz");
+    if (LittleFS.exists("/script.js") && LittleFS.exists("/script.js.gz")) LittleFS.remove("/script.js.gz");
+    if (LittleFS.exists("/style.css") && LittleFS.exists("/style.css.gz")) LittleFS.remove("/style.css.gz");
 
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE");
@@ -1860,17 +1867,29 @@ void startWebServer() {
     });
 
     server.on("/api/eid/mode", HTTP_POST, [](AsyncWebServerRequest *request) {
-        setEidMode(postBool(request, "enabled"));
+        if (request->hasParam("enabled", true) || request->hasParam("enabled")) {
+            setEidMode(postBool(request, "enabled"));
+        }
+        if (request->hasParam("autoEnabled", true) || request->hasParam("autoEnabled")) {
+            setAutoEidMode(postBool(request, "autoEnabled", true));
+        }
         sendOk(request);
     });
     server.on("/api/eid/status", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(256);
+        DynamicJsonDocument doc(384);
         Preferences prefs;
         prefs.begin("eid", true);
-        doc["enabled"] = prefs.getBool("enabled", false);
-        doc["takbeerFile"] = prefs.getString("takbeer_file", "takbeer.mp3");
-        doc["takbeerVolume"] = prefs.getUChar("takbeer_volume", 15);
+        uint8_t vol = prefs.getUChar("takbeer_volume", 15);
         prefs.end();
+        String autoReason = "";
+        bool hijriEid = isHijriEidDay(&autoReason);
+        doc["enabled"] = isEidMode();
+        doc["manualEnabled"] = isManualEidMode();
+        doc["autoEnabled"] = isAutoEidEnabled();
+        doc["autoDayActive"] = hijriEid;
+        doc["autoReason"] = autoReason;
+        doc["takbeerFile"] = getResolvedEidTakbeerFile();
+        doc["takbeerVolume"] = vol;
         sendJson(request, doc);
     });
     server.on("/api/eid/file", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -1919,11 +1938,13 @@ void startWebServer() {
         maghribManager.saveAlertsJson(json);
         sendOk(request);
     });
+    server.on("/api/maghrib/offset", HTTP_GET, [](AsyncWebServerRequest *request) {
+        DynamicJsonDocument doc(128);
+        doc["offset"] = maghribManager.getOffset();
+        sendJson(request, doc);
+    });
     server.on("/api/maghrib/offset", HTTP_POST, [](AsyncWebServerRequest *request) {
-        Preferences prefs;
-        prefs.begin("maghrib", false);
-        prefs.putInt("offset", postValue(request, "offset", "1").toInt());
-        prefs.end();
+        maghribManager.setOffset(postValue(request, "offset", "1").toInt());
         sendOk(request);
     });
 
@@ -1984,7 +2005,18 @@ void startWebServer() {
         }
     });
     server.on("/api/presence/test", HTTP_POST, [](AsyncWebServerRequest *request) {
-        testPlayWelcome();
+        String testFile = postValue(request, "file", "");
+        uint8_t testVol = postValue(request, "volume", "0").toInt();
+        if (testFile.length() > 0) {
+            if (testVol == 0) {
+                PresenceConfig cfg = getPresenceConfig();
+                testVol = cfg.volume > 0 ? cfg.volume : 20;
+            }
+            audioManager.setAudioDescription("تجربة ملف الترحيب الذكي: " + testFile);
+            sendPlayCommand(testFile.c_str(), 0, 0, testVol);
+        } else {
+            testPlayWelcome();
+        }
         sendOk(request);
     });
 
@@ -2456,16 +2488,7 @@ void startWebServer() {
     });
 
     server.on("/api/ddns/config", HTTP_GET, [](AsyncWebServerRequest *request) {
-        DynamicJsonDocument doc(256);
-        Preferences prefs;
-        prefs.begin("ddns", true);
-        doc["enabled"] = prefs.getBool("enabled", false);
-        doc["domain"] = prefs.getString("domain", "");
-        doc["user"] = prefs.getString("user", "");
-        // Don't send the password back to the client for security, or send a masked one
-        doc["hasPass"] = prefs.getString("pass", "").length() > 0;
-        prefs.end();
-        sendJson(request, doc);
+        request->send(200, "application/json", ddnsManager.getStatusJson());
     });
     
     server.on("/api/ddns/save", HTTP_POST, [](AsyncWebServerRequest *request) {
@@ -2473,25 +2496,53 @@ void startWebServer() {
         prefs.begin("ddns", false);
         bool enabled = postBool(request, "enabled");
         prefs.putBool("enabled", enabled);
-        if (!enabled) {
-            prefs.remove("domain");
-            prefs.remove("user");
-            prefs.remove("pass");
-        } else {
-            String domain = postValue(request, "domain", "");
-            String user = postValue(request, "user", "");
-            String newPass = postValue(request, "pass", "");
-            domain.trim();
-            user.trim();
-            newPass.trim();
+        if (request->hasParam("provider", true) || request->hasParam("provider")) {
+            prefs.putString("provider", postValue(request, "provider", "noip"));
+        }
+        if (request->hasParam("useIPv6", true) || request->hasParam("useIPv6")) {
+            prefs.putBool("useIPv6", postBool(request, "useIPv6", true));
+        }
+        String domain = postValue(request, "domain", "");
+        String user = postValue(request, "user", "");
+        String newPass = postValue(request, "pass", "");
+        domain.trim();
+        user.trim();
+        newPass.trim();
+        if (domain.length() > 0 || request->hasParam("domain", true)) {
             prefs.putString("domain", domain);
+        }
+        if (user.length() > 0 || request->hasParam("user", true)) {
             prefs.putString("user", user);
-            if (newPass.length() > 0 && newPass != "********") {
-                prefs.putString("pass", newPass);
-            }
+        }
+        if (newPass.length() > 0 && newPass != "********") {
+            prefs.putString("pass", newPass);
         }
         prefs.end();
         ddnsManager.forceUpdate();
+        sendOk(request);
+    });
+
+    server.on("/api/telegram/config", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", ddnsManager.getTelegramStatusJson());
+    });
+
+    server.on("/api/telegram/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        Preferences prefs;
+        prefs.begin("telegram", false);
+        bool enabled = postBool(request, "enabled");
+        prefs.putBool("enabled", enabled);
+        String token = postValue(request, "token", "");
+        String chatId = postValue(request, "chatId", "");
+        token.trim();
+        chatId.trim();
+        if (token.length() > 0 && token != "********") {
+            prefs.putString("token", token);
+        }
+        if (request->hasParam("chatId", true) || request->hasParam("chatId")) {
+            prefs.putString("chatId", chatId);
+        }
+        prefs.end();
+        ddnsManager.reloadTelegramConfig();
         sendOk(request);
     });
 

@@ -1,5 +1,6 @@
 #include "GPIOManager.h"
 #include "SystemTask.h"          // for sendPlayCommand
+#include "EventLogger.h"
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <vector>
@@ -132,7 +133,7 @@ void initGPIO() {
     lockGpio();
     loadGPIOMappings();
     for (auto& in : inputMappings) {
-        if (isValidPin(in.pin)) {
+        if (isValidPin(in.pin) && isInputPin(in.pin)) {
             pinMode(in.pin, INPUT_PULLUP);
             in.lastState = digitalRead(in.pin);
         }
@@ -147,25 +148,33 @@ void initGPIO() {
             digitalWrite(out.pin, LOW);
         }
     }
+    for (auto& sched : gpioSchedules) {
+        if (isValidPin(sched.pin)) {
+            pinMode(sched.pin, OUTPUT);
+        }
+    }
     unlockGpio();
 }
 
 void checkGPIOInputs() {
     lockGpio();
     for (auto& in : inputMappings) {
-        if (!isValidPin(in.pin)) continue;
+        if (!isValidPin(in.pin) || !isInputPin(in.pin)) continue;
         bool cur = digitalRead(in.pin);
         if (in.lastState == HIGH && cur == LOW) {
             // falling edge (active transition)
             Serial.printf("[GPIO] Input pin %d triggered: %s\n", in.pin, in.name.c_str());
+            LOG_SYS("GPIO", "Input pin %d triggered (%s)", in.pin, in.name.c_str());
             
             // 1. Play audio file if set
             if (in.file.length() > 0) {
+                audioManager.setAudioDescription("مدخل GPIO (" + in.name + "): " + in.file);
                 sendPlayCommand(in.file.c_str(), 1, in.playDurationSec, in.volume, 0, in.repeatCount);
             }
             
             // 2. Output pin handling for Pulse and Toggle modes
             if (isValidPin(in.outputPin)) {
+                pinMode(in.outputPin, OUTPUT);
                 if (in.outputDurationSec > 0) { // Pulse mode
                     digitalWrite(in.outputPin, HIGH);
                     unsigned long endTime = millis() + (in.outputDurationSec * 1000UL);
@@ -180,9 +189,9 @@ void checkGPIOInputs() {
             }
         }
         
-        // Level active mode output handling (continuous level checking)
-        if (isValidPin(in.outputPin) && in.outputDurationSec == 0) {
-            // Active while input is LOW
+        // Level active mode output handling: only write on state change so other outputs on that pin are not overwritten every tick
+        if (isValidPin(in.outputPin) && in.outputDurationSec == 0 && in.lastState != cur) {
+            pinMode(in.outputPin, OUTPUT);
             digitalWrite(in.outputPin, cur == LOW ? HIGH : LOW);
         }
         
@@ -284,7 +293,8 @@ String getGpioMappingsJson() {
 void setOutputForAlert(const String& alertName, int durationSec) {
     lockGpio();
     for (auto& out : outputMappings) {
-        if (alertName.indexOf(out.alertFile) >= 0) {
+        if (out.alertFile.length() > 0 && alertName.indexOf(out.alertFile) >= 0) {
+            pinMode(out.pin, OUTPUT);
             digitalWrite(out.pin, HIGH);
             unsigned long endTime = millis() + (durationSec > 0 ? durationSec * 1000UL : out.durationSec * 1000UL);
             uint8_t outputPin = out.pin;
@@ -394,8 +404,14 @@ void checkActiveAlertOutputs() {
 void addGpioSchedule(const GpioScheduleEntry& entry, int index) {
     if (!isValidPin(entry.pin)) return;
     lockGpio();
+    pinMode(entry.pin, OUTPUT);
     if (index >= 0 && index < (int)gpioSchedules.size()) {
+        uint8_t oldPin = gpioSchedules[index].pin;
+        bool oldWasActive = gpioSchedules[index].wasActive;
         gpioSchedules[index] = entry;
+        if (oldWasActive && isValidPin(oldPin)) {
+            digitalWrite(oldPin, LOW);
+        }
     } else {
         gpioSchedules.push_back(entry);
     }
@@ -406,6 +422,9 @@ void addGpioSchedule(const GpioScheduleEntry& entry, int index) {
 void removeGpioSchedule(int index) {
     lockGpio();
     if (index >= 0 && index < (int)gpioSchedules.size()) {
+        if (gpioSchedules[index].wasActive && isValidPin(gpioSchedules[index].pin)) {
+            digitalWrite(gpioSchedules[index].pin, LOW);
+        }
         gpioSchedules.erase(gpioSchedules.begin() + index);
         saveGpioSchedules();
     }
@@ -446,6 +465,10 @@ void checkGpioSchedules() {
     time_t now = time(nullptr);
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
+    if (timeinfo.tm_year + 1900 < 2024) {
+        unlockGpio();
+        return;
+    }
     int curHour = timeinfo.tm_hour;
     int curMin = timeinfo.tm_min;
     int curWday = timeinfo.tm_wday;
@@ -453,8 +476,17 @@ void checkGpioSchedules() {
     int curMon = timeinfo.tm_mon + 1;
     int curYear = timeinfo.tm_year + 1900;
 
+    std::vector<uint8_t> deactivatedPins;
+
     for (auto& sched : gpioSchedules) {
-        if (!sched.enabled || !isValidPin(sched.pin)) continue;
+        if (!sched.enabled || !isValidPin(sched.pin)) {
+            if (sched.wasActive && isValidPin(sched.pin)) {
+                sched.wasActive = false;
+                sched.triggered = false;
+                deactivatedPins.push_back(sched.pin);
+            }
+            continue;
+        }
         bool match = false;
         if (sched.type == "daily") {
             match = true; // check time window
@@ -483,32 +515,59 @@ void checkGpioSchedules() {
                 match = (curMon == m && curMday == d);
             }
         }
-        if (!match) continue;
 
-        // check time window
         int startMinutes = sched.startHour * 60 + sched.startMin;
         int endMinutes = sched.endHour * 60 + sched.endMin;
         int curMinutes = curHour * 60 + curMin;
 
         bool activate = false;
-        if (startMinutes <= endMinutes) {
-            if (curMinutes >= startMinutes && curMinutes < endMinutes) activate = true;
-        } else { // overnight schedule
-            if (curMinutes >= startMinutes || curMinutes < endMinutes) activate = true;
+        if (match) {
+            if (startMinutes <= endMinutes) {
+                if (curMinutes >= startMinutes && curMinutes < endMinutes) activate = true;
+            } else { // overnight schedule
+                if (curMinutes >= startMinutes || curMinutes < endMinutes) activate = true;
+            }
         }
 
         if (activate) {
+            if (!sched.wasActive) {
+                pinMode(sched.pin, OUTPUT);
+                LOG_SYS("GPIO", "GPIO Schedule activated: %s (Pin=%d, State=%s)",
+                        sched.name.c_str(), sched.pin, sched.state ? "HIGH" : "LOW");
+                sched.wasActive = true;
+            }
             digitalWrite(sched.pin, sched.state ? HIGH : LOW);
             if (!sched.triggered) {
                 sched.triggered = true;
                 if (sched.alertFile.length() > 0) {
+                    audioManager.setAudioDescription("جدول GPIO (" + sched.name + "): " + sched.alertFile);
                     sendPlayCommand(sched.alertFile.c_str(), 1, sched.playDurationSec, sched.volume, 0, sched.repeatCount);
                 }
             }
         } else {
-            // revert to default LOW when not in window
-            digitalWrite(sched.pin, LOW);
-            sched.triggered = false;
+            if (sched.wasActive) {
+                sched.wasActive = false;
+                sched.triggered = false;
+                deactivatedPins.push_back(sched.pin);
+                LOG_SYS("GPIO", "GPIO Schedule window ended: %s (Pin=%d)", sched.name.c_str(), sched.pin);
+            } else {
+                sched.triggered = false;
+            }
+        }
+    }
+
+    // Only pull a pin LOW on the exact transition when its schedule ended AND no other schedule is actively holding that pin
+    for (uint8_t pin : deactivatedPins) {
+        bool anyOtherActive = false;
+        for (const auto& s : gpioSchedules) {
+            if (s.enabled && s.pin == pin && s.wasActive) {
+                anyOtherActive = true;
+                break;
+            }
+        }
+        if (!anyOtherActive) {
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, LOW);
         }
     }
     unlockGpio();
@@ -545,6 +604,11 @@ void loadGpioSchedules() {
             e.volume = o["volume"] | 20;
             e.enabled = o["enabled"] | true;
             e.triggered = false;
+            e.wasActive = false;
+            if (isValidPin(e.pin)) {
+                pinMode(e.pin, OUTPUT);
+                digitalWrite(e.pin, LOW);
+            }
             gpioSchedules.push_back(e);
         }
     }

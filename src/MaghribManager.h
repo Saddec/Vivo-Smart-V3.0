@@ -21,6 +21,8 @@ public:
     void setEnabledForDay(int dayOfWeek, bool enable);
     void setVolumeForDay(int dayOfWeek, uint8_t vol);
     void setLoopForDay(int dayOfWeek, uint32_t loopSec); // new
+    void setOffset(int offsetMin);
+    int getOffset();
     String getAlertsJson();
     void saveAlertsJson(const String& json);
     void checkAndTrigger();
@@ -30,6 +32,7 @@ private:
     SemaphoreHandle_t _maghribMutex = NULL;
     time_t triggerTimeToday;
     bool triggeredToday;
+    int _offsetMin = 1;
     void loadFromNVS();
     void saveToNVS();
 };

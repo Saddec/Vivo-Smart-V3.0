@@ -71,8 +71,15 @@ function apiGet(url, fallback = {}, retries = 3) {
 }
 
 function apiPost(url, data = {}) {
-  const payload = { ...data };
-  if (appState.sessionToken && !payload.token) payload.token = appState.sessionToken;
+  let body;
+  if (data instanceof URLSearchParams) {
+    body = new URLSearchParams(data);
+    if (appState.sessionToken && !body.has('token')) body.append('token', appState.sessionToken);
+  } else {
+    const payload = { ...data };
+    if (appState.sessionToken && !payload.token) payload.token = appState.sessionToken;
+    body = formBody(payload);
+  }
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' };
   if (appState.sessionToken) {
     headers['X-Session-Token'] = appState.sessionToken;
@@ -80,7 +87,7 @@ function apiPost(url, data = {}) {
   return fetch(url, {
     method: 'POST',
     headers: headers,
-    body: formBody(payload)
+    body: body
   }).then((response) => {
     if (response.status === 401) {
       doLogout();
@@ -747,27 +754,75 @@ function loadDDNS() {
   apiGet('/api/ddns/config', {}).then((data) => {
     if ($('ddnsToggle')) {
       $('ddnsToggle').checked = data.enabled || false;
-      toggleDDNS();
+      toggleDDNS(false);
     }
+    if ($('ddnsProvider') && data.provider) $('ddnsProvider').value = data.provider;
     if ($('ddnsDomain')) $('ddnsDomain').value = data.domain || '';
     if ($('ddnsUser')) $('ddnsUser').value = data.user || '';
     if ($('ddnsPass')) $('ddnsPass').value = data.hasPass ? '********' : '';
+    if ($('ddnsUseIpv6')) $('ddnsUseIpv6').checked = data.useIPv6 !== false;
+    if ($('ddnsStatusBadge')) {
+      $('ddnsStatusBadge').textContent = data.status || (data.enabled ? 'مفعل' : 'غير مفعل');
+      $('ddnsStatusBadge').style.background = (data.status && data.status.includes('✅')) ? '#28a745' : (data.enabled ? '#f39c12' : '#6c757d');
+    }
+    if ($('globalIpv6Banner') && $('globalIpv6Link')) {
+      if (data.globalIPv6 && data.globalIPv6.length > 4) {
+        const url = `http://[${data.globalIPv6}]/`;
+        $('globalIpv6Banner').style.display = 'block';
+        $('globalIpv6Link').href = url;
+        $('globalIpv6Link').textContent = url;
+      } else {
+        $('globalIpv6Banner').style.display = 'none';
+      }
+    }
   });
+  loadTelegramConfig();
 }
 
 function toggleDDNS(userTriggered = false) {
   if ($('ddnsFields')) $('ddnsFields').style.display = $('ddnsToggle')?.checked ? 'block' : 'none';
-  if (userTriggered) {
-    saveDDNS();
-  }
 }
 
 function saveDDNS() {
   const enabled = $('ddnsToggle')?.checked ? '1' : '0';
+  const provider = $('ddnsProvider')?.value || 'noip';
   const domain = $('ddnsDomain')?.value || '';
   const user = $('ddnsUser')?.value || '';
   const pass = $('ddnsPass')?.value || '';
-  apiPost('/api/ddns/save', { enabled, domain, user, pass }).then(() => toast('تم حفظ إعدادات DDNS'));
+  const useIPv6 = $('ddnsUseIpv6')?.checked ? '1' : '0';
+  apiPost('/api/ddns/save', { enabled, provider, domain, user, pass, useIPv6 }).then(() => {
+    toast('تم حفظ إعدادات DDNS وجاري التحديث...');
+    setTimeout(loadDDNS, 2500);
+  });
+}
+
+function loadTelegramConfig() {
+  apiGet('/api/telegram/config', {}).then((data) => {
+    if ($('tgToggle')) {
+      $('tgToggle').checked = !!data.enabled;
+      toggleTelegramFields();
+    }
+    if ($('tgToken')) $('tgToken').value = data.hasToken ? '********' : '';
+    if ($('tgChatId')) $('tgChatId').value = data.chatId || '';
+    if ($('tgStatusBadge')) {
+      $('tgStatusBadge').textContent = data.status || (data.enabled ? 'مفعل' : 'غير مفعل');
+      $('tgStatusBadge').style.background = (data.status && data.status.includes('✅')) ? '#28a745' : (data.enabled ? '#3498db' : '#6c757d');
+    }
+  });
+}
+
+function toggleTelegramFields() {
+  if ($('tgFields')) $('tgFields').style.display = $('tgToggle')?.checked ? 'block' : 'none';
+}
+
+function saveTelegramConfig() {
+  const enabled = $('tgToggle')?.checked ? '1' : '0';
+  const token = $('tgToken')?.value || '';
+  const chatId = $('tgChatId')?.value || '';
+  apiPost('/api/telegram/save', { enabled, token, chatId }).then(() => {
+    toast('تم حفظ إعدادات بوت تيليجرام للتحكم عن بعد');
+    setTimeout(loadTelegramConfig, 2000);
+  });
 }
 
 function defaultPrayerMethod(country) {
@@ -2474,10 +2529,12 @@ function deleteGpioSched(index) {
 }
 
 function toggleEidMode() {
-  apiPost('/api/eid/mode', { enabled: $('eidModeToggle')?.checked ? '1' : '0' })
+  const manualEn = $('eidModeToggle')?.checked ? '1' : '0';
+  const autoEn = $('eidAutoToggle') ? ($('eidAutoToggle').checked ? '1' : '0') : '1';
+  apiPost('/api/eid/mode', { enabled: manualEn, autoEnabled: autoEn })
     .then(() => {
-      updateEidModeBanner($('eidModeToggle')?.checked === true);
-      toast('تم تحديث وضع العيد');
+      loadEidModeStatus();
+      toast('تم تحديث إعدادات وضع العيد');
     }).catch((err) => toast(`فشل التحديث: ${err.message}`));
 }
 
@@ -2487,14 +2544,35 @@ function updateEidModeBanner(enabled) {
 
 function loadEidModeStatus() {
   apiGet('/api/eid/status', {}).then((data) => {
-    const enabled = !!data.enabled;
-    if ($('eidModeToggle')) $('eidModeToggle').checked = enabled;
+    const effectiveEnabled = !!data.enabled;
+    const manualEnabled = data.manualEnabled !== undefined ? !!data.manualEnabled : effectiveEnabled;
+    const autoEnabled = data.autoEnabled !== undefined ? !!data.autoEnabled : true;
+    const autoDayActive = !!data.autoDayActive;
+    const autoReason = data.autoReason || '';
+
+    if ($('eidModeToggle')) $('eidModeToggle').checked = manualEnabled;
+    if ($('eidAutoToggle')) $('eidAutoToggle').checked = autoEnabled;
+    if ($('eidAutoStatusBadge')) {
+      if (manualEnabled) {
+        $('eidAutoStatusBadge').innerHTML = '🟢 <strong>وضع العيد مفعل حالياً (تفعيل يدوي)</strong>';
+        $('eidAutoStatusBadge').style.color = '#2ecc71';
+      } else if (autoEnabled && autoDayActive) {
+        $('eidAutoStatusBadge').innerHTML = `🟢 <strong>وضع العيد مفعل أوتوماتيكياً اليوم: ${safeText(autoReason)}</strong>`;
+        $('eidAutoStatusBadge').style.color = '#2ecc71';
+      } else if (autoEnabled) {
+        $('eidAutoStatusBadge').innerHTML = '🕒 <strong>التفعيل الأوتوماتيكي جاهز:</strong> سيعمل تلقائياً عند دخول عيد الفطر (1–3 شوال) أو عيد الأضحى (9–13 ذو الحجة)';
+        $('eidAutoStatusBadge').style.color = '#f1c40f';
+      } else {
+        $('eidAutoStatusBadge').innerHTML = '⚪ وضع العيد متوقف (التفعيل اليدوي والأوتوماتيكي غير مفعلين)';
+        $('eidAutoStatusBadge').style.color = 'rgba(255,255,255,0.6)';
+      }
+    }
     if ($('eidTakbeerFile') && data.takbeerFile) $('eidTakbeerFile').value = data.takbeerFile;
     if ($('eidTakbeerVolume') && data.takbeerVolume !== undefined) {
       $('eidTakbeerVolume').value = data.takbeerVolume;
       if ($('eidTakbeerVolumeValue')) $('eidTakbeerVolumeValue').textContent = data.takbeerVolume;
     }
-    updateEidModeBanner(enabled);
+    updateEidModeBanner(effectiveEnabled);
   });
 }
 
@@ -2574,6 +2652,11 @@ function saveMaghribOffset() {
 }
 
 function loadMaghribAlerts() {
+  apiGet('/api/maghrib/offset', { offset: 1 }).then((offData) => {
+    if ($('maghribOffset') && offData && offData.offset !== undefined) {
+      $('maghribOffset').value = offData.offset;
+    }
+  }).catch(() => {});
   apiGet('/api/maghrib/alerts', []).then((data) => {
     const alerts = Array.isArray(data) ? data : (data.alerts || []);
     if (!$('maghribAlerts')) return;
@@ -3044,7 +3127,7 @@ function editEidSchedule(index) {
     toggleEidLoopFields();
   }
   if ($('eidScheduleLoopDuration') && alert.loop) {
-    $('eidScheduleLoopDuration').value = Math.round(alert.loop / 60);
+    $('eidScheduleLoopDuration').value = alert.loop;
   }
   
   if ($('eidScheduleSaveBtn')) {
@@ -3091,7 +3174,7 @@ function addEidSchedule() {
     dayOfMonth,
     specificDate: $('eidScheduleDate')?.value || '',
     volume: $('eidScheduleVolume')?.value || 20,
-    loop: $('eidScheduleLoopToggle')?.value === 'yes' ? Number($('eidScheduleLoopDuration')?.value || 0) * 60 : 0,
+    loop: $('eidScheduleLoopToggle')?.value === 'yes' ? Number($('eidScheduleLoopDuration')?.value || 0) : 0,
     prayerIndex: $('eidSchedulePrayer')?.value || 0,
     offsetSeconds,
     eidOnly: '1',
@@ -3156,7 +3239,7 @@ function loadEidSchedules() {
               info += `)`;
             }
             info += ` - صوت: ${a.volume || 20}`;
-            if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
+            if (a.loop > 0) info += ` (تكرار ${a.loop}د)`;
             if (a.enabled === false) {
               info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
             }
@@ -3198,7 +3281,7 @@ function loadEidSchedules() {
               info += `)`;
             }
             info += ` - صوت: ${a.volume || 20}`;
-            if (a.loop > 0) info += ` (تكرار ${Math.round(a.loop / 60)}د)`;
+            if (a.loop > 0) info += ` (تكرار ${a.loop}د)`;
             if (a.enabled === false) {
               info += ` | <span style="color:#ff6b6b; font-weight:bold;">🚫 موقف</span>`;
             }
@@ -4041,7 +4124,20 @@ function loadPresenceConfig() {
     if ($('presenceRssi')) $('presenceRssi').value = cfg.rssiThresh !== undefined ? cfg.rssiThresh : -65;
     if ($('presenceTargetMac')) $('presenceTargetMac').value = cfg.targetMac || cfg.bleMac || '';
     if ($('presenceTargetName')) $('presenceTargetName').value = cfg.targetName || cfg.bleName || '';
-    if ($('presenceAudioFile')) $('presenceAudioFile').value = cfg.welcomeFile || '';
+    if ($('presenceAudioFile')) {
+      const target = cfg.welcomeFile || '';
+      const noSlash = target.startsWith('/') ? target.slice(1) : target;
+      const withSlash = '/' + noSlash;
+      let matched = false;
+      for (const opt of $('presenceAudioFile').options) {
+        if (opt.value === target || opt.value === noSlash || opt.value === withSlash) {
+          $('presenceAudioFile').value = opt.value;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched && target) $('presenceAudioFile').value = target;
+    }
     if ($('presenceVolume')) $('presenceVolume').value = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceVolValue')) $('presenceVolValue').textContent = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceCooldown')) $('presenceCooldown').value = cfg.cooldownMinutes !== undefined ? cfg.cooldownMinutes : 30;
@@ -4067,23 +4163,24 @@ function savePresenceConfig() {
   const qStart = ($('presenceQuietStart')?.value || '23:00').split(':');
   const qEnd = ($('presenceQuietEnd')?.value || '07:00').split(':');
 
-  const params = new URLSearchParams();
-  params.append('enabled', $('presenceEnabled')?.checked ? '1' : '0');
-  params.append('mode', $('presenceMode')?.value || '0');
-  params.append('rssiThresh', $('presenceRssi')?.value || '-65');
-  params.append('targetMac', ($('presenceTargetMac')?.value || '').trim());
-  params.append('targetName', ($('presenceTargetName')?.value || '').trim());
-  params.append('welcomeFile', $('presenceAudioFile')?.value || '');
-  params.append('volume', $('presenceVolume')?.value || '20');
-  params.append('cooldownMinutes', $('presenceCooldown')?.value || '30');
-  params.append('vacateMinutes', $('presenceVacate')?.value || '3');
-  params.append('quietEn', $('presenceQuietEn')?.checked ? '1' : '0');
-  params.append('qStartH', qStart[0] || '23');
-  params.append('qStartM', qStart[1] || '0');
-  params.append('qEndH', qEnd[0] || '7');
-  params.append('qEndM', qEnd[1] || '0');
+  const payload = {
+    enabled: $('presenceEnabled')?.checked ? '1' : '0',
+    mode: $('presenceMode')?.value || '0',
+    rssiThresh: $('presenceRssi')?.value || '-65',
+    targetMac: ($('presenceTargetMac')?.value || '').trim(),
+    targetName: ($('presenceTargetName')?.value || '').trim(),
+    welcomeFile: $('presenceAudioFile')?.value || '',
+    volume: $('presenceVolume')?.value || '20',
+    cooldownMinutes: $('presenceCooldown')?.value || '30',
+    vacateMinutes: $('presenceVacate')?.value || '3',
+    quietEn: $('presenceQuietEn')?.checked ? '1' : '0',
+    qStartH: qStart[0] || '23',
+    qStartM: qStart[1] || '0',
+    qEndH: qEnd[0] || '7',
+    qEndM: qEnd[1] || '0'
+  };
 
-  apiPost('/api/presence/config', params).then(() => {
+  apiPost('/api/presence/config', payload).then(() => {
     toast('تم حفظ إعدادات الترحيب الذكي وعنوان الماك بنجاح');
     refreshPresenceStatus();
   }).catch((err) => {
@@ -4130,8 +4227,9 @@ function testPresenceAudio() {
     toast('يرجى اختيار ملف صوتي أولاً');
     return;
   }
-  apiPost('/api/presence/test', new URLSearchParams()).then(() => {
-    toast('جاري تجربة تشغيل ملف الترحيب...');
+  const volume = $('presenceVolume')?.value || '20';
+  apiPost('/api/presence/test', { file: file, volume: volume }).then(() => {
+    toast('جاري تجربة تشغيل ملف الترحيب المختار...');
   }).catch((err) => {
     toast(`فشل التشغيل: ${err.message}`);
   });

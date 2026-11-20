@@ -109,10 +109,11 @@ void Scheduler::checkAndTrigger() {
 
     // Stop alerts whose end time has been reached
     for (const auto& alert : alerts) {
-        if (alert.enabled && alert.endHour == curHour && alert.endMinute == curMin && alert.repeatInterval <= 0) {
+        if (alert.enabled && alert.endHour >= 0 && alert.endHour == curHour && alert.endMinute == curMin) {
             String alertDesc = alert.name.length() > 0 ? alert.name : ("تنبيه: " + alert.fileName);
             if (audioManager.getAudioDescription() == alertDesc && audioManager.getState() != AUDIO_IDLE) {
                 Serial.printf("[Scheduler] Stopping alert '%s' because its end time %02d:%02d was reached\n", alert.name.c_str(), alert.endHour, alert.endMinute);
+                LOG_SCH("SCHEDULER", "Stopping alert '%s' at scheduled end time %02d:%02d", alert.name.c_str(), alert.endHour, alert.endMinute);
                 extern QueueHandle_t audioQueue;
                 AudioMessage msgCmd = {CMD_STOP, 0, 0, 0, 0, 0, 0};
                 xQueueSend(audioQueue, &msgCmd, 0);
@@ -356,6 +357,8 @@ void Scheduler::checkAndTrigger() {
                     extern void triggerAlertOutput(uint8_t pin, const String& mode, const String& durationMode, int durationSec);
                     triggerAlertOutput(alert.gpioPin, alert.gpioMode, alert.gpioDurationMode, alert.gpioDurationSec);
                 }
+                extern void setOutputForAlert(const String& alertName, int durationSec);
+                setOutputForAlert(alert.name + " " + alert.fileName, alert.durationSec);
                 
                 alert.lastTriggered = triggerMinute;
             }
@@ -386,6 +389,7 @@ void Scheduler::loadFromNVS() {
             a.gpioPin=obj["gpioPin"]|0;
             a.gpioMode=obj["gpioMode"]|"continuous";
             a.gpioDurationMode=obj["gpioDurationMode"]|"audio_duration";
+            a.gpioDurationSec=obj["gpioDurationSec"]|5;
             a.important=obj["important"]|true;
             a.skipAdhan=obj["skipAdhan"]|false;
             a.skipIqama=obj["skipIqama"]|false;
@@ -428,9 +432,15 @@ bool Scheduler::shouldSkipAdhan(int prayerIndex) {
     struct tm t_now;
     localtime_r(&now_ts, &t_now);
     int curWday = t_now.tm_wday;
+    bool eidActive = isEidMode();
 
     for (const auto& alert : alerts) {
-        if (alert.enabled && alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipAdhan) {
+        if (!alert.enabled) continue;
+        if (!alert.bothModes) {
+            if (alert.eidOnly && !eidActive) continue;
+            if (!alert.eidOnly && eidActive) continue;
+        }
+        if (alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipAdhan) {
             bool dayMatch = true;
             if (alert.dayOfWeek >= 0) {
                 if (alert.dayOfWeek >= 128) {
@@ -458,9 +468,15 @@ bool Scheduler::shouldSkipIqama(int prayerIndex) {
     struct tm t_now;
     localtime_r(&now_ts, &t_now);
     int curWday = t_now.tm_wday;
+    bool eidActive = isEidMode();
 
     for (const auto& alert : alerts) {
-        if (alert.enabled && alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipIqama) {
+        if (!alert.enabled) continue;
+        if (!alert.bothModes) {
+            if (alert.eidOnly && !eidActive) continue;
+            if (!alert.eidOnly && eidActive) continue;
+        }
+        if (alert.isPrayerRelative && alert.prayerIndex == prayerIndex && alert.skipIqama) {
             bool dayMatch = true;
             if (alert.dayOfWeek >= 0) {
                 if (alert.dayOfWeek >= 128) {

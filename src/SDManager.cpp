@@ -40,22 +40,37 @@ static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
     SPI.end();
     delay(10);
     SPI.begin(pins.sck, pins.miso, pins.mosi, pins.cs);
-    delay(50);
+    delay(20);
+
+    // Send 80+ dummy clock cycles with CS HIGH to release SD card from any interrupted SPI state after soft/watchdog reset
+    digitalWrite(pins.cs, HIGH);
+    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
+    for (int i = 0; i < 16; ++i) {
+        SPI.transfer(0xFF);
+    }
+    SPI.endTransaction();
+    delay(20);
 
     if (!SD.begin(pins.cs, SPI, frequency)) {
         lastSdError = String(pins.name) + "_begin_failed_" + String(frequency);
+        SPI.end();
+        pinMode(pins.cs, INPUT_PULLUP);
         return false;
     }
 
     if (SD.cardType() == CARD_NONE) {
         lastSdError = String(pins.name) + "_card_none";
         SD.end();
+        SPI.end();
+        pinMode(pins.cs, INPUT_PULLUP);
         return false;
     }
 
     if (SD.cardSize() == 0) {
         lastSdError = String(pins.name) + "_card_size_zero";
         SD.end();
+        SPI.end();
+        pinMode(pins.cs, INPUT_PULLUP);
         return false;
     }
 

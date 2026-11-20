@@ -642,8 +642,10 @@ void updatePresenceManager() {
     bool bleMatched = false;
     int detectedRssi = -100;
 
-    // Only invoke BLE if explicitly in BLE mode OR (Hybrid and Wi-Fi not matched)
-    if ((cfg.mode == 1 || (cfg.mode == 0 && !wifiMatched)) && (cfg.targetMac.length() > 0 || cfg.targetName.length() > 0)) {
+    // Only invoke BLE if explicitly in BLE mode OR (Hybrid and Wi-Fi not matched),
+    // and never block the 2.4GHz radio with BLE scanning while Setup AP is active in offline mode
+    bool setupApOffline = (WiFi.status() != WL_CONNECTED) && (WiFi.getMode() & WIFI_MODE_AP);
+    if (!setupApOffline && (cfg.mode == 1 || (cfg.mode == 0 && !wifiMatched)) && (cfg.targetMac.length() > 0 || cfg.targetName.length() > 0)) {
         if (!bleInitialized) {
             BLEDevice::init("VivoSmart-Presence");
             bleInitialized = true;
