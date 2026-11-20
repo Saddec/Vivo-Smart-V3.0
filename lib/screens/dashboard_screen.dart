@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
@@ -5598,11 +5599,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const SizedBox(height: 20),
           const _DdnsSettingsCard(),
           const SizedBox(height: 20),
+          const _TelegramSettingsCard(),
+          const SizedBox(height: 20),
           const _ClockSettingsCard(),
           const SizedBox(height: 20),
           const _PasswordCard(),
           const SizedBox(height: 20),
           const _SystemSettingsCard(),
+          const SizedBox(height: 20),
+          const _OtaUpdateCard(),
           const SizedBox(height: 20),
           // Unified System Control Card
           Container(
@@ -5682,7 +5687,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              'Vivo Smart App • الإصدار v1.0.4',
+              'Vivo Smart App • الإصدار v1.0.5',
               style: GoogleFonts.cairo(
                 color: Colors.white38,
                 fontSize: 12,
@@ -6384,40 +6389,140 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Eid General Mode Switch
+                  // Eid General Mode Switch (Manual + Automatic Hijri Calendar)
                   Container(
+                    padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: const Color(0x7316132C),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white.withOpacity(0.08)),
                     ),
-                    child: SwitchListTile(
-                      value: eidState.enabled,
-                      onChanged: (val) async {
-                        final success = await ref.read(eidStateProvider.notifier).toggleMode(val);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(success 
-                                  ? (val ? 'تم تفعيل وضع العيد بنجاح' : 'تم تعطيل وضع العيد بنجاح')
-                                  : 'فشل تبديل وضع العيد'),
-                              backgroundColor: success ? Colors.green : Colors.redAccent,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.nights_stay, color: Color(0xFFF1C40F)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'إعدادات تفعيل وضع العيد',
+                                style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 15),
+                              ),
                             ),
-                          );
-                        }
-                      },
-                      title: Row(
-                        children: [
-                          const Icon(Icons.nights_stay, color: Color(0xFFF1C40F)),
-                          const SizedBox(width: 12),
-                          Text('وضع العيد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white)),
-                        ],
-                      ),
-                      subtitle: Text(
-                        'عند تفعيل وضع العيد، سيتم تشغيل التكبيرات حسب الجدولة حول الصلوات الخمسة وتنبيهات العيد النشطة.',
-                        style: GoogleFonts.cairo(color: Colors.white38, fontSize: 10),
-                      ),
-                      activeColor: const Color(0xFFF1C40F),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                              tooltip: 'تحديث حالة العيد',
+                              onPressed: () => ref.read(eidStateProvider.notifier).refresh(),
+                            ),
+                          ],
+                        ),
+                        const Divider(color: Colors.white10, height: 16),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: eidState.manualEnabled,
+                          activeColor: const Color(0xFFF1C40F),
+                          title: Text(
+                            'تفعيل وضع العيد يدوياً الآن',
+                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            'تشغيل تكبيرات وتنبيهات العيد فوراً بغض النظر عن التاريخ الهجري',
+                            style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11),
+                          ),
+                          onChanged: (val) async {
+                            final success = await ref.read(eidStateProvider.notifier).toggleMode(val, autoVal: eidState.autoEnabled);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(success
+                                      ? (val ? 'تم تفعيل وضع العيد يدوياً' : 'تم إيقاف التفعيل اليدوي لوضع العيد')
+                                      : 'فشل تحديث إعدادات وضع العيد'),
+                                  backgroundColor: success ? Colors.green : Colors.redAccent,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                        const Divider(color: Colors.white10, height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: eidState.autoEnabled,
+                          activeColor: const Color(0xFF00FFCC),
+                          title: Text(
+                            'تفعيل أوتوماتيكي عند قدوم أيام العيد',
+                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            'يعمل تلقائياً في عيد الفطر (1–3 شوال) ويوم عرفة وعيد الأضحى (9–13 ذو الحجة)',
+                            style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11),
+                          ),
+                          onChanged: (val) async {
+                            final success = await ref.read(eidStateProvider.notifier).toggleMode(eidState.manualEnabled, autoVal: val);
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(success
+                                      ? (val ? 'تم تفعيل التشغيل الأوتوماتيكي لأيام العيد' : 'تم إيقاف التشغيل الأوتوماتيكي لأيام العيد')
+                                      : 'فشل تحديث إعدادات وضع العيد'),
+                                  backgroundColor: success ? Colors.green : Colors.redAccent,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: eidState.enabled
+                                ? const Color(0xFF2ECC71).withOpacity(0.14)
+                                : (eidState.autoEnabled
+                                    ? const Color(0xFFF1C40F).withOpacity(0.12)
+                                    : Colors.white.withOpacity(0.05)),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: eidState.enabled
+                                  ? const Color(0xFF2ECC71).withOpacity(0.4)
+                                  : (eidState.autoEnabled
+                                      ? const Color(0xFFF1C40F).withOpacity(0.35)
+                                      : Colors.white12),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                eidState.enabled
+                                    ? Icons.check_circle
+                                    : (eidState.autoEnabled ? Icons.schedule : Icons.pause_circle_outline),
+                                color: eidState.enabled
+                                    ? const Color(0xFF2ECC71)
+                                    : (eidState.autoEnabled ? const Color(0xFFF1C40F) : Colors.white54),
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  eidState.manualEnabled
+                                      ? 'وضع العيد مفعل حالياً (تفعيل يدوي)'
+                                      : (eidState.autoEnabled && eidState.autoDayActive)
+                                          ? 'وضع العيد مفعل أوتوماتيكياً اليوم: ${eidState.autoReason}'
+                                          : eidState.autoEnabled
+                                              ? 'التفعيل الأوتوماتيكي جاهز: سيعمل تلقائياً عند دخول عيد الفطر (1–3 شوال) أو عيد الأضحى (9–13 ذو الحجة)'
+                                              : 'وضع العيد متوقف (التفعيل اليدوي والأوتوماتيكي غير مفعلين)',
+                                  style: GoogleFonts.cairo(
+                                    color: eidState.enabled
+                                        ? const Color(0xFF2ECC71)
+                                        : (eidState.autoEnabled ? const Color(0xFFF1C40F) : Colors.white70),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -9073,26 +9178,66 @@ class _DdnsSettingsCard extends ConsumerStatefulWidget {
 
 class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
   bool _ddnsEnabled = false;
-  String _ddnsProvider = 'dyndns';
+  String _ddnsProvider = 'noip';
   final _ddnsDomainController = TextEditingController();
   final _ddnsUsernameController = TextEditingController();
   final _ddnsPasswordController = TextEditingController();
+  bool _useIPv6 = true;
+  bool _hasPass = false;
+  bool _obscurePass = true;
+  String _statusText = 'غير مفعل';
+  String _lastUpdateTime = '';
+  String _globalIPv6 = '';
+  bool _isLoading = true;
   bool _isSaving = false;
-  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDdnsConfig();
+  }
+
+  Future<void> _loadDdnsConfig() async {
+    try {
+      final data = await ref.read(apiServiceProvider).getDdnsConfig();
+      if (!mounted) return;
+      if (data.isNotEmpty) {
+        final prov = (data['provider'] ?? 'noip').toString();
+        setState(() {
+          _ddnsEnabled = data['enabled'] == true || data['enabled'] == 1 || data['enabled'] == '1';
+          _ddnsProvider = ['noip', 'duckdns', 'dynu'].contains(prov) ? prov : 'noip';
+          _ddnsDomainController.text = (data['domain'] ?? '').toString();
+          _ddnsUsernameController.text = (data['user'] ?? '').toString();
+          _hasPass = data['hasPass'] == true;
+          if (_hasPass) {
+            _ddnsPasswordController.text = '********';
+          }
+          _useIPv6 = data['useIPv6'] != false;
+          _statusText = (data['status'] ?? (_ddnsEnabled ? 'مفعل' : 'غير مفعل')).toString();
+          _lastUpdateTime = (data['lastUpdateTime'] ?? '').toString();
+          _globalIPv6 = (data['globalIPv6'] ?? '').toString();
+          _isLoading = false;
+        });
+      } else {
+        setState(() => _isLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _ddnsDomainController.dispose();
+    _ddnsUsernameController.dispose();
+    _ddnsPasswordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final wifiState = ref.watch(wifiProvider);
-    final status = wifiState.status;
-
-    if (!_initialized && status.isNotEmpty) {
-      _ddnsEnabled = status['ddns_enabled'] == true || status['ddns_enabled'] == 1 || status['ddns_enabled'] == '1';
-      _ddnsProvider = status['ddns_provider'] ?? 'dyndns';
-      _ddnsDomainController.text = status['ddns_domain'] ?? '';
-      _ddnsUsernameController.text = status['ddns_username'] ?? '';
-      _ddnsPasswordController.text = status['ddns_password'] ?? '';
-      _initialized = true;
-    }
+    final isOk = _statusText.contains('✅');
+    final isErr = _statusText.contains('❌');
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -9113,23 +9258,129 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.dns, color: Color(0xFF8E44AD), size: 22),
+              const Icon(Icons.public, color: Color(0xFF8E44AD), size: 22),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'إعدادات العنوان الديناميكي DDNS',
+                  'الوصول العالمي المباشر و DDNS (No-IP / DuckDNS / Dynu)',
                   style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
-                  overflow: TextOverflow.ellipsis,
                 ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                tooltip: 'تحديث الحالة',
+                onPressed: _loadDdnsConfig,
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
+          Text(
+            'يدعم التحديث التلقائي لعنوان IPv6 العالمي المباشر (لتخطي جدار CGNAT على شبكات الجوال والهوتسبوت بدون Port Forwarding) بالإضافة إلى IPv4.',
+            style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          if (_globalIPv6.length > 4) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2ECC71).withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF2ECC71).withOpacity(0.35)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.link, color: Color(0xFF2ECC71), size: 18),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'رابط الوصول العالمي المباشر للجهاز (IPv6):',
+                          style: GoogleFonts.cairo(
+                            color: const Color(0xFF2ECC71),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, color: Color(0xFF00F2FE), size: 18),
+                        tooltip: 'نسخ عنوان IPv6',
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(4),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: 'http://[$_globalIPv6]/'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('تم نسخ رابط IPv6 العالمي إلى الحافظة'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    'http://[$_globalIPv6]/',
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(
+                      color: Color(0xFF00F2FE),
+                      fontFamily: 'monospace',
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isOk
+                  ? const Color(0xFF28A745).withOpacity(0.15)
+                  : (isErr
+                      ? Colors.redAccent.withOpacity(0.15)
+                      : (_ddnsEnabled ? const Color(0xFFF39C12).withOpacity(0.15) : Colors.white.withOpacity(0.05))),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isOk
+                    ? const Color(0xFF28A745).withOpacity(0.4)
+                    : (isErr
+                        ? Colors.redAccent.withOpacity(0.4)
+                        : (_ddnsEnabled ? const Color(0xFFF39C12).withOpacity(0.4) : Colors.white12)),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  'حالة DDNS: ',
+                  style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Expanded(
+                  child: Text(
+                    _lastUpdateTime.isNotEmpty ? '$_statusText ($_lastUpdateTime)' : _statusText,
+                    style: GoogleFonts.cairo(
+                      color: isOk
+                          ? const Color(0xFF2ECC71)
+                          : (isErr ? Colors.redAccent : (_ddnsEnabled ? const Color(0xFFF39C12) : Colors.white60)),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _ddnsEnabled,
             activeColor: const Color(0xFF8E44AD),
-            title: Text('تفعيل خدمة DDNS', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13)),
+            title: Text('تفعيل خدمة DDNS', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13, fontWeight: FontWeight.bold)),
             onChanged: (val) {
               setState(() {
                 _ddnsEnabled = val;
@@ -9144,7 +9395,7 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
               value: _ddnsProvider,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                labelText: 'مزود الخدمة',
+                labelText: 'مزود الخدمة (Provider)',
                 labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.04),
@@ -9159,14 +9410,13 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
                 ),
               ),
               items: const [
-                DropdownMenuItem(value: 'dyndns', child: Text('DynDNS')),
-                DropdownMenuItem(value: 'noip', child: Text('No-IP')),
-                DropdownMenuItem(value: 'duckdns', child: Text('DuckDNS')),
-                DropdownMenuItem(value: 'custom', child: Text('مزود مخصص')),
+                DropdownMenuItem(value: 'noip', child: Text('No-IP (ddns.net)')),
+                DropdownMenuItem(value: 'duckdns', child: Text('DuckDNS (duckdns.org)')),
+                DropdownMenuItem(value: 'dynu', child: Text('Dynu DNS (dynu.net)')),
               ],
               onChanged: (val) {
                 setState(() {
-                  _ddnsProvider = val ?? 'dyndns';
+                  _ddnsProvider = val ?? 'noip';
                 });
               },
             ),
@@ -9174,8 +9424,11 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
             TextField(
               controller: _ddnsDomainController,
               style: const TextStyle(color: Colors.white),
+              textDirection: TextDirection.ltr,
               decoration: InputDecoration(
-                labelText: 'النطاق / النطاق الفرعي (Domain)',
+                labelText: 'النطاق (Domain)',
+                hintText: 'example.ddns.net أو example.duckdns.org',
+                hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
                 labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.04),
@@ -9194,8 +9447,9 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
             TextField(
               controller: _ddnsUsernameController,
               style: const TextStyle(color: Colors.white),
+              textDirection: TextDirection.ltr,
               decoration: InputDecoration(
-                labelText: 'اسم المستخدم / البريد الإلكتروني',
+                labelText: 'اسم المستخدم (أو اتركه فارغاً لـ DuckDNS)',
                 labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.04),
@@ -9213,11 +9467,16 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
             const SizedBox(height: 12),
             TextField(
               controller: _ddnsPasswordController,
-              obscureText: true,
+              obscureText: _obscurePass,
               style: const TextStyle(color: Colors.white),
+              textDirection: TextDirection.ltr,
               decoration: InputDecoration(
-                labelText: 'كلمة المرور / مفتاح التحقق (Token)',
+                labelText: 'كلمة المرور (أو Token لـ DuckDNS)',
                 labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                  onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                ),
                 filled: true,
                 fillColor: Colors.white.withOpacity(0.04),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -9231,42 +9490,507 @@ class _DdnsSettingsCardState extends ConsumerState<_DdnsSettingsCard> {
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: _useIPv6,
+              activeColor: const Color(0xFF00F2FE),
+              title: Text(
+                'ربط النطاق بعنوان IPv6 العالمي للجهاز تلقائياً (أفضل للهوتسبوت و 4G/5G)',
+                style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12),
+              ),
+              onChanged: (val) => setState(() => _useIPv6 = val),
+            ),
           ],
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: _isSaving ? null : () async {
-              setState(() {
-                _isSaving = true;
-              });
-              final success = await ref.read(apiServiceProvider).saveDdnsConfig(
-                _ddnsEnabled,
-                _ddnsProvider,
-                _ddnsDomainController.text.trim(),
-                _ddnsUsernameController.text.trim(),
-                _ddnsPasswordController.text.trim(),
-              );
-              setState(() {
-                _isSaving = false;
-              });
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(success ? 'تم حفظ إعدادات DDNS بنجاح' : 'فشل حفظ إعدادات DDNS'),
-                    backgroundColor: success ? Colors.green : Colors.redAccent,
-                  ),
-                );
-              }
-            },
+            onPressed: _isSaving
+                ? null
+                : () async {
+                    setState(() {
+                      _isSaving = true;
+                    });
+                    final success = await ref.read(apiServiceProvider).saveDdnsConfig(
+                          enabled: _ddnsEnabled,
+                          provider: _ddnsProvider,
+                          domain: _ddnsDomainController.text.trim(),
+                          user: _ddnsUsernameController.text.trim(),
+                          pass: _ddnsPasswordController.text.trim(),
+                          useIPv6: _useIPv6,
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success ? 'تم حفظ إعدادات DDNS وجاري التحديث...' : 'فشل حفظ إعدادات DDNS'),
+                          backgroundColor: success ? Colors.green : Colors.redAccent,
+                        ),
+                      );
+                    }
+                    await Future.delayed(const Duration(milliseconds: 2500));
+                    await _loadDdnsConfig();
+                    if (mounted) {
+                      setState(() {
+                        _isSaving = false;
+                      });
+                    }
+                  },
             icon: _isSaving
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                 : const Icon(Icons.save),
-            label: Text('حفظ إعدادات DDNS', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            label: Text('حفظ وتحديث DDNS الآن', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF8E44AD),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              elevation: 8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TelegramSettingsCard extends ConsumerStatefulWidget {
+  const _TelegramSettingsCard();
+
+  @override
+  ConsumerState<_TelegramSettingsCard> createState() => _TelegramSettingsCardState();
+}
+
+class _TelegramSettingsCardState extends ConsumerState<_TelegramSettingsCard> {
+  bool _tgEnabled = false;
+  final _tgTokenController = TextEditingController();
+  final _tgChatIdController = TextEditingController();
+  bool _hasToken = false;
+  bool _obscureToken = true;
+  String _statusText = 'غير مفعل';
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTelegramConfig();
+  }
+
+  Future<void> _loadTelegramConfig() async {
+    try {
+      final data = await ref.read(apiServiceProvider).getTelegramConfig();
+      if (!mounted) return;
+      if (data.isNotEmpty) {
+        setState(() {
+          _tgEnabled = data['enabled'] == true || data['enabled'] == 1 || data['enabled'] == '1';
+          _hasToken = data['hasToken'] == true;
+          if (_hasToken) {
+            _tgTokenController.text = '********';
+          }
+          _tgChatIdController.text = (data['chatId'] ?? '').toString();
+          _statusText = (data['status'] ?? (_tgEnabled ? 'مفعل' : 'غير مفعل')).toString();
+        });
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _tgTokenController.dispose();
+    _tgChatIdController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isOk = _statusText.contains('✅');
+    final isErr = _statusText.contains('❌');
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0x7316132C),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.send_rounded, color: Color(0xFF0088CC), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'التحكم عن بعد من أي مكان في العالم (Telegram Bot)',
+                  style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: Colors.white54, size: 20),
+                tooltip: 'تحديث حالة البوت',
+                onPressed: _loadTelegramConfig,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'يعمل من خلف أي شبكة أو هوتسبوت (حتى مع CGNAT وبدون IP عام أو فتح بورتات)! أنشئ بوت مجاني عبر @BotFather في تيليجرام وضع التوكن هنا للتحكم الكامل في الجهاز من أي مكان في العالم.',
+            style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isOk
+                  ? const Color(0xFF28A745).withOpacity(0.15)
+                  : (isErr
+                      ? Colors.redAccent.withOpacity(0.15)
+                      : (_tgEnabled ? const Color(0xFF0088CC).withOpacity(0.15) : Colors.white.withOpacity(0.05))),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isOk
+                    ? const Color(0xFF28A745).withOpacity(0.4)
+                    : (isErr
+                        ? Colors.redAccent.withOpacity(0.4)
+                        : (_tgEnabled ? const Color(0xFF0088CC).withOpacity(0.4) : Colors.white12)),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  'حالة البوت: ',
+                  style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Expanded(
+                  child: Text(
+                    _statusText,
+                    style: GoogleFonts.cairo(
+                      color: isOk
+                          ? const Color(0xFF2ECC71)
+                          : (isErr ? Colors.redAccent : (_tgEnabled ? const Color(0xFF00F2FE) : Colors.white60)),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _tgEnabled,
+            activeColor: const Color(0xFF0088CC),
+            title: Text(
+              'تفعيل التحكم عبر تيليجرام',
+              style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13, fontWeight: FontWeight.bold),
+            ),
+            onChanged: (val) => setState(() => _tgEnabled = val),
+          ),
+          if (_tgEnabled) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tgTokenController,
+              obscureText: _obscureToken,
+              style: const TextStyle(color: Colors.white),
+              textDirection: TextDirection.ltr,
+              decoration: InputDecoration(
+                labelText: 'توكن البوت (Bot Token من @BotFather)',
+                hintText: '123456789:ABCdefGHIjklMNOpqrSTUvwxYZ',
+                hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
+                labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                suffixIcon: IconButton(
+                  icon: Icon(_obscureToken ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                  onPressed: () => setState(() => _obscureToken = !_obscureToken),
+                ),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.04),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Color(0xFF0088CC), width: 1.5),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _tgChatIdController,
+              style: const TextStyle(color: Colors.white),
+              textDirection: TextDirection.ltr,
+              decoration: InputDecoration(
+                labelText: 'معرف المحادثة المسموح له (Chat ID)',
+                hintText: 'سيتم تعبئته تلقائياً عند إرسال /start للبوت',
+                hintStyle: GoogleFonts.cairo(color: Colors.white30, fontSize: 11),
+                labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 12.5),
+                filled: true,
+                fillColor: Colors.white.withOpacity(0.04),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: const BorderSide(color: Color(0xFF0088CC), width: 1.5),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.03),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '📋 أوامر التحكم المتاحة في تيليجرام:',
+                    style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• /status (عرض الحالة والروابط)   • /prayers (مواقيت اليوم)\n'
+                    '• /stop (إيقاف الصوت فوراً)        • /vol 25 (تغيير الصوت 0-30)\n'
+                    '• /eid_on و /eid_off (وضع العيد)  • /takbeer (تشغيل التكبيرات)\n'
+                    '• /reboot (إعادة تشغيل الجهاز)',
+                    style: GoogleFonts.cairo(color: Colors.white70, fontSize: 11, height: 1.6),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _isSaving
+                ? null
+                : () async {
+                    setState(() => _isSaving = true);
+                    final success = await ref.read(apiServiceProvider).saveTelegramConfig(
+                          enabled: _tgEnabled,
+                          token: _tgTokenController.text.trim(),
+                          chatId: _tgChatIdController.text.trim(),
+                        );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(success
+                              ? 'تم حفظ إعدادات بوت تيليجرام للتحكم عن بعد'
+                              : 'فشل حفظ إعدادات تيليجرام'),
+                          backgroundColor: success ? Colors.green : Colors.redAccent,
+                        ),
+                      );
+                    }
+                    await Future.delayed(const Duration(milliseconds: 2000));
+                    await _loadTelegramConfig();
+                    if (mounted) {
+                      setState(() => _isSaving = false);
+                    }
+                  },
+            icon: _isSaving
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Icon(Icons.save),
+            label: Text('حفظ إعدادات تيليجرام', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF0088CC),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              side: BorderSide(color: Colors.white.withOpacity(0.08)),
+              elevation: 8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OtaUpdateCard extends ConsumerStatefulWidget {
+  const _OtaUpdateCard();
+
+  @override
+  ConsumerState<_OtaUpdateCard> createState() => _OtaUpdateCardState();
+}
+
+class _OtaUpdateCardState extends ConsumerState<_OtaUpdateCard> {
+  String? _selectedFilePath;
+  String? _selectedFileName;
+  bool _isUploading = false;
+  double _progress = 0.0;
+  String _statusText = '';
+
+  Future<void> _pickBinFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['bin'],
+    );
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _selectedFilePath = result.files.single.path!;
+        _selectedFileName = result.files.single.name;
+        _statusText = '';
+        _progress = 0.0;
+      });
+    }
+  }
+
+  Future<void> _startOtaUpload() async {
+    if (_selectedFilePath == null || _selectedFileName == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى اختيار ملف التحديث (.bin) أولاً'), backgroundColor: Colors.orange),
+      );
+      return;
+    }
+
+    final isLittleFs = _selectedFileName!.toLowerCase().contains('littlefs') ||
+        _selectedFileName!.toLowerCase().contains('spiffs');
+
+    setState(() {
+      _isUploading = true;
+      _progress = 0.0;
+      _statusText = isLittleFs
+          ? 'جاري رفع تحديث ملفات النظام (LittleFS)...'
+          : 'جاري رفع تحديث السوفتوير (Firmware)...';
+    });
+
+    ref.read(statusPollingProvider.notifier).stopPolling();
+    try {
+      final ok = await ref.read(apiServiceProvider).uploadOtaUpdate(
+        filePath: _selectedFilePath!,
+        filename: _selectedFileName!,
+        onSendProgress: (sent, total) {
+          if (mounted && total > 0) {
+            setState(() {
+              _progress = (sent / total).clamp(0.0, 1.0);
+              final pct = (_progress * 100).round();
+              _statusText = 'جاري رفع التحديث: $pct%';
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          if (ok) {
+            _progress = 1.0;
+            _statusText = '✅ تم رفع التحديث بنجاح! جاري إعادة تشغيل الجهاز...';
+          } else {
+            _statusText = '❌ فشل رفع التحديث، يرجى التحقق من الملف والاتصال.';
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(ok
+                ? 'تم رفع التحديث بنجاح! سيعاد تشغيل الجهاز خلال ثوانٍ.'
+                : 'فشل تحديث OTA'),
+            backgroundColor: ok ? Colors.green : Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      await Future.delayed(const Duration(seconds: 5));
+      if (mounted) {
+        ref.read(statusPollingProvider.notifier).startPolling();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0x7316132C),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.system_update_alt, color: Color(0xFF00F2FE), size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'تحديث النظام الهوائي (OTA Firmware / LittleFS)',
+                  style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'اختر ملف firmware.bin لتحديث نظام الجهاز أو littlefs.bin لتحديث واجهة الويب الداخلية تلقائياً.',
+            style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: _isUploading ? null : _pickBinFile,
+            icon: const Icon(Icons.folder_open, color: Color(0xFF00F2FE)),
+            label: Text(
+              _selectedFileName ?? 'اختيار ملف التحديث (.bin)',
+              style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              side: BorderSide(color: const Color(0xFF00F2FE).withOpacity(0.5)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+          if (_isUploading || _statusText.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: _progress,
+                minHeight: 8,
+                backgroundColor: Colors.white12,
+                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00F2FE)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _statusText,
+              style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 12, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          ],
+          const SizedBox(height: 14),
+          ElevatedButton.icon(
+            onPressed: (_isUploading || _selectedFilePath == null) ? null : _startOtaUpload,
+            icon: _isUploading
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                : const Icon(Icons.cloud_upload),
+            label: Text('بدء رفع وتثبيت التحديث', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00F2FE),
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               elevation: 8,
             ),
           ),

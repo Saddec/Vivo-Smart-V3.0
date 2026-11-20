@@ -1013,12 +1013,20 @@ final quickPlayerProvider = StateNotifierProvider<QuickPlayerNotifier, QuickPlay
 // --- Eid Mode Provider ---
 class EidState {
   final bool enabled;
+  final bool manualEnabled;
+  final bool autoEnabled;
+  final bool autoDayActive;
+  final String autoReason;
   final String takbeerFile;
   final int takbeerVolume;
   final List<dynamic> prayers;
 
   EidState({
     this.enabled = false,
+    this.manualEnabled = false,
+    this.autoEnabled = true,
+    this.autoDayActive = false,
+    this.autoReason = '',
     this.takbeerFile = '',
     this.takbeerVolume = 15,
     this.prayers = const [],
@@ -1026,12 +1034,20 @@ class EidState {
 
   EidState copyWith({
     bool? enabled,
+    bool? manualEnabled,
+    bool? autoEnabled,
+    bool? autoDayActive,
+    String? autoReason,
     String? takbeerFile,
     int? takbeerVolume,
     List<dynamic>? prayers,
   }) {
     return EidState(
       enabled: enabled ?? this.enabled,
+      manualEnabled: manualEnabled ?? this.manualEnabled,
+      autoEnabled: autoEnabled ?? this.autoEnabled,
+      autoDayActive: autoDayActive ?? this.autoDayActive,
+      autoReason: autoReason ?? this.autoReason,
       takbeerFile: takbeerFile ?? this.takbeerFile,
       takbeerVolume: takbeerVolume ?? this.takbeerVolume,
       prayers: prayers ?? this.prayers,
@@ -1061,9 +1077,23 @@ class EidStateNotifier extends StateNotifier<AsyncValue<EidState>> {
         {'enabled': true, 'before': 15, 'after': 15},
       ];
 
+      final effectiveEnabled = status['enabled'] == true || status['enabled'] == 1 || status['enabled'] == '1';
+      final manualEn = status['manualEnabled'] != null
+          ? (status['manualEnabled'] == true || status['manualEnabled'] == 1 || status['manualEnabled'] == '1')
+          : effectiveEnabled;
+      final autoEn = status['autoEnabled'] != null
+          ? (status['autoEnabled'] == true || status['autoEnabled'] == 1 || status['autoEnabled'] == '1')
+          : true;
+      final autoDay = status['autoDayActive'] == true || status['autoDayActive'] == 1 || status['autoDayActive'] == '1';
+      final reason = (status['autoReason'] ?? '').toString();
+
       if (mounted) {
         state = AsyncValue.data(EidState(
-          enabled: status['enabled'] == true || status['enabled'] == 1 || status['enabled'] == '1',
+          enabled: effectiveEnabled,
+          manualEnabled: manualEn,
+          autoEnabled: autoEn,
+          autoDayActive: autoDay,
+          autoReason: reason,
           takbeerFile: status['takbeerFile'] ?? '',
           takbeerVolume: status['takbeerVolume'] ?? 15,
           prayers: prayersList,
@@ -1076,12 +1106,13 @@ class EidStateNotifier extends StateNotifier<AsyncValue<EidState>> {
     }
   }
 
-  Future<bool> toggleMode(bool val) async {
-    final success = await _api.toggleEidMode(val);
+  Future<bool> toggleMode(bool manualVal, {bool? autoVal}) async {
+    bool currentAuto = true;
+    state.whenData((d) => currentAuto = d.autoEnabled);
+    final targetAuto = autoVal ?? currentAuto;
+    final success = await _api.toggleEidMode(manualVal, autoEnabled: targetAuto);
     if (success) {
-      state.whenData((data) {
-        state = AsyncValue.data(data.copyWith(enabled: val));
-      });
+      await refresh();
       _ref.read(statusPollingProvider.notifier).pollStatus();
     }
     return success;
@@ -1148,6 +1179,7 @@ class MaghribAlertsNotifier extends StateNotifier<AsyncValue<MaghribState>> {
   Future<void> refresh() async {
     try {
       final alerts = await _api.getMaghribAlerts();
+      final currentOffset = await _api.getMaghribOffset();
       
       // Ensure we have exactly 7 days in the list (Sunday to Saturday, 0 to 6)
       final parsedAlerts = List<Map<String, dynamic>>.generate(7, (index) {
@@ -1169,7 +1201,7 @@ class MaghribAlertsNotifier extends StateNotifier<AsyncValue<MaghribState>> {
 
       if (mounted) {
         state = AsyncValue.data(MaghribState(
-          offset: 1, // Default offset since it's only saved, not read back from device status
+          offset: currentOffset,
           alerts: parsedAlerts,
         ));
       }

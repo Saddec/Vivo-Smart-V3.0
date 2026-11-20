@@ -57,7 +57,12 @@ class ApiService {
   String _formatBaseUrl(String input) {
     var url = input.trim();
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://$url';
+      // Automatically wrap raw IPv6 addresses in brackets [...]
+      if (url.contains(':') && !url.startsWith('[') && ':'.allMatches(url).length >= 2) {
+        url = 'http://[$url]';
+      } else {
+        url = 'http://$url';
+      }
     }
     while (url.endsWith('/')) {
       url = url.substring(0, url.length - 1);
@@ -949,11 +954,15 @@ class ApiService {
     }
   }
 
-  Future<bool> toggleEidMode(bool enabled) async {
+  Future<bool> toggleEidMode(bool manualEnabled, {bool? autoEnabled}) async {
     try {
+      final params = <String>[
+        'enabled=${manualEnabled ? 1 : 0}',
+        if (autoEnabled != null) 'autoEnabled=${autoEnabled ? 1 : 0}',
+      ];
       final response = await _dio.post(
         '/api/eid/mode',
-        data: 'enabled=${enabled ? 1 : 0}',
+        data: params.join('&'),
         options: Options(
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -1157,6 +1166,20 @@ class ApiService {
     return null;
   }
 
+  Future<int> getMaghribOffset() async {
+    try {
+      final response = await _dio.get('/api/maghrib/offset');
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      if (data is Map && data['offset'] != null) {
+        return int.tryParse(data['offset'].toString()) ?? 1;
+      }
+      return 1;
+    } catch (e) {
+      debugPrint('Error getting Maghrib offset: $e');
+      return 1;
+    }
+  }
+
   Future<bool> saveMaghribOffset(int offset) async {
     try {
       final response = await _dio.post(
@@ -1204,12 +1227,30 @@ class ApiService {
     }
   }
 
-  // Save DDNS configuration
-  Future<bool> saveDdnsConfig(bool enabled, String provider, String domain, String username, String password) async {
+  // --- DDNS & Global IPv6 APIs ---
+  Future<Map<String, dynamic>> getDdnsConfig() async {
+    try {
+      final response = await _dio.get('/api/ddns/config');
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data is Map<String, dynamic> ? data : {};
+    } catch (e) {
+      debugPrint('Error getting DDNS config: $e');
+      return {};
+    }
+  }
+
+  Future<bool> saveDdnsConfig({
+    required bool enabled,
+    required String provider,
+    required String domain,
+    required String user,
+    required String pass,
+    required bool useIPv6,
+  }) async {
     try {
       final response = await _dio.post(
-        '/api/network/ddns',
-        data: 'enabled=${enabled ? 1 : 0}&provider=${Uri.encodeComponent(provider)}&domain=${Uri.encodeComponent(domain)}&username=${Uri.encodeComponent(username)}&password=${Uri.encodeComponent(password)}',
+        '/api/ddns/save',
+        data: 'enabled=${enabled ? 1 : 0}&provider=${Uri.encodeComponent(provider)}&domain=${Uri.encodeComponent(domain)}&user=${Uri.encodeComponent(user)}&pass=${Uri.encodeComponent(pass)}&useIPv6=${useIPv6 ? 1 : 0}',
         options: Options(
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -1220,6 +1261,72 @@ class ApiService {
       return data['ok'] == true;
     } catch (e) {
       debugPrint('Error saving DDNS config: $e');
+      return false;
+    }
+  }
+
+  // --- Telegram Remote Control Bot APIs ---
+  Future<Map<String, dynamic>> getTelegramConfig() async {
+    try {
+      final response = await _dio.get('/api/telegram/config');
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data is Map<String, dynamic> ? data : {};
+    } catch (e) {
+      debugPrint('Error getting Telegram config: $e');
+      return {};
+    }
+  }
+
+  Future<bool> saveTelegramConfig({
+    required bool enabled,
+    required String token,
+    required String chatId,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/api/telegram/save',
+        data: 'enabled=${enabled ? 1 : 0}&token=${Uri.encodeComponent(token)}&chatId=${Uri.encodeComponent(chatId)}',
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data['ok'] == true;
+    } catch (e) {
+      debugPrint('Error saving Telegram config: $e');
+      return false;
+    }
+  }
+
+  // --- OTA Firmware / LittleFS Update API ---
+  Future<bool> uploadOtaUpdate({
+    required String filePath,
+    required String filename,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
+    try {
+      final tokenParam = (_sessionToken != null && _sessionToken!.isNotEmpty)
+          ? '?token=${Uri.encodeComponent(_sessionToken!)}'
+          : '';
+      final formData = FormData.fromMap({
+        'update': await MultipartFile.fromFile(filePath, filename: filename),
+        if (_sessionToken != null && _sessionToken!.isNotEmpty) 'token': _sessionToken,
+      });
+      final response = await _dio.post(
+        '/api/ota$tokenParam',
+        data: formData,
+        onSendProgress: onSendProgress,
+        options: Options(
+          sendTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(minutes: 2),
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return response.statusCode == 200 && (data is! Map || data['ok'] != false);
+    } catch (e) {
+      debugPrint('Error uploading OTA update: $e');
       return false;
     }
   }
