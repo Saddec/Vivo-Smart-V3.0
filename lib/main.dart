@@ -4,10 +4,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'providers/app_state.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+import 'services/notification_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   GoogleFonts.config.allowRuntimeFetching = false;
+  await NotificationService.instance.initialize();
   runApp(
     const ProviderScope(
       child: MyApp(),

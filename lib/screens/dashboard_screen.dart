@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:file_picker/file_picker.dart';
 import '../providers/app_state.dart';
+import '../services/notification_service.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -33,6 +34,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   int _prayersSubTabIndex = 0;
   int _controlSubTabIndex = 0;
   int _settingsSubTabIndex = 0;
+  int _settingsCategoryIndex = 0;
   int _filesSubTabIndex = 0;
   int _alertsSubTabIndex = 0;
   double? _localVolume; // For responsive sliding before API completes
@@ -133,6 +135,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initLocationData();
+      NotificationService.instance.requestPermissions();
     });
   }
 
@@ -511,8 +514,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
             insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             child: Container(
-              width: 540,
+              width: 560,
               constraints: BoxConstraints(
+                maxWidth: 560,
                 maxHeight: MediaQuery.of(context).size.height * 0.8,
               ),
               child: Consumer(
@@ -693,6 +697,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                                         fontSize: 15,
                                                       ),
                                                       maxLines: 1,
+                                                      softWrap: false,
+                                                      textDirection: (dev.name.isEmpty || dev.name == dev.ip)
+                                                          ? TextDirection.ltr
+                                                          : null,
                                                       overflow: TextOverflow.ellipsis,
                                                     ),
                                                   ),
@@ -724,6 +732,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                                   fontSize: 13,
                                                 ),
                                                 textDirection: TextDirection.ltr,
+                                                softWrap: false,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ],
                                           ),
@@ -5586,27 +5597,126 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   // --- Phase 3 Tab Views ---
 
   Widget _buildSettingsTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      children: [
+        // Category Pills Header
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            color: const Color(0x7316132C),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _buildSettingsCategoryItem(0, 'الشبكة والاتصال', Icons.wifi_rounded),
+                _buildSettingsCategoryItem(1, 'الوصول عن بُعد', Icons.cloud_sync_rounded),
+                _buildSettingsCategoryItem(2, 'النظام والأمان', Icons.admin_panel_settings_rounded),
+                _buildSettingsCategoryItem(3, 'الصيانة والتشغيل', Icons.build_circle_rounded),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ..._buildSettingsCategoryContent(),
+                const SizedBox(height: 24),
+                Center(
+                  child: Text(
+                    'Vivo Smart App • الإصدار v1.0.6',
+                    style: GoogleFonts.cairo(
+                      color: Colors.white38,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSettingsCategoryItem(int index, String title, IconData icon) {
+    final isSelected = _settingsCategoryIndex == index;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _settingsCategoryIndex = index;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF00F2FE).withOpacity(0.18) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF00F2FE).withOpacity(0.5) : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected ? const Color(0xFF00F2FE) : Colors.white60,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: GoogleFonts.cairo(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildSettingsCategoryContent() {
+    switch (_settingsCategoryIndex) {
+      case 0:
+        return [
           const _WifiCard(),
           const SizedBox(height: 20),
           const _NetworkSettingsCard(),
           const SizedBox(height: 20),
           const _ApSettingsCard(),
-          const SizedBox(height: 20),
+        ];
+      case 1:
+        return [
           const _DdnsSettingsCard(),
           const SizedBox(height: 20),
           const _TelegramSettingsCard(),
-          const SizedBox(height: 20),
+        ];
+      case 2:
+        return [
           const _ClockSettingsCard(),
           const SizedBox(height: 20),
           const _PasswordCard(),
           const SizedBox(height: 20),
           const _SystemSettingsCard(),
-          const SizedBox(height: 20),
+        ];
+      case 3:
+      default:
+        return [
           const _OtaUpdateCard(),
           const SizedBox(height: 20),
           // Unified System Control Card
@@ -5684,21 +5794,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Center(
-            child: Text(
-              'Vivo Smart App • الإصدار v1.0.5',
-              style: GoogleFonts.cairo(
-                color: Colors.white38,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-        ],
-      ),
-    );
+        ];
+    }
   }
 
   Widget _buildLogsTab() {

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 // Provider for ApiService
 final apiServiceProvider = Provider<ApiService>((ref) {
@@ -342,6 +343,14 @@ class StatusPollingNotifier extends StateNotifier<DeviceStatusModel> {
       );
       
       _updateNextPrayerCountdown();
+
+      if (prayerTimesMap.isNotEmpty) {
+        final adhanConfig = _ref.read(adhanConfigProvider).valueOrNull;
+        NotificationService.instance.schedulePrayerNotifications(
+          prayerTimes: prayerTimesMap,
+          iqamaConfig: adhanConfig,
+        );
+      }
     } catch (e) {
       debugPrint('Error during polling: $e');
     }
@@ -550,6 +559,7 @@ class AlertsStateNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
       final res = await _api.getAlertsList();
       if (mounted) {
         state = AsyncValue.data(res);
+        NotificationService.instance.scheduleCustomAlerts(res);
       }
     } catch (e, stack) {
       if (mounted) {
@@ -795,6 +805,13 @@ class AdhanConfigNotifier extends StateNotifier<AsyncValue<Map<String, dynamic>>
       final config = await _api.getAdhanConfig();
       if (mounted) {
         state = AsyncValue.data(config);
+        final currentPrayerTimes = _ref.read(statusPollingProvider).prayerTimes;
+        if (currentPrayerTimes.isNotEmpty) {
+          NotificationService.instance.schedulePrayerNotifications(
+            prayerTimes: currentPrayerTimes,
+            iqamaConfig: config,
+          );
+        }
       }
     } catch (e, stack) {
       if (mounted) {
