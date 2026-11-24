@@ -77,6 +77,51 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   static const List<String> _daysOfWeek = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
   static const List<String> _prayerNames = ['الفجر', 'الظهر', 'العصر', 'المغرب', 'العشاء'];
 
+  static List<int> _parseAlertDays(dynamic alert) {
+    if (alert == null || alert is! Map) return [];
+
+    // 1. Check if 'dayOfWeek' is present (standard ESP32 property)
+    if (alert['dayOfWeek'] != null) {
+      final int dow = int.tryParse(alert['dayOfWeek'].toString()) ?? -1;
+      if (dow >= 128) {
+        final int mask = dow & 0x7F;
+        final List<int> days = [];
+        for (int i = 0; i < 7; i++) {
+          if ((mask & (1 << i)) != 0) {
+            days.add(i);
+          }
+        }
+        return days;
+      } else if (dow >= 0 && dow <= 6) {
+        return [dow];
+      } else if (dow > 6) {
+        final List<int> days = [];
+        for (int i = 0; i < 7; i++) {
+          if ((dow & (1 << i)) != 0) {
+            days.add(i);
+          }
+        }
+        if (days.isNotEmpty) return days;
+      }
+    }
+
+    // 2. Check if 'days' is present (legacy or fallback)
+    if (alert['days'] != null) {
+      if (alert['days'] is List) {
+        return List<int>.from(alert['days'].map((e) => int.tryParse(e.toString()) ?? 0));
+      } else if (alert['days'] is String) {
+        return alert['days']
+            .toString()
+            .split(',')
+            .where((s) => s.trim().isNotEmpty)
+            .map((s) => int.tryParse(s.trim()) ?? 0)
+            .toList();
+      }
+    }
+
+    return [];
+  }
+
 
 
   String _translatePrayerSource(String source) {
@@ -3784,20 +3829,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                     const Icon(Icons.repeat, size: 14, color: Colors.white60),
                                     const SizedBox(width: 6),
                                     (() {
-                                      List<int> alertDays = [];
-                                      if (alert['days'] != null) {
-                                        if (alert['days'] is List) {
-                                          alertDays = List<int>.from(alert['days'].map((e) => int.parse(e.toString())));
-                                        } else if (alert['days'] is String) {
-                                          alertDays = alert['days']
-                                              .toString()
-                                              .split(',')
-                                              .where((s) => s.trim().isNotEmpty)
-                                              .map((s) => int.parse(s.trim()))
-                                              .toList();
-                                        }
-                                      }
-                                      
+                                      final List<int> alertDays = _parseAlertDays(alert);
                                       String daysText = '';
                                       if (type == 'weekly' || type == 'prayer_relative') {
                                         if (alertDays.length == 7) {
@@ -3806,7 +3838,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                           final names = alertDays.map((d) => _daysOfWeek[d]).join('، ');
                                           daysText = ' ($names)';
                                         } else {
-                                          daysText = ' (لا يوجد أيام)';
+                                          daysText = type == 'weekly' ? ' (لا يوجد أيام)' : ' (يومياً)';
                                         }
                                       }
                                       return Expanded(
@@ -4113,19 +4145,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     bool skipAdhan = isEdit ? (alert['skipAdhan'] == true || alert['skipAdhan'] == 1 || alert['skipAdhan'] == '1' || alert['skipAdhan'] == 'true') : false;
     bool skipIqama = isEdit ? (alert['skipIqama'] == true || alert['skipIqama'] == 1 || alert['skipIqama'] == '1' || alert['skipIqama'] == 'true') : false;
 
-    List<int> selectedDays = isEdit ? [] : [0, 1, 2, 3, 4, 5, 6];
-    if (isEdit && alert['days'] != null) {
-      if (alert['days'] is List) {
-        selectedDays = List<int>.from(alert['days'].map((e) => int.parse(e.toString())));
-      } else if (alert['days'] is String) {
-        selectedDays = alert['days']
-            .toString()
-            .split(',')
-            .where((s) => s.trim().isNotEmpty)
-            .map((s) => int.parse(s.trim()))
-            .toList();
-      }
-    }
+    List<int> selectedDays = isEdit ? _parseAlertDays(alert) : [0, 1, 2, 3, 4, 5, 6];
 
     showModalBottomSheet(
       context: context,
@@ -4348,15 +4368,54 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     onChanged: (val) {
                       setSheetState(() {
                         alertType = val ?? 'daily';
+                        if (alertType == 'weekly' && selectedDays.isEmpty) {
+                          selectedDays = [0, 1, 2, 3, 4, 5, 6];
+                        }
                       });
                     },
                   ),
                   const SizedBox(height: 12),
 
                   if (alertType == 'weekly' || alertType == 'prayer_relative') ...[
-                    Text(
-                      'أيام التكرار الأسبوعي:',
-                      style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'أيام التكرار الأسبوعي:',
+                          style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        Row(
+                          children: [
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () {
+                                setSheetState(() {
+                                  selectedDays = [0, 1, 2, 3, 4, 5, 6];
+                                });
+                              },
+                              child: Text('تحديد الكل', style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 8),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () {
+                                setSheetState(() {
+                                  selectedDays.clear();
+                                });
+                              },
+                              child: Text('إلغاء التحديد', style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11)),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     Wrap(
@@ -4381,7 +4440,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           onSelected: (selected) {
                             setSheetState(() {
                               if (selected) {
-                                selectedDays.add(dayIdx);
+                                if (!selectedDays.contains(dayIdx)) {
+                                  selectedDays.add(dayIdx);
+                                  selectedDays.sort();
+                                }
                               } else {
                                 selectedDays.remove(dayIdx);
                               }
@@ -4740,6 +4802,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               return;
                             }
 
+                            if (alertType == 'weekly' && selectedDays.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('الرجاء اختيار يوم واحد على الأقل للتنبيه الأسبوعي'), backgroundColor: Colors.redAccent),
+                              );
+                              return;
+                            }
+
                             Navigator.pop(context);
 
                             // Construct payload map matching /api/scheduler/add endpoint params
@@ -4755,12 +4824,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               'enabled': isEdit ? (alert['enabled'] ?? true) : true,
                               'gpioActive': gpioActive ? 1 : 0,
                             };
+
                             if (alertType == 'weekly' || alertType == 'prayer_relative') {
-                              map['days'] = selectedDays.join(',');
+                              if (selectedDays.isNotEmpty) {
+                                int mask = 0;
+                                for (final d in selectedDays) {
+                                  if (d >= 0 && d <= 6) {
+                                    mask |= (1 << d);
+                                  }
+                                }
+                                map['dayOfWeek'] = 128 | mask;
+                                map['days'] = selectedDays.join(',');
+                              } else {
+                                map['dayOfWeek'] = -1;
+                                map['days'] = '';
+                              }
+                            } else {
+                              map['dayOfWeek'] = -1;
+                              map['days'] = '';
                             }
 
                             if (alertType == 'prayer_relative') {
                               map['prayerIndex'] = prayerIdx;
+                              map['isPrayerRelative'] = 1;
                               // Convert minutes back to offset seconds
                               map['offsetSeconds'] = (int.tryParse(offsetController.text) ?? 0) * 60;
                               map['skipAdhan'] = (isRadioSource && skipAdhan) ? 1 : 0;
@@ -5631,7 +5717,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 const SizedBox(height: 24),
                 Center(
                   child: Text(
-                    'Vivo Smart App • الإصدار v1.0.6',
+                    'Vivo Smart App • الإصدار v1.0.7',
                     style: GoogleFonts.cairo(
                       color: Colors.white38,
                       fontSize: 12,

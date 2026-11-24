@@ -270,6 +270,16 @@ class NotificationService {
       }
     }
 
+    // Read cached prayer times if needed for prayer_relative alerts
+    Map<String, dynamic>? cachedPrayerMap;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final pStr = prefs.getString(_cachedPrayersKey);
+      if (pStr != null) {
+        cachedPrayerMap = jsonDecode(pStr);
+      }
+    } catch (_) {}
+
     for (int i = 0; i < alerts.length; i++) {
       final alert = alerts[i];
       if (alert is! Map) continue;
@@ -280,21 +290,80 @@ class NotificationService {
       if (!enabled) continue;
 
       final name = alert['name']?.toString() ?? 'تنبيه مجدول';
-      final timeStr = alert['time']?.toString() ?? '';
-      if (!timeStr.contains(':')) continue;
+      final type = alert['type']?.toString() ?? 'daily';
 
-      final parts = timeStr.split(':');
-      final hour = int.tryParse(parts[0]) ?? 0;
-      final minute = int.tryParse(parts[1]) ?? 0;
+      int hour = 0;
+      int minute = 0;
 
-      // Days of week: list of ints (0: Sunday .. 6: Saturday or 1: Monday .. 7: Sunday)
-      // Usually ESP format uses days array e.g. [0,1,2,3,4,5,6] or days bitmask
-      List<int> activeDays = [];
-      if (alert['days'] is List) {
-        activeDays = (alert['days'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
+      if (type == 'prayer_relative') {
+        final pIdx = int.tryParse(alert['prayerIndex']?.toString() ?? '0') ?? 0;
+        final offsetSeconds = int.tryParse(alert['offsetSeconds']?.toString() ?? '0') ?? 0;
+        if (cachedPrayerMap != null) {
+          final pKeys = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
+          if (pIdx >= 0 && pIdx < pKeys.length) {
+            final pTime = cachedPrayerMap[pKeys[pIdx]]?.toString() ?? '';
+            if (pTime.contains(':')) {
+              final pParts = pTime.split(':');
+              final pH = int.tryParse(pParts[0]) ?? 0;
+              final pM = int.tryParse(pParts[1]) ?? 0;
+              int totalMin = (pH * 60 + pM) + (offsetSeconds ~/ 60);
+              while (totalMin < 0) {
+                totalMin += 1440;
+              }
+              totalMin %= 1440;
+              hour = totalMin ~/ 60;
+              minute = totalMin % 60;
+            }
+          }
+        }
       } else {
-        // If no days specified or daily, repeat all days
+        if (alert['hour'] != null) {
+          hour = int.tryParse(alert['hour'].toString()) ?? 0;
+          minute = int.tryParse(alert['minute']?.toString() ?? '0') ?? 0;
+        } else if (alert['time'] != null) {
+          final timeStr = alert['time'].toString();
+          if (timeStr.contains(':')) {
+            final parts = timeStr.split(':');
+            hour = int.tryParse(parts[0]) ?? 0;
+            minute = int.tryParse(parts[1]) ?? 0;
+          }
+        }
+      }
+
+      final String timeStr = ':';
+
+      // Parse active days (dayOfWeek bitmask or days list)
+      List<int> activeDays = [];
+      if (alert['dayOfWeek'] != null) {
+        final int dow = int.tryParse(alert['dayOfWeek'].toString()) ?? -1;
+        if (dow >= 128) {
+          final int mask = dow & 0x7F;
+          for (int d = 0; d < 7; d++) {
+            if ((mask & (1 << d)) != 0) activeDays.add(d);
+          }
+        } else if (dow >= 0 && dow <= 6) {
+          activeDays = [dow];
+        } else if (dow > 6) {
+          for (int d = 0; d < 7; d++) {
+            if ((dow & (1 << d)) != 0) activeDays.add(d);
+          }
+        }
+      } else if (alert['days'] is List) {
+        activeDays = (alert['days'] as List).map((e) => int.tryParse(e.toString()) ?? 0).toList();
+      } else if (alert['days'] is String) {
+        activeDays = alert['days']
+            .toString()
+            .split(',')
+            .where((s) => s.trim().isNotEmpty)
+            .map((s) => int.tryParse(s.trim()) ?? 0)
+            .toList();
+      }
+
+      if (activeDays.isEmpty && (type == 'daily' || type == 'prayer_relative')) {
         activeDays = [0, 1, 2, 3, 4, 5, 6];
+      }
+      if (activeDays.isEmpty && type == 'weekly') {
+        continue;
       }
 
       // Schedule for upcoming 7 days
@@ -317,8 +386,8 @@ class NotificationService {
             id: notifId,
             channelId: _alertsChannelId,
             channelName: 'تنبيهات النظام والمواعيد',
-            title: '⏰ تنبيه مجدول: $name',
-            body: 'حان الآن موعد التنبيه المجدول في تمام الساعة $timeStr.',
+            title: '⏰ تنبيه: $name',
+            body: 'موعد التنبيه المجدول في تمام الساعة $timeStr.',
             scheduledDate: tzAlert,
           );
         }
