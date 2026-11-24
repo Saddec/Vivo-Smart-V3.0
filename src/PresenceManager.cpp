@@ -22,6 +22,7 @@ static PresenceState currentState = PRESENCE_AWAY;
 static unsigned long lastSeenTime = 0;
 static unsigned long lastTriggerTime = 0;
 static unsigned long lastScanTime = 0;
+static unsigned long awaySinceTime = 0;
 static int lastDetectedRssi = -100;
 static String lastKnownIp = "";
 static bool bleInitialized = false;
@@ -99,7 +100,7 @@ static void loadPresenceConfig() {
     currentConfig.welcomeFile = prefs.getString("file", "/Azan/welcome.mp3");
     currentConfig.volume = prefs.getUChar("vol", 20);
     currentConfig.cooldownMinutes = prefs.getUInt("cooldown", 30);
-    currentConfig.vacateMinutes = prefs.getUInt("vacate", 3);
+    currentConfig.vacateMinutes = prefs.getUInt("vacate", 10);
     currentConfig.quietHoursEnabled = prefs.getBool("quietEn", false);
     currentConfig.quietStartHour = prefs.getUChar("qStartH", 23);
     currentConfig.quietStartMin = prefs.getUChar("qStartM", 0);
@@ -575,6 +576,10 @@ static bool checkWifiPresence(const String& targetMac, String& lastIp) {
     if (lastIp.length() > 0) {
         IPAddress tip;
         if (tip.fromString(lastIp)) {
+            ip4_addr_t tip4;
+            tip4.addr = (uint32_t)tip;
+            etharp_request(netif_default, &tip4);
+
             WiFiUDP udp;
             udp.begin(0);
             udp.beginPacket(tip, 9);
@@ -582,8 +587,8 @@ static bool checkWifiPresence(const String& targetMac, String& lastIp) {
             udp.endPacket();
             udp.stop();
 
-            ip4_addr_t tip4;
-            tip4.addr = (uint32_t)tip;
+            vTaskDelay(pdMS_TO_TICKS(50));
+
             struct eth_addr *eth_ret = nullptr;
             const ip4_addr_t *ip_ret = nullptr;
             if (etharp_find_addr(netif_default, &tip4, &eth_ret, &ip_ret) >= 0 && eth_ret != nullptr) {
@@ -622,6 +627,19 @@ void updatePresenceManager() {
 
     // Audio protection: never run presence scans or triggers while ANY audio is playing
     if (audioManager.getState() != AUDIO_IDLE) {
+        // While Adhan, Iqama, Quran, or other audio is playing, do NOT let presence timer expire
+        if (currentState == PRESENCE_PRESENT) {
+            lastSeenTime = millis();
+        }
+        return;
+    }
+
+    // Wi-Fi disconnect protection: if relying on Wi-Fi and ESP itself is offline,
+    // do NOT assume the user departed!
+    if ((cfg.mode == 0 || cfg.mode == 2) && WiFi.status() != WL_CONNECTED) {
+        if (currentState == PRESENCE_PRESENT) {
+            lastSeenTime = millis();
+        }
         return;
     }
 
@@ -699,8 +717,10 @@ void updatePresenceManager() {
             unsigned long cooldownMs = cfg.cooldownMinutes * 60000UL;
             bool cooldownExpired = (lastTriggerTime == 0) || (now - lastTriggerTime >= cooldownMs);
             bool inQuiet = isCurrentTimeInQuietHours(cfg);
+            // Require user to have been confirmed away for at least 3 minutes to avoid false trigger on brief Wi-Fi glitches
+            bool minAwaySatisfied = (awaySinceTime == 0) || (now - awaySinceTime >= 180000UL);
 
-            if (cooldownExpired && !inQuiet) {
+            if (cooldownExpired && !inQuiet && minAwaySatisfied) {
                 if (cfg.welcomeFile.length() > 0) {
                     Serial.printf("[Presence] Welcome triggered for target [%s]! (RSSI: %d dBm)\n",
                                   cfg.targetMac.c_str(), detectedRssi);
@@ -710,18 +730,24 @@ void updatePresenceManager() {
                     currentState = PRESENCE_PRESENT;
                 }
             } else {
-                currentState = PRESENCE_COOLDOWN;
+                // If cooldown hasn't expired, or away time was too brief (glitch), lock to PRESENT without playing
+                currentState = PRESENCE_PRESENT;
             }
         }
-        // In-session lock: if already PRESENT or COOLDOWN, do not repeat
+        // In-session lock: if already PRESENT, do not repeat
     } else {
-        // Target absent: check vacate timeout
-        unsigned long vacateMs = cfg.vacateMinutes * 60000UL;
+        // Target absent: check vacate timeout (apply safety floor of 5 min for Wi-Fi mode to accommodate smartphone sleep)
+        uint32_t effVacateMins = cfg.vacateMinutes;
+        if ((cfg.mode == 0 || cfg.mode == 2) && effVacateMins < 5) {
+            effVacateMins = 5;
+        }
+        unsigned long vacateMs = effVacateMins * 60000UL;
         if (lastSeenTime > 0 && (now - lastSeenTime >= vacateMs)) {
             if (currentState != PRESENCE_AWAY) {
                 Serial.println("[Presence] Area vacated. System reset to AWAY.");
                 LOG_SYS("PRESENCE", "Target departed. System ready for next arrival.");
                 currentState = PRESENCE_AWAY;
+                awaySinceTime = now;
             }
         }
     }

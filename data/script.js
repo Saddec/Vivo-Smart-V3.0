@@ -4141,7 +4141,7 @@ function loadPresenceConfig() {
     if ($('presenceVolume')) $('presenceVolume').value = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceVolValue')) $('presenceVolValue').textContent = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceCooldown')) $('presenceCooldown').value = cfg.cooldownMinutes !== undefined ? cfg.cooldownMinutes : 30;
-    if ($('presenceVacate')) $('presenceVacate').value = cfg.vacateMinutes !== undefined ? cfg.vacateMinutes : 3;
+    if ($('presenceVacate')) $('presenceVacate').value = cfg.vacateMinutes !== undefined ? cfg.vacateMinutes : 10;
     if ($('presenceQuietEn')) $('presenceQuietEn').checked = !!cfg.quietEn;
     
     const pad = (n) => String(n).padStart(2, '0');
