@@ -1855,11 +1855,65 @@ class ApiService {
     }
   }
 
-  Future<bool> testPresenceWelcome() async {
+  Future<bool> savePresenceDevice({
+    int id = -1,
+    required String name,
+    required String mac,
+    String welcomeFile = '/Azan/welcome.mp3',
+    bool enabled = true,
+  }) async {
     try {
-      final response = await _dio.post('/api/presence/test');
+      final body = 'id=$id&name=${Uri.encodeComponent(name)}&mac=${Uri.encodeComponent(mac)}&welcomeFile=${Uri.encodeComponent(welcomeFile)}&enabled=${enabled ? "1" : "0"}';
+      final response = await _dio.post(
+        '/api/presence/device/save',
+        data: body,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
       final data = response.data is String ? jsonDecode(response.data) : response.data;
-      return data['ok'] == true;
+      return data != null && data['ok'] == true;
+    } catch (e) {
+      debugPrint('Error saving presence device: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deletePresenceDevice(int id) async {
+    try {
+      final response = await _dio.post(
+        '/api/presence/device/delete',
+        data: 'id=$id',
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data != null && data['ok'] == true;
+    } catch (e) {
+      debugPrint('Error deleting presence device: $e');
+      return false;
+    }
+  }
+
+  Future<bool> testPresenceWelcome({String file = '', int volume = 0}) async {
+    try {
+      final body = 'file=${Uri.encodeComponent(file)}&volume=$volume';
+      final response = await _dio.post(
+        '/api/presence/test',
+        data: body,
+        options: Options(
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          },
+        ),
+      );
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      return data != null && data['ok'] == true;
     } catch (e) {
       debugPrint('Error testing presence welcome: $e');
       return false;

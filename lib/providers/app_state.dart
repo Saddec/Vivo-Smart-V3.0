@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1541,10 +1542,48 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
     }
   }
 
-  Future<bool> testWelcome() async {
+  Future<bool> saveDevice({
+    int id = -1,
+    required String name,
+    required String mac,
+    String welcomeFile = '/Azan/welcome.mp3',
+    bool enabled = true,
+  }) async {
+    state = state.copyWith(isSaving: true);
+    try {
+      final ok = await _api.savePresenceDevice(
+        id: id,
+        name: name,
+        mac: mac,
+        welcomeFile: welcomeFile,
+        enabled: enabled,
+      );
+      state = state.copyWith(isSaving: false);
+      if (ok) await refresh();
+      return ok;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: e.toString());
+      return false;
+    }
+  }
+
+  Future<bool> deleteDevice(int id) async {
+    state = state.copyWith(isSaving: true);
+    try {
+      final ok = await _api.deletePresenceDevice(id);
+      state = state.copyWith(isSaving: false);
+      if (ok) await refresh();
+      return ok;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: e.toString());
+      return false;
+    }
+  }
+
+  Future<bool> testWelcome({String file = '', int volume = 0}) async {
     state = state.copyWith(isTesting: true);
     try {
-      final ok = await _api.testPresenceWelcome();
+      final ok = await _api.testPresenceWelcome(file: file, volume: volume);
       state = state.copyWith(isTesting: false);
       return ok;
     } catch (e) {
@@ -1576,5 +1615,97 @@ class PresenceNotifier extends StateNotifier<PresenceState> {
 
 final presenceProvider = StateNotifierProvider<PresenceNotifier, PresenceState>((ref) {
   return PresenceNotifier(ref);
+});
+
+// --- Shared Radio Stations State (178+ stations) ---
+class RadioStationsState {
+  final List<Map<String, dynamic>> stations;
+  final bool isLoading;
+  final String? error;
+
+  const RadioStationsState({
+    this.stations = const [],
+    this.isLoading = false,
+    this.error,
+  });
+
+  RadioStationsState copyWith({
+    List<Map<String, dynamic>>? stations,
+    bool? isLoading,
+    String? error,
+  }) {
+    return RadioStationsState(
+      stations: stations ?? this.stations,
+      isLoading: isLoading ?? this.isLoading,
+      error: error,
+    );
+  }
+}
+
+class RadioStationsNotifier extends StateNotifier<RadioStationsState> {
+  static const List<Map<String, dynamic>> offlineRadios = [
+    { "name": "إذاعة القرآن الكريم من القاهرة", "url": "http://stream.radiojar.com/8s5u5tpdtwzuv" },
+    { "name": "إذاعة القرآن الكريم - السعودية", "url": "https://stream.radiojar.com/0tpy1h0kxtzuv" },
+    { "name": "الإذاعة العامة - تلاوات متنوعة (Mp3Quran)", "url": "https://backup.qurango.net/radio/mix" },
+    { "name": "إذاعة تكبيرات العيد", "url": "https://backup.qurango.net/radio/eid" },
+    { "name": "إذاعة الرقية الشرعية", "url": "https://backup.qurango.net/radio/roqiah" },
+    { "name": "إذاعة تفسير القرآن الكريم", "url": "https://backup.qurango.net/radio/tafseer" },
+    { "name": "آيات السكينة (تلاوات هادئة)", "url": "https://backup.qurango.net/radio/sakeenah" },
+    { "name": "أذكار الصباح (بث مباشر)", "url": "https://backup.qurango.net/radio/athkar_sabah" },
+    { "name": "أذكار المساء (بث مباشر)", "url": "https://backup.qurango.net/radio/athkar_masa" },
+    { "name": "إذاعة مشاري العفاسي", "url": "https://backup.qurango.net/radio/mishary_alafasi" },
+    { "name": "إذاعة عبد الرحمن السديس", "url": "https://backup.qurango.net/radio/abdulrahman_alsudaes" },
+    { "name": "إذاعة ماهر المعيقلي", "url": "https://backup.qurango.net/radio/maher" },
+    { "name": "إذاعة عبد الباسط عبد الصمد (المصحف المجود)", "url": "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
+  ];
+
+  final Dio _dio = Dio(BaseOptions(
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 12),
+  ));
+
+  RadioStationsNotifier() : super(const RadioStationsState(stations: offlineRadios)) {
+    fetchRadios();
+  }
+
+  Future<void> fetchRadios({bool force = false}) async {
+    if (!force && state.stations.length > offlineRadios.length) return;
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      final response = await _dio.get('https://mp3quran.net/api/v3/radios?language=ar');
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data != null && data['radios'] is List) {
+          final fetched = (data['radios'] as List).cast<Map<String, dynamic>>();
+          final cairoRadio = {
+            "id": 99999,
+            "name": "إذاعة القرآن الكريم من القاهرة",
+            "url": "http://stream.radiojar.com/8s5u5tpdtwzuv"
+          };
+          final merged = <Map<String, dynamic>>[cairoRadio];
+          for (final r in fetched) {
+            final url = r['url']?.toString() ?? '';
+            if (url.isNotEmpty && !merged.any((m) => m['url'] == url)) {
+              merged.add(Map<String, dynamic>.from(r));
+            }
+          }
+          state = state.copyWith(stations: merged, isLoading: false);
+          return;
+        }
+      }
+      throw Exception('Format error');
+    } catch (e) {
+      debugPrint('Failed to load online radios: $e');
+      state = state.copyWith(
+        stations: state.stations.isEmpty ? offlineRadios : state.stations,
+        isLoading: false,
+        error: 'تعذر تحميل الإذاعات من الإنترنت، تم تفعيل القائمة المحلية',
+      );
+    }
+  }
+}
+
+final radioStationsProvider = StateNotifierProvider<RadioStationsNotifier, RadioStationsState>((ref) {
+  return RadioStationsNotifier();
 });
 

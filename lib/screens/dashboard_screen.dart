@@ -557,268 +557,261 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               borderRadius: BorderRadius.circular(24),
               side: BorderSide(color: Colors.white.withOpacity(0.1)),
             ),
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: Container(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: SizedBox(
               width: 560,
-              constraints: BoxConstraints(
-                maxWidth: 560,
-                maxHeight: MediaQuery.of(context).size.height * 0.8,
-              ),
-              child: Consumer(
-                builder: (ctx, refConsumer, _) {
-                  final savedDevices = refConsumer.watch(savedDevicesProvider);
-                  final currentConn = refConsumer.watch(connectionStateProvider);
-                  final currentIp = currentConn.ip ?? '';
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: 560,
+                  maxHeight: MediaQuery.of(context).size.height * 0.82,
+                ),
+                child: Consumer(
+                  builder: (ctx, refConsumer, _) {
+                    final savedDevices = refConsumer.watch(savedDevicesProvider);
+                    final currentConn = refConsumer.watch(connectionStateProvider);
+                    final currentIp = currentConn.ip ?? '';
 
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 20, 20, 12),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00F2FE).withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Icon(Icons.devices, color: Color(0xFF00F2FE), size: 24),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'الأجهزة المحفوظة والتبديل',
-                                    style: GoogleFonts.cairo(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    'اختر جهازاً للاتصال السريع أو أضف جهازاً جديداً',
-                                    style: GoogleFonts.cairo(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle, color: Color(0xFF00F2FE), size: 28),
-                              tooltip: 'إضافة جهاز جديد',
-                              onPressed: () => _showAddOrEditDeviceDialog(context),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white54, size: 22),
-                              tooltip: 'إغلاق',
-                              onPressed: () => Navigator.of(dialogCtx).pop(),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(color: Colors.white10, height: 1),
-                      if (savedDevices.isEmpty)
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Padding(
-                          padding: const EdgeInsets.all(32.0),
-                          child: Column(
+                          padding: const EdgeInsets.fromLTRB(16, 20, 20, 12),
+                          child: Row(
                             children: [
-                              const Icon(Icons.router_outlined, color: Colors.white30, size: 48),
-                              const SizedBox(height: 12),
-                              Text(
-                                'لا توجد أجهزة ESP محفوظة حالياً',
-                                style: GoogleFonts.cairo(color: Colors.white54, fontSize: 14),
-                              ),
-                              const SizedBox(height: 16),
-                              ElevatedButton.icon(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF00F2FE),
-                                  foregroundColor: Colors.black,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00F2FE).withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
+                                child: const Icon(Icons.devices, color: Color(0xFF00F2FE), size: 24),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'الأجهزة المحفوظة والتبديل',
+                                      style: GoogleFonts.cairo(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    Text(
+                                      'اختر جهازاً للاتصال السريع أو أضف جهازاً جديداً',
+                                      style: GoogleFonts.cairo(
+                                        color: Colors.white54,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle, color: Color(0xFF00F2FE), size: 28),
+                                tooltip: 'إضافة جهاز جديد',
                                 onPressed: () => _showAddOrEditDeviceDialog(context),
-                                icon: const Icon(Icons.add),
-                                label: Text('إضافة جهاز جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.white54, size: 22),
+                                tooltip: 'إغلاق',
+                                onPressed: () => Navigator.of(dialogCtx).pop(),
                               ),
                             ],
                           ),
-                        )
-                      else
-                        Flexible(
-                          child: ListView.separated(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            itemCount: savedDevices.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
-                            itemBuilder: (ctx, index) {
-                              final dev = savedDevices[index];
-                              final isActive = dev.ip == currentIp;
+                        ),
+                        const Divider(color: Colors.white10, height: 1),
+                        if (savedDevices.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              children: [
+                                const Icon(Icons.router_outlined, color: Colors.white30, size: 48),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'لا توجد أجهزة ESP محفوظة حالياً',
+                                  style: GoogleFonts.cairo(color: Colors.white54, fontSize: 14),
+                                ),
+                                const SizedBox(height: 16),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF00F2FE),
+                                    foregroundColor: Colors.black,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: () => _showAddOrEditDeviceDialog(context),
+                                  icon: const Icon(Icons.add),
+                                  label: Text('إضافة جهاز جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Flexible(
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              itemCount: savedDevices.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (ctx, index) {
+                                final dev = savedDevices[index];
+                                final isActive = dev.ip == currentIp;
 
-                              return Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: isActive
-                                      ? null
-                                      : () async {
-                                          Navigator.of(dialogCtx).pop();
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('جاري التبديل إلى: ${dev.name.isNotEmpty ? dev.name : dev.ip}...'),
-                                              backgroundColor: const Color(0xFF1C132E),
-                                              duration: const Duration(seconds: 2),
-                                            ),
-                                          );
-                                          final success = await refConsumer
-                                              .read(connectionStateProvider.notifier)
-                                              .switchToDevice(dev.ip, dev.password);
-                                          if (context.mounted) {
-                                            if (success) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(
-                                                  content: Text('تم الاتصال بنجاح بـ ${dev.name.isNotEmpty ? dev.name : dev.ip}'),
-                                                  backgroundColor: Colors.green,
-                                                ),
-                                              );
-                                            } else {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                SnackBar(
-                                                  content: Text('فشل الاتصال بـ ${dev.ip}. تحقق من الشبكة وكلمة المرور.'),
-                                                  backgroundColor: Colors.redAccent,
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        },
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                    decoration: BoxDecoration(
-                                      color: isActive
-                                          ? const Color(0x3300F2FE)
-                                          : const Color(0x7316132C),
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: isActive
-                                            ? const Color(0xFF00F2FE)
-                                            : Colors.white.withOpacity(0.08),
-                                        width: isActive ? 1.5 : 1.0,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          decoration: BoxDecoration(
-                                            color: isActive
-                                                ? const Color(0xFF00F2FE).withOpacity(0.2)
-                                                : Colors.white.withOpacity(0.05),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Icon(
-                                            isActive ? Icons.check_circle : Icons.router,
-                                            color: isActive ? const Color(0xFF00F2FE) : Colors.white60,
-                                            size: 22,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Flexible(
-                                                    child: Text(
-                                                      dev.name.isNotEmpty ? dev.name : dev.ip,
-                                                      style: GoogleFonts.cairo(
-                                                        color: Colors.white,
-                                                        fontWeight: FontWeight.bold,
-                                                        fontSize: 15,
-                                                      ),
-                                                      maxLines: 1,
-                                                      softWrap: false,
-                                                      textDirection: (dev.name.isEmpty || dev.name == dev.ip)
-                                                          ? TextDirection.ltr
-                                                          : null,
-                                                      overflow: TextOverflow.ellipsis,
-                                                    ),
+                                return Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: isActive
+                                        ? null
+                                        : () async {
+                                            Navigator.of(dialogCtx).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text('جاري التبديل إلى: ${dev.name.isNotEmpty ? dev.name : dev.ip}...'),
+                                                backgroundColor: const Color(0xFF1C132E),
+                                                duration: const Duration(seconds: 2),
+                                              ),
+                                            );
+                                            final success = await refConsumer
+                                                .read(connectionStateProvider.notifier)
+                                                .switchToDevice(dev.ip, dev.password);
+                                            if (context.mounted) {
+                                              if (success) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text('تم الاتصال بنجاح بـ ${dev.name.isNotEmpty ? dev.name : dev.ip}'),
+                                                    backgroundColor: Colors.green,
                                                   ),
-                                                  if (isActive) ...[
-                                                    const SizedBox(width: 8),
-                                                    Container(
-                                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                                      decoration: BoxDecoration(
-                                                        color: const Color(0xFF00F2FE),
-                                                        borderRadius: BorderRadius.circular(6),
-                                                      ),
+                                                );
+                                              } else {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text('فشل الاتصال بـ ${dev.ip}. تحقق من الشبكة وكلمة المرور.'),
+                                                    backgroundColor: Colors.redAccent,
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: isActive
+                                            ? const Color(0x3300F2FE)
+                                            : const Color(0x7316132C),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: isActive
+                                              ? const Color(0xFF00F2FE)
+                                              : Colors.white.withOpacity(0.08),
+                                          width: isActive ? 1.5 : 1.0,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              color: isActive
+                                                  ? const Color(0xFF00F2FE).withOpacity(0.2)
+                                                  : Colors.white.withOpacity(0.05),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              isActive ? Icons.check_circle : Icons.router,
+                                              color: isActive ? const Color(0xFF00F2FE) : Colors.white60,
+                                              size: 22,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 14),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    Expanded(
                                                       child: Text(
-                                                        'متصل حالياً',
+                                                        dev.name.isNotEmpty ? dev.name : dev.ip,
                                                         style: GoogleFonts.cairo(
-                                                          color: Colors.black,
+                                                          color: Colors.white,
                                                           fontWeight: FontWeight.bold,
-                                                          fontSize: 11,
+                                                          fontSize: 15,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ),
+                                                    if (isActive) ...[
+                                                      const SizedBox(width: 8),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                        decoration: BoxDecoration(
+                                                          color: const Color(0xFF00F2FE),
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                        child: Text(
+                                                          'متصل حالياً',
+                                                          style: GoogleFonts.cairo(
+                                                            color: Colors.black,
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: 11,
+                                                          ),
                                                         ),
                                                       ),
-                                                    ),
+                                                    ],
                                                   ],
-                                                ],
-                                              ),
-                                              const SizedBox(height: 3),
-                                              Text(
-                                                dev.ip,
-                                                style: GoogleFonts.cairo(
-                                                  color: Colors.white60,
-                                                  fontSize: 13,
                                                 ),
-                                                textDirection: TextDirection.ltr,
-                                                softWrap: false,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  dev.ip,
+                                                  style: GoogleFonts.cairo(
+                                                    color: Colors.white60,
+                                                    fontSize: 13,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
+                                                tooltip: 'تعديل',
+                                                visualDensity: VisualDensity.compact,
+                                                onPressed: () => _showAddOrEditDeviceDialog(context, existingDevice: dev),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                                                tooltip: 'حذف',
+                                                visualDensity: VisualDensity.compact,
+                                                onPressed: () async {
+                                                  await refConsumer.read(savedDevicesProvider.notifier).removeDevice(dev.ip);
+                                                },
                                               ),
                                             ],
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(Icons.edit_outlined, color: Colors.white54, size: 20),
-                                              tooltip: 'تعديل',
-                                              visualDensity: VisualDensity.compact,
-                                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                              onPressed: () => _showAddOrEditDeviceDialog(context, existingDevice: dev),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            IconButton(
-                                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                                              tooltip: 'حذف',
-                                              visualDensity: VisualDensity.compact,
-                                              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                              onPressed: () async {
-                                                await refConsumer.read(savedDevicesProvider.notifier).removeDevice(dev.ip);
-                                              },
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
-                        ),
-                      const SizedBox(height: 12),
-                    ],
-                  );
-                },
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -3867,11 +3860,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                                     ),
                                     const SizedBox(width: 6),
                                     Expanded(
-                                      child: Text(
-                                        file,
-                                        style: const TextStyle(fontFamily: 'monospace', color: Colors.white54, fontSize: 11),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                      child: file.contains(',')
+                                          ? Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFF00F2FE).withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: Text(
+                                                    'قائمة: ${file.split(',').length} ملفات',
+                                                    style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 10, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Text(
+                                                    file,
+                                                    style: const TextStyle(fontFamily: 'monospace', color: Colors.white54, fontSize: 11),
+                                                    overflow: TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            )
+                                          : Text(
+                                              file,
+                                              style: const TextStyle(fontFamily: 'monospace', color: Colors.white54, fontSize: 11),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
                                     ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -4140,12 +4157,320 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       }
     }
 
-    bool isRadioSource = initialRadioUrl != null || (isEdit && (alert['file']?.toString().startsWith('http://') == true || alert['file']?.toString().startsWith('https://') == true));
-    
+    // Source Type: 0 = Single Local File, 1 = Playlist (multiple files), 2 = Live Radio (178+ Stations)
+    int alertSourceType = 0;
+    if (isEdit) {
+      final String rawFile = alert['file']?.toString() ?? '';
+      if (rawFile.startsWith('http://') || rawFile.startsWith('https://')) {
+        alertSourceType = 2;
+      } else if (rawFile.contains(',')) {
+        alertSourceType = 1;
+      } else {
+        alertSourceType = 0;
+      }
+    } else {
+      if (initialRadioUrl != null || _alertsSubTabIndex == 1) {
+        alertSourceType = 2;
+      } else if (_alertsSubTabIndex == 2) {
+        alertSourceType = 1;
+      } else {
+        alertSourceType = 0;
+      }
+    }
+
+    // Selected files for Playlist
+    List<String> selectedPlaylistFiles = [];
+    if (isEdit && alert['file'] != null && alert['file'].toString().contains(',')) {
+      selectedPlaylistFiles = alert['file'].toString().split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    }
+
     bool skipAdhan = isEdit ? (alert['skipAdhan'] == true || alert['skipAdhan'] == 1 || alert['skipAdhan'] == '1' || alert['skipAdhan'] == 'true') : false;
     bool skipIqama = isEdit ? (alert['skipIqama'] == true || alert['skipIqama'] == 1 || alert['skipIqama'] == '1' || alert['skipIqama'] == 'true') : false;
 
     List<int> selectedDays = isEdit ? _parseAlertDays(alert) : [0, 1, 2, 3, 4, 5, 6];
+
+    // Helper to open Multi-file Playlist selector modal
+    void openPlaylistSelector(StateSetter setSheetState) {
+      final List<String> tempSelected = List.from(selectedPlaylistFiles);
+      String filterQuery = '';
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF150D2A),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final filtered = audioFiles.where((f) => f.toLowerCase().contains(filterQuery.toLowerCase())).toList();
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.75,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'اختيار ملفات قائمة التشغيل',
+                          style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFBF5AF2).withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'المحدد: ${tempSelected.length} ملف',
+                            style: GoogleFonts.cairo(color: const Color(0xFFBF5AF2), fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      onChanged: (v) => setModalState(() => filterQuery = v),
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'بحث في الملفات الصوتية...',
+                        hintStyle: GoogleFonts.cairo(color: Colors.white38, fontSize: 12),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFFBF5AF2), size: 20),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() {
+                              for (var f in audioFiles) {
+                                if (!tempSelected.contains(f)) tempSelected.add(f);
+                              }
+                            });
+                          },
+                          child: Text('تحديد الكل (${audioFiles.length})', style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 11)),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () {
+                            setModalState(() => tempSelected.clear());
+                          },
+                          child: Text('إلغاء التحديد', style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text(
+                                audioFiles.isEmpty ? 'لا توجد ملفات صوتية في الذاكرة' : 'لا توجد نتائج مطابقة',
+                                style: GoogleFonts.cairo(color: Colors.white38),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: filtered.length,
+                              itemBuilder: (ctx, i) {
+                                final f = filtered[i];
+                                final isSel = tempSelected.contains(f);
+                                final selIndex = isSel ? tempSelected.indexOf(f) + 1 : null;
+                                return CheckboxListTile(
+                                  value: isSel,
+                                  activeColor: const Color(0xFFBF5AF2),
+                                  checkColor: Colors.white,
+                                  title: Text(
+                                    f,
+                                    style: GoogleFonts.cairo(
+                                      color: isSel ? Colors.white : Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  secondary: isSel
+                                      ? Container(
+                                          width: 24,
+                                          height: 24,
+                                          alignment: Alignment.center,
+                                          decoration: const BoxDecoration(
+                                            color: Color(0xFF00F2FE),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: Text(
+                                            '$selIndex',
+                                            style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        )
+                                      : const Icon(Icons.audiotrack, color: Colors.white24, size: 20),
+                                  onChanged: (val) {
+                                    setModalState(() {
+                                      if (val == true) {
+                                        if (!tempSelected.contains(f)) tempSelected.add(f);
+                                      } else {
+                                        tempSelected.remove(f);
+                                      }
+                                    });
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: () {
+                        setSheetState(() {
+                          selectedPlaylistFiles = List.from(tempSelected);
+                          if (selectedPlaylistFiles.isNotEmpty) {
+                            fileController.text = selectedPlaylistFiles.join(',');
+                          }
+                        });
+                        Navigator.pop(ctx);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFBF5AF2),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'تأكيد اختيار (${tempSelected.length}) ملفات',
+                        style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    // Helper to open Radio Station picker modal (178+ Stations)
+    void openRadioPicker(StateSetter setSheetState) {
+      final radioState = ref.read(radioStationsProvider);
+      final List<Map<String, dynamic>> allStations = radioState.stations;
+      String filterQuery = '';
+
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: const Color(0xFF150D2A),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final filtered = allStations.where((s) {
+              final name = s['name']?.toString().toLowerCase() ?? '';
+              final cat = s['category']?.toString().toLowerCase() ?? '';
+              final q = filterQuery.toLowerCase();
+              return name.contains(q) || cat.contains(q);
+            }).toList();
+
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: Container(
+                height: MediaQuery.of(context).size.height * 0.8,
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'اختيار محطة إذاعية (${allStations.length}+ محطة)',
+                          style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white54),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      onChanged: (v) => setModalState(() => filterQuery = v),
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن إذاعة أو قارئ (مثل: القاهرة، عبد الباسط، العفاسي)...',
+                        hintStyle: GoogleFonts.cairo(color: Colors.white38, fontSize: 12),
+                        prefixIcon: const Icon(Icons.search, color: Color(0xFF00F2FE), size: 20),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.05),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? Center(
+                              child: Text('لا توجد محطات مطابقة للبحث', style: GoogleFonts.cairo(color: Colors.white38)),
+                            )
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                              itemBuilder: (ctx, i) {
+                                final st = filtered[i];
+                                final stName = st['name']?.toString() ?? '';
+                                final stUrl = st['url']?.toString() ?? '';
+                                final stCategory = st['category']?.toString() ?? 'بث مباشر';
+                                final isCurrent = fileController.text == stUrl;
+                                return ListTile(
+                                  dense: true,
+                                  leading: CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: isCurrent ? const Color(0xFF00F2FE) : const Color(0xFFBF5AF2).withOpacity(0.2),
+                                    child: Icon(
+                                      Icons.radio,
+                                      size: 16,
+                                      color: isCurrent ? Colors.black : const Color(0xFFBF5AF2),
+                                    ),
+                                  ),
+                                  title: Text(
+                                    stName,
+                                    style: GoogleFonts.cairo(
+                                      color: isCurrent ? const Color(0xFF00F2FE) : Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                                    ),
+                                  ),
+                                  subtitle: Text(
+                                    stCategory,
+                                    style: GoogleFonts.cairo(color: Colors.white38, fontSize: 11),
+                                  ),
+                                  trailing: isCurrent
+                                      ? const Icon(Icons.check_circle, color: Color(0xFF00F2FE), size: 20)
+                                      : const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 14),
+                                  onTap: () {
+                                    setSheetState(() {
+                                      fileController.text = stUrl;
+                                      if (nameController.text.isEmpty || nameController.text.startsWith('راديو ')) {
+                                        nameController.text = 'راديو $stName';
+                                      }
+                                    });
+                                    Navigator.pop(ctx);
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
 
     showModalBottomSheet(
       context: context,
@@ -4186,46 +4511,73 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
 
-                  // Source Type Selector
+                  // Source Type 3-Option Selector
+                  Text('مصدر الصوت:', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Expanded(
                         child: ChoiceChip(
-                          label: Center(child: Text('ملف محلي (SD)', style: GoogleFonts.cairo(fontSize: 12))),
-                          selected: !isRadioSource,
+                          label: Center(child: Text('ملف محلي', style: GoogleFonts.cairo(fontSize: 11, fontWeight: alertSourceType == 0 ? FontWeight.bold : FontWeight.normal))),
+                          selected: alertSourceType == 0,
                           onSelected: (val) {
                             setSheetState(() {
-                              isRadioSource = false;
-                              fileController.text = audioFiles.isNotEmpty ? audioFiles.first : '';
+                              alertSourceType = 0;
+                              if (!fileController.text.startsWith('http') && !fileController.text.contains(',')) {
+                                // keep current file
+                              } else {
+                                fileController.text = audioFiles.isNotEmpty ? audioFiles.first : '';
+                              }
                             });
                           },
-                          selectedColor: const Color(0xFFBF5AF2).withOpacity(0.2),
-                          labelStyle: TextStyle(color: !isRadioSource ? const Color(0xFFBF5AF2) : Colors.white60),
+                          selectedColor: const Color(0xFFBF5AF2).withOpacity(0.25),
+                          labelStyle: TextStyle(color: alertSourceType == 0 ? const Color(0xFFBF5AF2) : Colors.white60),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: ChoiceChip(
-                          label: Center(child: Text('بث راديو مباشر', style: GoogleFonts.cairo(fontSize: 12))),
-                          selected: isRadioSource,
+                          label: Center(child: Text('قائمة تشغيل', style: GoogleFonts.cairo(fontSize: 11, fontWeight: alertSourceType == 1 ? FontWeight.bold : FontWeight.normal))),
+                          selected: alertSourceType == 1,
                           onSelected: (val) {
                             setSheetState(() {
-                              isRadioSource = true;
-                              fileController.text = initialRadioUrl ?? 'http://stream.radiojar.com/8s5u5tpdtwzuv';
+                              alertSourceType = 1;
+                              if (selectedPlaylistFiles.isNotEmpty) {
+                                fileController.text = selectedPlaylistFiles.join(',');
+                              } else if (fileController.text.contains(',')) {
+                                selectedPlaylistFiles = fileController.text.split(',').where((s) => s.isNotEmpty).toList();
+                              }
                             });
                           },
-                          selectedColor: const Color(0xFFBF5AF2).withOpacity(0.2),
-                          labelStyle: TextStyle(color: isRadioSource ? const Color(0xFFBF5AF2) : Colors.white60),
+                          selectedColor: const Color(0xFF00F2FE).withOpacity(0.25),
+                          labelStyle: TextStyle(color: alertSourceType == 1 ? const Color(0xFF00F2FE) : Colors.white60),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: Center(child: Text('بث راديو (178+)', style: GoogleFonts.cairo(fontSize: 11, fontWeight: alertSourceType == 2 ? FontWeight.bold : FontWeight.normal))),
+                          selected: alertSourceType == 2,
+                          onSelected: (val) {
+                            setSheetState(() {
+                              alertSourceType = 2;
+                              if (!fileController.text.startsWith('http')) {
+                                fileController.text = initialRadioUrl ?? 'http://stream.radiojar.com/8s5u5tpdtwzuv';
+                              }
+                            });
+                          },
+                          selectedColor: const Color(0xFFBF5AF2).withOpacity(0.25),
+                          labelStyle: TextStyle(color: alertSourceType == 2 ? const Color(0xFFBF5AF2) : Colors.white60),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
 
-                  // File Field (with Auto selection if files exist)
-                  if (!isRadioSource) ...[
+                  // 1. Single Local File Picker
+                  if (alertSourceType == 0) ...[
                     if (audioFiles.isNotEmpty) ...[
                       DropdownButtonFormField<String>(
                         dropdownColor: const Color(0xFF1C132E),
@@ -4260,90 +4612,182 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ),
                       ),
                     ],
-                  ] else ...[
-                    DropdownButtonFormField<String>(
-                      dropdownColor: const Color(0xFF1C132E),
-                      value: const {
-                        "http://stream.radiojar.com/8s5u5tpdtwzuv": "http://stream.radiojar.com/8s5u5tpdtwzuv",
-                        "https://stream.radiojar.com/0tpy1h0kxtzuv": "https://stream.radiojar.com/0tpy1h0kxtzuv",
-                        "https://backup.qurango.net/radio/mix": "https://backup.qurango.net/radio/mix",
-                        "https://backup.qurango.net/radio/eid": "https://backup.qurango.net/radio/eid",
-                        "https://backup.qurango.net/radio/roqiah": "https://backup.qurango.net/radio/roqiah",
-                        "https://backup.qurango.net/radio/tafseer": "https://backup.qurango.net/radio/tafseer",
-                        "https://backup.qurango.net/radio/sakeenah": "https://backup.qurango.net/radio/sakeenah",
-                        "https://backup.qurango.net/radio/athkar_sabah": "https://backup.qurango.net/radio/athkar_sabah",
-                        "https://backup.qurango.net/radio/athkar_masa": "https://backup.qurango.net/radio/athkar_masa",
-                        "https://backup.qurango.net/radio/mishary_alafasi": "https://backup.qurango.net/radio/mishary_alafasi",
-                        "https://backup.qurango.net/radio/abdulrahman_alsudaes": "https://backup.qurango.net/radio/abdulrahman_alsudaes",
-                        "https://backup.qurango.net/radio/maher": "https://backup.qurango.net/radio/maher",
-                        "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad": "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad",
-                      }.keys.contains(fileController.text) ? fileController.text : "custom_url",
-                      style: const TextStyle(color: Colors.white),
-                      decoration: InputDecoration(
-                        labelText: 'قناة البث الإذاعي',
-                        labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
-                        prefixIcon: const Icon(Icons.wifi_tethering, color: Color(0xFFBF5AF2)),
-                        filled: true,
-                        fillColor: Colors.white.withOpacity(0.01),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      items: const [
-                        DropdownMenuItem(value: "http://stream.radiojar.com/8s5u5tpdtwzuv", child: Text("إذاعة القرآن من القاهرة")),
-                        DropdownMenuItem(value: "https://stream.radiojar.com/0tpy1h0kxtzuv", child: Text("إذاعة القرآن الكريم - السعودية")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/mix", child: Text("الإذاعة العامة - تلاوات (Mp3Quran)")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/eid", child: Text("إذاعة تكبيرات العيد")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/roqiah", child: Text("إذاعة الرقية الشرعية")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/tafseer", child: Text("إذاعة تفسير القرآن الكريم")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/sakeenah", child: Text("آيات السكينة (تلاوات هادئة)")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/athkar_sabah", child: Text("أذكار الصباح (بث مباشر)")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/athkar_masa", child: Text("أذكار المساء (بث مباشر)")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/mishary_alafasi", child: Text("إذاعة مشاري العفاسي")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/abdulrahman_alsudaes", child: Text("إذاعة عبد الرحمن السديس")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/maher", child: Text("إذاعة ماهر المعيقلي")),
-                        DropdownMenuItem(value: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad", child: Text("إذاعة عبد الباسط عبد الصمد")),
-                        DropdownMenuItem(value: "custom_url", child: Text("رابط بث مباشر مخصص (عنوان URL)")),
-                      ],
-                      onChanged: (val) {
-                        setSheetState(() {
-                          if (val != 'custom_url') {
-                            fileController.text = val ?? '';
-                          } else {
-                            fileController.text = '';
-                          }
-                        });
-                      },
-                    ),
-                    if (!const [
-                      "http://stream.radiojar.com/8s5u5tpdtwzuv",
-                      "https://stream.radiojar.com/0tpy1h0kxtzuv",
-                      "https://backup.qurango.net/radio/mix",
-                      "https://backup.qurango.net/radio/eid",
-                      "https://backup.qurango.net/radio/roqiah",
-                      "https://backup.qurango.net/radio/tafseer",
-                      "https://backup.qurango.net/radio/sakeenah",
-                      "https://backup.qurango.net/radio/athkar_sabah",
-                      "https://backup.qurango.net/radio/athkar_masa",
-                      "https://backup.qurango.net/radio/mishary_alafasi",
-                      "https://backup.qurango.net/radio/abdulrahman_alsudaes",
-                      "https://backup.qurango.net/radio/maher",
-                      "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad",
-                    ].contains(fileController.text)) ...[
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: fileController,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'رابط البث المباشر المخصص (URL)',
-                          labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
-                          prefixIcon: const Icon(Icons.link, color: Color(0xFFBF5AF2)),
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.01),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                    ],
                   ],
-                  const SizedBox(height: 12),
+
+                  // 2. Playlist Multi-File Selector
+                  if (alertSourceType == 1) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.03),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.playlist_play, color: Color(0xFF00F2FE), size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'ملفات قائمة التشغيل (${selectedPlaylistFiles.length} ملفات)',
+                                  style: GoogleFonts.cairo(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => openPlaylistSelector(setSheetState),
+                                icon: const Icon(Icons.playlist_add_check, size: 16),
+                                label: Text(
+                                  selectedPlaylistFiles.isEmpty ? 'اختيار الملفات' : 'تعديل الاختيار',
+                                  style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF00F2FE),
+                                  foregroundColor: Colors.black,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          if (selectedPlaylistFiles.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Text(
+                                'لم يتم اختيار ملفات بعد. اضغط على "اختيار الملفات" لتحديد الملفات الصوتية من الذاكرة.',
+                                style: GoogleFonts.cairo(color: Colors.white38, fontSize: 11),
+                              ),
+                            )
+                          else
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: selectedPlaylistFiles.map((f) {
+                                final idx = selectedPlaylistFiles.indexOf(f) + 1;
+                                return Chip(
+                                  backgroundColor: const Color(0xFF150D2A),
+                                  side: BorderSide(color: const Color(0xFF00F2FE).withOpacity(0.4)),
+                                  avatar: CircleAvatar(
+                                    radius: 10,
+                                    backgroundColor: const Color(0xFF00F2FE),
+                                    child: Text('$idx', style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold)),
+                                  ),
+                                  label: Text(
+                                    f,
+                                    style: GoogleFonts.cairo(color: Colors.white, fontSize: 11),
+                                  ),
+                                  deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white54),
+                                  onDeleted: () {
+                                    setSheetState(() {
+                                      selectedPlaylistFiles.remove(f);
+                                      fileController.text = selectedPlaylistFiles.join(',');
+                                    });
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // 3. Live Radio Station Picker (178+ Stations)
+                  if (alertSourceType == 2) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.03),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFBF5AF2).withOpacity(0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.wifi_tethering, color: Color(0xFFBF5AF2), size: 22),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'المحطة الإذاعية المحددة',
+                                  style: GoogleFonts.cairo(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => openRadioPicker(setSheetState),
+                                icon: const Icon(Icons.search, size: 16),
+                                label: Text(
+                                  'تصفح المحطات (178+)',
+                                  style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFBF5AF2),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Builder(
+                            builder: (ctx) {
+                              final stations = ref.read(radioStationsProvider).stations;
+                              final currentUrl = fileController.text.trim();
+                              Map<String, dynamic>? matched;
+                              for (final s in stations) {
+                                if (s['url'] == currentUrl) {
+                                  matched = s;
+                                  break;
+                                }
+                              }
+                              if (matched != null) {
+                                final matchedName = matched['name']?.toString() ?? '';
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFBF5AF2).withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.radio, color: Color(0xFFBF5AF2), size: 16),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          matchedName,
+                                          style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: fileController,
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                            decoration: InputDecoration(
+                              labelText: 'رابط البث المباشر (URL)',
+                              labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+                              prefixIcon: const Icon(Icons.link, color: Color(0xFFBF5AF2), size: 18),
+                              filled: true,
+                              fillColor: Colors.white.withOpacity(0.01),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 14),
 
                   // Type Field
                   DropdownButtonFormField<String>(
@@ -4428,21 +4872,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           label: Text(
                             dayName,
                             style: GoogleFonts.cairo(
-                              fontSize: 11,
                               color: isSelected ? Colors.white : Colors.white60,
                               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontSize: 11,
                             ),
                           ),
                           selected: isSelected,
                           selectedColor: const Color(0xFFBF5AF2),
+                          backgroundColor: Colors.white.withOpacity(0.05),
                           checkmarkColor: Colors.white,
-                          backgroundColor: Colors.white.withOpacity(0.04),
-                          onSelected: (selected) {
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          onSelected: (bool selected) {
                             setSheetState(() {
                               if (selected) {
                                 if (!selectedDays.contains(dayIdx)) {
                                   selectedDays.add(dayIdx);
-                                  selectedDays.sort();
                                 }
                               } else {
                                 selectedDays.remove(dayIdx);
@@ -4455,26 +4899,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     const SizedBox(height: 12),
                   ],
 
-                  // Display fields conditionally based on alertType
                   if (alertType == 'prayer_relative') ...[
-                    // Prayer index selection
                     DropdownButtonFormField<int>(
                       dropdownColor: const Color(0xFF1C132E),
                       value: prayerIdx,
                       style: const TextStyle(color: Colors.white),
                       decoration: InputDecoration(
-                        labelText: 'اختر الميقات المرتبط',
+                        labelText: 'الصلاة المرجعية',
                         labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                        prefixIcon: const Icon(Icons.mosque, color: Color(0xFFBF5AF2)),
                         filled: true,
                         fillColor: Colors.white.withOpacity(0.01),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       items: const [
                         DropdownMenuItem(value: 0, child: Text('الفجر')),
-                        DropdownMenuItem(value: 1, child: Text('الظهر')),
-                        DropdownMenuItem(value: 2, child: Text('العصر')),
-                        DropdownMenuItem(value: 3, child: Text('المغرب')),
-                        DropdownMenuItem(value: 4, child: Text('العشاء')),
+                        DropdownMenuItem(value: 1, child: Text('الشروق')),
+                        DropdownMenuItem(value: 2, child: Text('الظهر')),
+                        DropdownMenuItem(value: 3, child: Text('العصر')),
+                        DropdownMenuItem(value: 4, child: Text('المغرب')),
+                        DropdownMenuItem(value: 5, child: Text('العشاء')),
                       ],
                       onChanged: (val) {
                         setSheetState(() {
@@ -4483,21 +4927,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                       },
                     ),
                     const SizedBox(height: 12),
-                    // Offset minutes
                     TextField(
                       controller: offsetController,
                       style: const TextStyle(color: Colors.white),
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(signed: true),
                       decoration: InputDecoration(
-                        labelText: 'الإزاحة بالدقائق (مثال: +15 للتشغيل بعد الميقات، -10 للتشغيل قبله)',
+                        labelText: 'الفارق بالدقائق (سالب: قبل، موجب: بعد)',
                         labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                        prefixIcon: const Icon(Icons.more_time, color: Color(0xFFBF5AF2)),
                         filled: true,
                         fillColor: Colors.white.withOpacity(0.01),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ] else ...[
-                    // Hour / Minute Fields
                     Row(
                       children: [
                         Expanded(
@@ -4508,6 +4951,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             decoration: InputDecoration(
                               labelText: 'الساعة (0-23)',
                               labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                              prefixIcon: const Icon(Icons.access_time, color: Color(0xFFBF5AF2)),
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.01),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -4523,6 +4967,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                             decoration: InputDecoration(
                               labelText: 'الدقيقة (0-59)',
                               labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                              prefixIcon: const Icon(Icons.access_time, color: Color(0xFFBF5AF2)),
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.01),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -4531,26 +4976,26 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    if (alertType == 'specific') ...[
-                      // Specific Date Field
-                      TextField(
-                        controller: dateController,
-                        style: const TextStyle(color: Colors.white),
-                        decoration: InputDecoration(
-                          labelText: 'التاريخ المحدد (YYYY-MM-DD)',
-                          labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
-                          prefixIcon: const Icon(Icons.date_range),
-                          filled: true,
-                          fillColor: Colors.white.withOpacity(0.01),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
                   ],
 
-                  // Volume Field
+                  if (alertType == 'specific') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: dateController,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        labelText: 'التاريخ المحدد (YYYY-MM-DD)',
+                        labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 13),
+                        prefixIcon: const Icon(Icons.calendar_today, color: Color(0xFFBF5AF2)),
+                        filled: true,
+                        fillColor: Colors.white.withOpacity(0.01),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+
+                  // Volume
                   TextField(
                     controller: volumeController,
                     style: const TextStyle(color: Colors.white),
@@ -4619,7 +5064,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                     },
                   ),
                   
-                  if (alertType == 'prayer_relative' && isRadioSource) ...[
+                  if (alertType == 'prayer_relative' && alertSourceType == 2) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -4793,13 +5238,23 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             final name = nameController.text.trim();
-                            final file = fileController.text.trim();
+                            String file = fileController.text.trim();
 
-                            if (file.isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('الرجاء تعيين اسم ملف صوتي'), backgroundColor: Colors.redAccent),
-                              );
-                              return;
+                            if (alertSourceType == 1) {
+                              if (selectedPlaylistFiles.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('الرجاء اختيار ملف واحد على الأقل لقائمة التشغيل'), backgroundColor: Colors.redAccent),
+                                );
+                                return;
+                              }
+                              file = selectedPlaylistFiles.join(',');
+                            } else {
+                              if (file.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('الرجاء تعيين اسم ملف صوتي أو محطة إذاعية'), backgroundColor: Colors.redAccent),
+                                );
+                                return;
+                              }
                             }
 
                             if (alertType == 'weekly' && selectedDays.isEmpty) {
@@ -4849,8 +5304,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                               map['isPrayerRelative'] = 1;
                               // Convert minutes back to offset seconds
                               map['offsetSeconds'] = (int.tryParse(offsetController.text) ?? 0) * 60;
-                              map['skipAdhan'] = (isRadioSource && skipAdhan) ? 1 : 0;
-                              map['skipIqama'] = (isRadioSource && skipIqama) ? 1 : 0;
+                              map['skipAdhan'] = (alertSourceType == 2 && skipAdhan) ? 1 : 0;
+                              map['skipIqama'] = (alertSourceType == 2 && skipIqama) ? 1 : 0;
                             } else {
                               map['hour'] = int.tryParse(hourController.text) ?? 0;
                               map['minute'] = int.tryParse(minController.text) ?? 0;
@@ -4896,7 +5351,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   }
 
 
-  // 3. GPIO Tab Widget
+    // 3. GPIO Tab Widget
   Widget _buildGpioTab() {
     final gpioState = ref.watch(gpioProvider);
 
@@ -5717,7 +6172,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 const SizedBox(height: 24),
                 Center(
                   child: Text(
-                    'Vivo Smart App • الإصدار v1.0.7',
+                    'Vivo Smart App • الإصدار v1.0.8',
                     style: GoogleFonts.cairo(
                       color: Colors.white38,
                       fontSize: 12,
@@ -7707,10 +8162,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
   bool _initialized = false;
   bool _enabled = false;
   int _mode = 0; // 0=Hybrid, 1=BLE, 2=WiFi
-  final TextEditingController _targetNameController = TextEditingController();
-  final TextEditingController _targetMacController = TextEditingController();
   int _rssiThreshold = -70;
-  String? _welcomeFile;
   int _volume = 20;
   final TextEditingController _cooldownController = TextEditingController(text: '30');
   final TextEditingController _vacateController = TextEditingController(text: '3');
@@ -7734,8 +8186,6 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
   @override
   void dispose() {
     _statusTimer?.cancel();
-    _targetNameController.dispose();
-    _targetMacController.dispose();
     _cooldownController.dispose();
     _vacateController.dispose();
     super.dispose();
@@ -7746,10 +8196,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
     if (config.isEmpty) return;
     _enabled = config['enabled'] == true || config['enabled'] == 1 || config['enabled'] == 'true';
     _mode = (config['mode'] as num?)?.toInt() ?? 0;
-    _targetNameController.text = (config['targetName'] ?? config['bleName'] ?? '').toString();
-    _targetMacController.text = (config['targetMac'] ?? config['bleMac'] ?? '').toString();
     _rssiThreshold = (config['rssiThresh'] as num?)?.toInt() ?? -70;
-    _welcomeFile = (config['welcomeFile'] ?? '/Azan/welcome.mp3').toString();
     _volume = (config['volume'] as num?)?.toInt() ?? 20;
     _cooldownController.text = ((config['cooldownMinutes'] as num?)?.toInt() ?? 30).toString();
     _vacateController.text = ((config['vacateMinutes'] as num?)?.toInt() ?? 3).toString();
@@ -7763,14 +8210,11 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
     _initialized = true;
   }
 
-  Future<void> _handleSave() async {
+  Future<void> _handleSaveGlobal() async {
     final cfg = {
       'enabled': _enabled ? 1 : 0,
       'mode': _mode,
-      'targetMac': _targetMacController.text.trim(),
-      'targetName': _targetNameController.text.trim(),
       'rssiThresh': _rssiThreshold,
-      'welcomeFile': _welcomeFile ?? '/Azan/welcome.mp3',
       'volume': _volume,
       'cooldownMinutes': int.tryParse(_cooldownController.text.trim()) ?? 30,
       'vacateMinutes': int.tryParse(_vacateController.text.trim()) ?? 3,
@@ -7784,16 +8228,254 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(ok ? 'تم حفظ إعدادات كشف الحضور بنجاح' : 'فشل حفظ الإعدادات'),
+          content: Text(ok ? 'تم حفظ الإعدادات العامة للترحيب بنجاح' : 'فشل حفظ الإعدادات'),
           backgroundColor: ok ? Colors.green : Colors.redAccent,
         ),
       );
     }
   }
 
-  Future<void> _showBleScanDialog() async {
-    ref.read(presenceProvider.notifier).scanBle();
+  void _showAddOrEditPresenceDeviceDialog({Map<String, dynamic>? existingDevice}) {
+    final isEdit = existingDevice != null;
+    final id = existingDevice?['id'] as int? ?? -1;
+    final nameController = TextEditingController(text: existingDevice?['name']?.toString() ?? '');
+    final macController = TextEditingController(text: existingDevice?['mac']?.toString() ?? '');
+    String selectedFile = existingDevice?['welcomeFile']?.toString() ?? '/Azan/welcome.mp3';
+    bool devEnabled = existingDevice?['enabled'] != false;
+
+    final filesState = ref.read(filesProvider);
+    final List<String> audioFiles = [];
+    filesState.whenData((data) {
+      final list = data['files'] as List? ?? [];
+      for (var f in list) {
+        final name = f['name'] as String? ?? '';
+        final isDir = f['isDirectory'] as bool? ?? false;
+        if (!isDir && (name.endsWith('.mp3') || name.endsWith('.wav'))) {
+          audioFiles.add(name);
+        }
+      }
+    });
+    if (!audioFiles.contains('/Azan/welcome.mp3')) {
+      audioFiles.insert(0, '/Azan/welcome.mp3');
+    }
+
     showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(
+                backgroundColor: const Color(0xFF1C132E),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+                title: Row(
+                  children: [
+                    Icon(isEdit ? Icons.edit_note_rounded : Icons.person_add_alt_1_rounded, color: const Color(0xFF00F2FE)),
+                    const SizedBox(width: 8),
+                    Text(
+                      isEdit ? 'تعديل جهاز الترحيب' : 'إضافة جهاز جديد للترحيب',
+                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          labelText: 'اسم صاحب الجهاز أو الوصف',
+                          labelStyle: GoogleFonts.cairo(color: Colors.white70, fontSize: 13),
+                          hintText: 'مثال: هاتف الوالد / ساعة ذكية',
+                          hintStyle: GoogleFonts.cairo(color: Colors.white30, fontSize: 11),
+                          prefixIcon: const Icon(Icons.badge_outlined, color: Color(0xFF00F2FE)),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: macController,
+                        style: const TextStyle(color: Colors.white, letterSpacing: 1),
+                        textDirection: TextDirection.ltr,
+                        decoration: InputDecoration(
+                          labelText: 'عنوان الماك (MAC Address)',
+                          labelStyle: GoogleFonts.cairo(color: Colors.white70, fontSize: 13),
+                          hintText: 'AA:BB:CC:DD:EE:FF',
+                          hintStyle: const TextStyle(color: Colors.white30, fontSize: 11),
+                          prefixIcon: const Icon(Icons.fingerprint, color: Color(0xFF00F2FE)),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                ref.read(presenceProvider.notifier).scanBle();
+                                final selected = await _showBleScanPickerModal();
+                                if (selected != null) {
+                                  setDialogState(() {
+                                    macController.text = (selected['mac'] ?? '').toString();
+                                    final dName = (selected['name'] ?? '').toString();
+                                    if (nameController.text.isEmpty && dName.isNotEmpty && dName != 'جهاز مجهول') {
+                                      nameController.text = dName;
+                                    }
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.bluetooth_searching, size: 16),
+                              label: Text('مسح BLE', style: GoogleFonts.cairo(fontSize: 11)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00F2FE),
+                                side: const BorderSide(color: Color(0xFF00F2FE)),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () async {
+                                ref.read(presenceProvider.notifier).scanWifi();
+                                final selected = await _showWifiScanPickerModal();
+                                if (selected != null) {
+                                  setDialogState(() {
+                                    macController.text = (selected['mac'] ?? '').toString();
+                                    final dName = (selected['name'] ?? selected['ip'] ?? '').toString();
+                                    if (nameController.text.isEmpty && dName.isNotEmpty) {
+                                      nameController.text = dName;
+                                    }
+                                  });
+                                }
+                              },
+                              icon: const Icon(Icons.wifi_find, size: 16),
+                              label: Text('فحص WiFi', style: GoogleFonts.cairo(fontSize: 11)),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF00FFCC),
+                                side: const BorderSide(color: Color(0xFF00FFCC)),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        'ملف الترحيب الصوتي المخصص لهذا الجهاز:',
+                        style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF1C132E),
+                        value: audioFiles.contains(selectedFile) ? selectedFile : (audioFiles.isNotEmpty ? audioFiles.first : '/Azan/welcome.mp3'),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.audio_file_outlined, color: Color(0xFF00F2FE)),
+                          filled: true,
+                          fillColor: Colors.white.withOpacity(0.04),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                        items: audioFiles.map((file) {
+                          return DropdownMenuItem<String>(
+                            value: file,
+                            child: Text(file, overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (val) {
+                          if (val != null) {
+                            setDialogState(() {
+                              selectedFile = val;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          ref.read(presenceProvider.notifier).testWelcome(file: selectedFile, volume: _volume);
+                        },
+                        icon: const Icon(Icons.volume_up, size: 16),
+                        label: Text('تجربة استماع لهذا الملف', style: GoogleFonts.cairo(fontSize: 12)),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFBF5AF2),
+                          side: const BorderSide(color: Color(0xFFBF5AF2)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text('تفعيل هذا الجهاز للترحيب', style: GoogleFonts.cairo(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                        value: devEnabled,
+                        activeColor: const Color(0xFF00F2FE),
+                        onChanged: (val) {
+                          setDialogState(() {
+                            devEnabled = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogCtx),
+                    child: Text('إلغاء', style: GoogleFonts.cairo(color: Colors.white60)),
+                  ),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final name = nameController.text.trim();
+                      final mac = macController.text.trim();
+                      if (mac.length < 11) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('يرجى إدخال عنوان MAC صحيح للجهاز'), backgroundColor: Colors.redAccent),
+                        );
+                        return;
+                      }
+                      Navigator.pop(dialogCtx);
+                      final ok = await ref.read(presenceProvider.notifier).saveDevice(
+                        id: id,
+                        name: name.isEmpty ? 'جهاز ترحيب' : name,
+                        mac: mac,
+                        welcomeFile: selectedFile,
+                        enabled: devEnabled,
+                      );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(ok ? (isEdit ? 'تم تحديث الجهاز بنجاح' : 'تمت إضافة الجهاز بنجاح') : 'فشل حفظ الجهاز'),
+                            backgroundColor: ok ? Colors.green : Colors.redAccent,
+                          ),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00F2FE),
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(isEdit ? 'حفظ التعديل' : 'إضافة الجهاز', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>?> _showBleScanPickerModal() async {
+    return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogCtx) {
         return Consumer(
@@ -7808,7 +8490,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                   children: [
                     const Icon(Icons.bluetooth_searching, color: Color(0xFF00F2FE)),
                     const SizedBox(width: 8),
-                    Text('الأجهزة المكتشفة بالبلوتوث', style: GoogleFonts.cairo(color: Colors.white, fontSize: 16)),
+                    Text('اختر جهاز بلوتوث (BLE)', style: GoogleFonts.cairo(color: Colors.white, fontSize: 16)),
                   ],
                 ),
                 content: SizedBox(
@@ -7828,8 +8510,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                       : pState.bleDevices.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(16.0),
-                              child: Text('لم يتم العثور على أجهزة بلوتوث قريبة. تأكد من تفعيل البلوتوث بهاتفك.',
-                                  style: GoogleFonts.cairo(color: Colors.white60)),
+                              child: Text('لم يتم العثور على أجهزة بلوتوث قريبة.', style: GoogleFonts.cairo(color: Colors.white60)),
                             )
                           : ListView.separated(
                               shrinkWrap: true,
@@ -7842,31 +8523,22 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                                 final rssi = d['rssi'] ?? -100;
                                 return ListTile(
                                   leading: const Icon(Icons.devices_other, color: Color(0xFF00F2FE)),
-                                  title: Text(name.isEmpty ? 'جهاز مجهول' : name,
-                                      style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  subtitle: Text('$mac  (إشارة: $rssi dBm)',
-                                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                  onTap: () {
-                                    setState(() {
-                                      _targetMacController.text = mac;
-                                      if (name.isNotEmpty && name != 'جهاز مجهول') {
-                                        _targetNameController.text = name;
-                                      }
-                                    });
-                                    Navigator.pop(dialogCtx);
-                                  },
+                                  title: Text(name.isEmpty ? 'جهاز مجهول' : name, style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  subtitle: Text('$mac  (إشارة: $rssi dBm)', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                  onTap: () => Navigator.pop(dialogCtx, Map<String, dynamic>.from(d)),
                                 );
                               },
                             ),
                 ),
                 actions: [
-                  TextButton(
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Color(0xFF00F2FE)),
+                    tooltip: 'إعادة الفحص',
                     onPressed: () => ref.read(presenceProvider.notifier).scanBle(),
-                    child: Text('إعادة الفحص', style: GoogleFonts.cairo(color: const Color(0xFF00F2FE))),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(dialogCtx),
-                    child: Text('إغلاق', style: GoogleFonts.cairo(color: Colors.grey)),
+                    child: Text('إغلاق', style: GoogleFonts.cairo(color: Colors.white60)),
                   ),
                 ],
               ),
@@ -7877,9 +8549,8 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
     );
   }
 
-  Future<void> _showWifiScanDialog() async {
-    ref.read(presenceProvider.notifier).scanWifi();
-    showDialog(
+  Future<Map<String, dynamic>?> _showWifiScanPickerModal() async {
+    return showDialog<Map<String, dynamic>>(
       context: context,
       builder: (dialogCtx) {
         return Consumer(
@@ -7892,9 +8563,9 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 title: Row(
                   children: [
-                    const Icon(Icons.wifi_find, color: Color(0xFF00F2FE)),
+                    const Icon(Icons.wifi_find, color: Color(0xFF00FFCC)),
                     const SizedBox(width: 8),
-                    Text('أجهزة شبكة الـ Wi-Fi', style: GoogleFonts.cairo(color: Colors.white, fontSize: 16)),
+                    Text('اختر جهازاً من شبكة WiFi', style: GoogleFonts.cairo(color: Colors.white, fontSize: 16)),
                   ],
                 ),
                 content: SizedBox(
@@ -7905,17 +8576,16 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const CircularProgressIndicator(color: Color(0xFF00F2FE)),
+                              const CircularProgressIndicator(color: Color(0xFF00FFCC)),
                               const SizedBox(height: 16),
-                              Text('جاري فحص الأجهزة المتصلة بالراوتر...', style: GoogleFonts.cairo(color: Colors.white70)),
+                              Text('جاري فحص المتصلين بالشبكة (ARP)...', style: GoogleFonts.cairo(color: Colors.white70)),
                             ],
                           ),
                         )
                       : pState.wifiDevices.isEmpty
                           ? Padding(
                               padding: const EdgeInsets.all(16.0),
-                              child: Text('لم يتم العثور على أجهزة في جدول الشبكة حالياً.',
-                                  style: GoogleFonts.cairo(color: Colors.white60)),
+                              child: Text('لم يتم العثور على أجهزة متصلة بالشبكة.', style: GoogleFonts.cairo(color: Colors.white60)),
                             )
                           : ListView.separated(
                               shrinkWrap: true,
@@ -7925,30 +8595,25 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                                 final d = pState.wifiDevices[index];
                                 final ip = (d['ip'] ?? '').toString();
                                 final mac = (d['mac'] ?? '').toString();
+                                final name = (d['name'] ?? ip).toString();
                                 return ListTile(
-                                  leading: const Icon(Icons.phone_android, color: Color(0xFF00F2FE)),
-                                  title: Text('IP: $ip',
-                                      style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
-                                  subtitle: Text('MAC: $mac',
-                                      style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                  onTap: () {
-                                    setState(() {
-                                      _targetMacController.text = mac;
-                                    });
-                                    Navigator.pop(dialogCtx);
-                                  },
+                                  leading: const Icon(Icons.wifi, color: Color(0xFF00FFCC)),
+                                  title: Text(name.isEmpty ? ip : name, style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  subtitle: Text('$ip | $mac', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                  onTap: () => Navigator.pop(dialogCtx, Map<String, dynamic>.from(d)),
                                 );
                               },
                             ),
                 ),
                 actions: [
-                  TextButton(
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Color(0xFF00FFCC)),
+                    tooltip: 'إعادة الفحص',
                     onPressed: () => ref.read(presenceProvider.notifier).scanWifi(),
-                    child: Text('إعادة الفحص', style: GoogleFonts.cairo(color: const Color(0xFF00F2FE))),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(dialogCtx),
-                    child: Text('إغلاق', style: GoogleFonts.cairo(color: Colors.grey)),
+                    child: Text('إغلاق', style: GoogleFonts.cairo(color: Colors.white60)),
                   ),
                 ],
               ),
@@ -7962,25 +8627,26 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
   @override
   Widget build(BuildContext context) {
     final pState = ref.watch(presenceProvider);
-    final filesState = ref.watch(filesProvider);
 
     if (pState.config.isNotEmpty && !_initialized) {
       _syncWithConfig(pState.config);
     }
 
-    final List<String> audioFiles = [];
-    filesState.whenData((data) {
-      final list = data['files'] as List? ?? [];
-      for (var f in list) {
-        final name = f['name'] as String? ?? '';
-        final isDir = f['isDirectory'] as bool? ?? false;
-        if (!isDir && (name.endsWith('.mp3') || name.endsWith('.wav'))) {
-          audioFiles.add(name);
-        }
-      }
-    });
-
+    final config = pState.config;
     final status = pState.status;
+
+    // Devices list from config or status
+    final rawDevices = config['devices'] as List? ?? status['devices'] as List? ?? [];
+    final List<Map<String, dynamic>> devices = [];
+    for (int i = 0; i < rawDevices.length; i++) {
+      if (rawDevices[i] is Map) {
+        final d = Map<String, dynamic>.from(rawDevices[i]);
+        d['id'] = d['id'] ?? i;
+        devices.add(d);
+      }
+    }
+
+    // System summary state
     final stateStr = (status['state'] ?? 'away').toString();
     final lastRssi = status['lastRssi'] ?? -100;
     final lastSeenMs = (status['lastSeenMs'] as num?)?.toInt() ?? 0;
@@ -8015,7 +8681,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'كشف الحضور والترحيب الذكي',
+                  'كشف الحضور والترحيب الذكي (متعدد الأجهزة)',
                   style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -8024,12 +8690,12 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
           ),
           const SizedBox(height: 6),
           Text(
-            'تشغيل ملف صوتي ترحيبي تلقائياً عند عودتك للمنزل (عبر بلوتوث الهاتف أو شبكة الـ Wi-Fi)',
+            'تشغيل صوت ترحيبي مخصص لكل شخص عند وصوله للمنزل (دعم حتى 8 هواتف/ساعات عبر BLE و Wi-Fi)',
             style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12),
           ),
           const Divider(color: Colors.white12, height: 28),
 
-          // Live Status Box
+          // Live System Status Box
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -8047,13 +8713,13 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                     children: [
                       Row(
                         children: [
-                          Text('الحالة الحالية: ', style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12)),
+                          Text('حالة النظام العامة: ', style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12)),
                           Text(stateTitle, style: GoogleFonts.cairo(color: stateColor, fontWeight: FontWeight.bold, fontSize: 13)),
                         ],
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'قوة الإشارة: $lastRssi dBm  |  آخر رصد: ${(lastSeenMs / 1000).toStringAsFixed(0)} ثانية',
+                        'أقوى إشارة: $lastRssi dBm  |  آخر رصد: ${(lastSeenMs / 1000).toStringAsFixed(0)} ثانية  |  الأجهزة المعرفة: ${devices.length} / 8',
                         style: const TextStyle(color: Colors.white38, fontSize: 11),
                       ),
                     ],
@@ -8067,8 +8733,8 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
           // Master Enable Toggle
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('تفعيل نظام الترحيب والحضور', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: Text('تشغيل الصوت الترحيبي عند رصد جهازك بعد غياب', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
+            title: Text('تفعيل نظام الترحيب والحضور بالكامل', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: Text('تشغيل المقاطع الترحيبية عند رصد أي من الأجهزة المعتمدة بعد غياب', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
             value: _enabled,
             activeColor: const Color(0xFF00F2FE),
             onChanged: (val) {
@@ -8105,69 +8771,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
               }),
             ),
           ),
-          const SizedBox(height: 20),
-
-          // Target Device Fields
-          Text('الجهاز المستهدف (هاتفك أو ساعتك):', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _targetNameController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'اسم الجهاز (اختياري)',
-              labelStyle: GoogleFonts.cairo(color: Colors.white60),
-              prefixIcon: const Icon(Icons.devices, color: Color(0xFF00F2FE)),
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _targetMacController,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              labelText: 'عنوان MAC المستهدف (مثال: AA:BB:CC:DD:EE:FF)',
-              labelStyle: GoogleFonts.cairo(color: Colors.white60),
-              prefixIcon: const Icon(Icons.fingerprint, color: Color(0xFF00F2FE)),
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // Scan buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _showBleScanDialog,
-                  icon: const Icon(Icons.bluetooth_searching, size: 18),
-                  label: Text('بحث أجهزة BLE', style: GoogleFonts.cairo(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF00F2FE),
-                    side: const BorderSide(color: Color(0xFF00F2FE)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _showWifiScanDialog,
-                  icon: const Icon(Icons.wifi_find, size: 18),
-                  label: Text('فحص أجهزة الـ WiFi', style: GoogleFonts.cairo(fontSize: 12)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF00FFCC),
-                    side: const BorderSide(color: Color(0xFF00FFCC)),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Proximity RSSI Slider (for BLE / Hybrid)
           if (_mode != 2) ...[
@@ -8193,60 +8797,6 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
             const SizedBox(height: 12),
           ],
 
-          // Welcome Sound File
-          Text('ملف الترحيب الصوتي:', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            isExpanded: true,
-            dropdownColor: const Color(0xFF1C132E),
-            value: _findMatchingFile(audioFiles, _welcomeFile),
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white.withOpacity(0.04),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-            ),
-            items: audioFiles.map((file) {
-              return DropdownMenuItem<String>(
-                value: file,
-                child: Text(file, overflow: TextOverflow.ellipsis),
-              );
-            }).toList(),
-            onChanged: (val) {
-              setState(() {
-                _welcomeFile = val;
-              });
-            },
-          ),
-          const SizedBox(height: 10),
-
-          // Test Play Button
-          ElevatedButton.icon(
-            onPressed: pState.isTesting
-                ? null
-                : () async {
-                    final ok = await ref.read(presenceProvider.notifier).testWelcome();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(ok ? 'تم إرسال أمر تجربة الترحيب' : 'فشل تشغيل الصوت'),
-                          backgroundColor: ok ? Colors.green : Colors.redAccent,
-                        ),
-                      );
-                    }
-                  },
-            icon: pState.isTesting
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.volume_up, size: 18),
-            label: Text('تجربة تشغيل صوت الترحيب الآن', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF8E44AD),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-          const SizedBox(height: 20),
-
           // Volume Slider
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -8267,7 +8817,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
               });
             },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
           // Cooldown and Vacate
           Row(
@@ -8295,9 +8845,9 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                   keyboardType: TextInputType.number,
                   style: const TextStyle(color: Colors.white),
                   decoration: InputDecoration(
-                    labelText: 'مهلة الغياب (دقيقة)',
+                    labelText: 'مهلة المغادرة (دقيقة)',
                     labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
-                    helperText: 'قبل اعتبار الشخص غائباً',
+                    helperText: 'قبل احتساب الشخص غائباً',
                     helperStyle: GoogleFonts.cairo(color: Colors.white30, fontSize: 10),
                     filled: true,
                     fillColor: Colors.white.withOpacity(0.04),
@@ -8307,13 +8857,13 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Quiet Hours
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('ساعات الهدوء (عدم الإزعاج)', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
-            subtitle: Text('كتم صوت الترحيب في أوقات محددة (مثل الليل)', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
+            title: Text('ساعات الهدوء (كتم الترحيب ليلاً)', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+            subtitle: Text('كتم صوت الترحيب تلقائياً في فترات النوم أو الراحة', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
             value: _quietEnabled,
             activeColor: const Color(0xFF00F2FE),
             onChanged: (val) {
@@ -8332,7 +8882,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     title: Text('من الساعة:', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
                     trailing: Text(
-                      ':',
+                      '${_quietStart.format(context)}',
                       style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                     onTap: () async {
@@ -8352,7 +8902,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     title: Text('إلى الساعة:', style: GoogleFonts.cairo(color: Colors.white60, fontSize: 12)),
                     trailing: Text(
-                      ':',
+                      '${_quietEnd.format(context)}',
                       style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 14),
                     ),
                     onTap: () async {
@@ -8368,26 +8918,275 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
               ],
             ),
           ],
-          const SizedBox(height: 28),
+          const SizedBox(height: 16),
 
-          // Save Button
+          // Save Global Settings Button
           ElevatedButton.icon(
-            onPressed: pState.isSaving ? null : _handleSave,
+            onPressed: pState.isSaving ? null : _handleSaveGlobal,
             icon: pState.isSaving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Icon(Icons.save),
+                : const Icon(Icons.save_outlined),
             label: Text(
-              pState.isSaving ? 'جاري الحفظ...' : 'حفظ إعدادات كشف الحضور',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 15),
+              pState.isSaving ? 'جاري الحفظ...' : 'حفظ الإعدادات العامة للترحيب',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 14),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF00F2FE),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              elevation: 8,
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
+
+          const SizedBox(height: 24),
+          const Divider(color: Colors.white24, height: 1),
+          const SizedBox(height: 16),
+
+          // Devices Header & Add Button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'الأجهزة المعرفة للترحيب (${devices.length} / 8)',
+                    style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  Text(
+                    'لكل شخص ملف ترحيبي وصوت مخصص',
+                    style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 11),
+                  ),
+                ],
+              ),
+              ElevatedButton.icon(
+                onPressed: devices.length >= 8 ? null : () => _showAddOrEditPresenceDeviceDialog(),
+                icon: const Icon(Icons.add_circle, size: 18),
+                label: Text('إضافة جهاز', style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFBF5AF2),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Devices List
+          if (devices.isEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.02),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white10),
+              ),
+              child: Column(
+                children: [
+                  const Icon(Icons.devices_other, color: Colors.white24, size: 40),
+                  const SizedBox(height: 8),
+                  Text('لا توجد أجهزة معرفة للترحيب حالياً', style: GoogleFonts.cairo(color: Colors.white54, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Text('اضغط على "إضافة جهاز" لتخصيص ترحيب لصاحب كل هاتف', style: GoogleFonts.cairo(color: Colors.white30, fontSize: 11)),
+                ],
+              ),
+            ),
+          ] else ...[
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: devices.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (ctx, index) {
+                final dev = devices[index];
+                final devId = dev['id'] as int? ?? index;
+                final devName = (dev['name'] ?? 'جهاز ${index + 1}').toString();
+                final devMac = (dev['mac'] ?? '').toString();
+                final devFile = (dev['welcomeFile'] ?? '/Azan/welcome.mp3').toString();
+                final devEnabled = dev['enabled'] != false;
+                final devState = dev['state'] as int? ?? (dev['state'] == 'present' ? 1 : (dev['state'] == 'cooldown' ? 2 : 0));
+                final devRssi = dev['lastRssi'] ?? -100;
+                final devIp = (dev['lastIp'] ?? '').toString();
+
+                String statusLabel = 'غائب';
+                Color statusClr = Colors.white38;
+                IconData statusIcn = Icons.person_off_outlined;
+                if (devState == 1) {
+                  statusLabel = 'متواجد حالياً ✓';
+                  statusClr = Colors.greenAccent;
+                  statusIcn = Icons.person_pin_circle;
+                } else if (devState == 2) {
+                  statusLabel = 'فترة انتظار (Cooldown)';
+                  statusClr = const Color(0xFF00F2FE);
+                  statusIcn = Icons.hourglass_bottom;
+                }
+
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: devEnabled ? const Color(0x7316132C) : Colors.black26,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: devState == 1 ? Colors.greenAccent.withOpacity(0.5) : Colors.white.withOpacity(0.08),
+                      width: devState == 1 ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: statusClr.withOpacity(0.15),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(statusIcn, color: statusClr, size: 20),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        devName,
+                                        style: GoogleFonts.cairo(
+                                          color: devEnabled ? Colors.white : Colors.white54,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: statusClr.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        statusLabel,
+                                        style: GoogleFonts.cairo(color: statusClr, fontSize: 10, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'MAC: $devMac ${devIp.isNotEmpty ? " | IP: $devIp" : ""} ${devRssi > -100 ? " | $devRssi dBm" : ""}',
+                                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                                  textDirection: TextDirection.ltr,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: devEnabled,
+                            activeColor: const Color(0xFF00F2FE),
+                            onChanged: (val) async {
+                              await ref.read(presenceProvider.notifier).saveDevice(
+                                id: devId,
+                                name: devName,
+                                mac: devMac,
+                                welcomeFile: devFile,
+                                enabled: val,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.audio_file, color: Color(0xFF00F2FE), size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'ملف الترحيب: $devFile',
+                                style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 11),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.play_circle_outline, color: Color(0xFF00F2FE), size: 20),
+                              tooltip: 'تشغيل تجريبي',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () {
+                                ref.read(presenceProvider.notifier).testWelcome(file: devFile, volume: _volume);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('تجربة ترحيب: $devName ($devFile)'),
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 18),
+                              tooltip: 'تعديل',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () => _showAddOrEditPresenceDeviceDialog(existingDevice: dev),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                              tooltip: 'حذف',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (ctx) => Directionality(
+                                    textDirection: TextDirection.rtl,
+                                    child: AlertDialog(
+                                      backgroundColor: const Color(0xFF1C132E),
+                                      title: Text('تأكيد الحذف', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      content: Text('هل أنت متأكد من حذف جهاز "$devName" من قائمة الترحيب؟', style: GoogleFonts.cairo(color: Colors.white70)),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('إلغاء', style: GoogleFonts.cairo(color: Colors.white54))),
+                                        ElevatedButton(
+                                          style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                                          onPressed: () => Navigator.pop(ctx, true),
+                                          child: Text('حذف', style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  await ref.read(presenceProvider.notifier).deleteDevice(devId);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('تم حذف جهاز "$devName"')),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
