@@ -18,13 +18,7 @@
 #include <algorithm>
 
 static PresenceConfig currentConfig;
-static PresenceState currentState = PRESENCE_AWAY;
-static unsigned long lastSeenTime = 0;
-static unsigned long lastTriggerTime = 0;
 static unsigned long lastScanTime = 0;
-static unsigned long awaySinceTime = 0;
-static int lastDetectedRssi = -100;
-static String lastKnownIp = "";
 static bool bleInitialized = false;
 static SemaphoreHandle_t presenceMutex = NULL;
 
@@ -80,44 +74,12 @@ class PresenceScanCallbacks : public BLEAdvertisedDeviceCallbacks {
 
 static PresenceScanCallbacks* scanCallbacks = nullptr;
 
-static void loadPresenceConfig() {
-    Preferences prefs;
-    prefs.begin("presence", true);
-    currentConfig.enabled = prefs.getBool("enabled", false);
-    currentConfig.mode = prefs.getUChar("mode", 0); // 0 = Hybrid, 1 = BLE, 2 = WiFi
-    
-    // Support unified targetMac, fallback to legacy bleMac or wifiMac
-    currentConfig.targetMac = prefs.getString("targetMac", "");
-    if (currentConfig.targetMac.length() == 0) {
-        currentConfig.targetMac = prefs.getString("bleMac", "");
-    }
-    currentConfig.targetName = prefs.getString("targetName", "");
-    if (currentConfig.targetName.length() == 0) {
-        currentConfig.targetName = prefs.getString("bleName", "");
-    }
-
-    currentConfig.rssiThreshold = (int8_t)prefs.getChar("rssiThresh", -70);
-    currentConfig.welcomeFile = prefs.getString("file", "/Azan/welcome.mp3");
-    currentConfig.volume = prefs.getUChar("vol", 20);
-    currentConfig.cooldownMinutes = prefs.getUInt("cooldown", 30);
-    currentConfig.vacateMinutes = prefs.getUInt("vacate", 10);
-    currentConfig.quietHoursEnabled = prefs.getBool("quietEn", false);
-    currentConfig.quietStartHour = prefs.getUChar("qStartH", 23);
-    currentConfig.quietStartMin = prefs.getUChar("qStartM", 0);
-    currentConfig.quietEndHour = prefs.getUChar("qEndH", 7);
-    currentConfig.quietEndMin = prefs.getUChar("qEndM", 0);
-    prefs.end();
-}
-
 static void savePresenceConfigInternal() {
     Preferences prefs;
     prefs.begin("presence", false);
     prefs.putBool("enabled", currentConfig.enabled);
     prefs.putUChar("mode", currentConfig.mode);
-    prefs.putString("targetMac", currentConfig.targetMac);
-    prefs.putString("targetName", currentConfig.targetName);
     prefs.putChar("rssiThresh", (int8_t)currentConfig.rssiThreshold);
-    prefs.putString("file", currentConfig.welcomeFile);
     prefs.putUChar("vol", currentConfig.volume);
     prefs.putUInt("cooldown", currentConfig.cooldownMinutes);
     prefs.putUInt("vacate", currentConfig.vacateMinutes);
@@ -126,7 +88,99 @@ static void savePresenceConfigInternal() {
     prefs.putUChar("qStartM", currentConfig.quietStartMin);
     prefs.putUChar("qEndH", currentConfig.quietEndHour);
     prefs.putUChar("qEndM", currentConfig.quietEndMin);
+
+    uint8_t count = currentConfig.deviceCount;
+    if (count > MAX_PRESENCE_DEVICES) count = MAX_PRESENCE_DEVICES;
+    prefs.putUChar("devCount", count);
+
+    for (uint8_t i = 0; i < count; i++) {
+        char key[16];
+        snprintf(key, sizeof(key), "d%u_en", i);
+        prefs.putBool(key, currentConfig.devices[i].enabled);
+
+        snprintf(key, sizeof(key), "d%u_name", i);
+        prefs.putString(key, currentConfig.devices[i].name);
+
+        snprintf(key, sizeof(key), "d%u_mac", i);
+        prefs.putString(key, currentConfig.devices[i].mac);
+
+        snprintf(key, sizeof(key), "d%u_file", i);
+        prefs.putString(key, currentConfig.devices[i].welcomeFile);
+    }
     prefs.end();
+}
+
+static void loadPresenceConfig() {
+    Preferences prefs;
+    prefs.begin("presence", true);
+    currentConfig.enabled = prefs.getBool("enabled", false);
+    currentConfig.mode = prefs.getUChar("mode", 0); // 0 = Hybrid, 1 = BLE, 2 = WiFi
+    currentConfig.rssiThreshold = (int8_t)prefs.getChar("rssiThresh", -70);
+    currentConfig.volume = prefs.getUChar("vol", 20);
+    currentConfig.cooldownMinutes = prefs.getUInt("cooldown", 30);
+    currentConfig.vacateMinutes = prefs.getUInt("vacate", 10);
+    currentConfig.quietHoursEnabled = prefs.getBool("quietEn", false);
+    currentConfig.quietStartHour = prefs.getUChar("qStartH", 23);
+    currentConfig.quietStartMin = prefs.getUChar("qStartM", 0);
+    currentConfig.quietEndHour = prefs.getUChar("qEndH", 7);
+    currentConfig.quietEndMin = prefs.getUChar("qEndM", 0);
+
+    memset(currentConfig.devices, 0, sizeof(currentConfig.devices));
+
+    if (prefs.isKey("devCount")) {
+        uint8_t count = prefs.getUChar("devCount", 0);
+        if (count > MAX_PRESENCE_DEVICES) count = MAX_PRESENCE_DEVICES;
+        currentConfig.deviceCount = count;
+
+        for (uint8_t i = 0; i < count; i++) {
+            char key[16];
+            snprintf(key, sizeof(key), "d%u_en", i);
+            currentConfig.devices[i].enabled = prefs.getBool(key, true);
+
+            snprintf(key, sizeof(key), "d%u_name", i);
+            String dName = prefs.getString(key, "هاتف " + String(i + 1));
+            strncpy(currentConfig.devices[i].name, dName.c_str(), sizeof(currentConfig.devices[i].name) - 1);
+
+            snprintf(key, sizeof(key), "d%u_mac", i);
+            String dMac = prefs.getString(key, "");
+            dMac.toLowerCase();
+            strncpy(currentConfig.devices[i].mac, dMac.c_str(), sizeof(currentConfig.devices[i].mac) - 1);
+
+            snprintf(key, sizeof(key), "d%u_file", i);
+            String dFile = prefs.getString(key, "/Azan/welcome.mp3");
+            strncpy(currentConfig.devices[i].welcomeFile, dFile.c_str(), sizeof(currentConfig.devices[i].welcomeFile) - 1);
+
+            currentConfig.devices[i].state = PRESENCE_PRESENT; // Prevent immediate boot trigger
+            currentConfig.devices[i].lastTriggerTime = millis();
+            currentConfig.devices[i].lastRssi = -100;
+        }
+        prefs.end();
+    } else {
+        // Backward compatibility migration from single target config
+        String legacyMac = prefs.getString("targetMac", "");
+        if (legacyMac.length() == 0) legacyMac = prefs.getString("bleMac", "");
+        String legacyName = prefs.getString("targetName", "");
+        if (legacyName.length() == 0) legacyName = prefs.getString("bleName", "جهازي الأساسي");
+        String legacyFile = prefs.getString("file", "/Azan/welcome.mp3");
+        prefs.end();
+
+        legacyMac.toLowerCase();
+        if (legacyMac.length() >= 11) {
+            currentConfig.deviceCount = 1;
+            currentConfig.devices[0].enabled = true;
+            strncpy(currentConfig.devices[0].name, legacyName.c_str(), sizeof(currentConfig.devices[0].name) - 1);
+            strncpy(currentConfig.devices[0].mac, legacyMac.c_str(), sizeof(currentConfig.devices[0].mac) - 1);
+            strncpy(currentConfig.devices[0].welcomeFile, legacyFile.c_str(), sizeof(currentConfig.devices[0].welcomeFile) - 1);
+            currentConfig.devices[0].state = PRESENCE_PRESENT;
+            currentConfig.devices[0].lastTriggerTime = millis();
+            currentConfig.devices[0].lastRssi = -100;
+
+            savePresenceConfigInternal();
+            Serial.printf("[Presence] Migrated legacy target [%s] to Device 0.\n", legacyMac.c_str());
+        } else {
+            currentConfig.deviceCount = 0;
+        }
+    }
 }
 
 void initPresenceManager() {
@@ -134,9 +188,7 @@ void initPresenceManager() {
     if (bleScanMutex == NULL) bleScanMutex = xSemaphoreCreateMutex();
     lockPresence();
     loadPresenceConfig();
-    lastTriggerTime = millis();     // Prevent firing welcome immediately at boot
-    lastScanTime = millis() + 20000; // Grace period: 20 seconds after boot before first presence check
-    currentState = PRESENCE_PRESENT; // Default to PRESENT at boot so existing devices don't double-trigger
+    lastScanTime = millis() + 20000; // 20s grace period after boot
     unlockPresence();
 }
 
@@ -149,20 +201,92 @@ PresenceConfig getPresenceConfig() {
 
 void setPresenceConfig(const PresenceConfig& cfg) {
     lockPresence();
-    currentConfig = cfg;
+    currentConfig.enabled = cfg.enabled;
+    currentConfig.mode = cfg.mode;
+    currentConfig.rssiThreshold = cfg.rssiThreshold;
+    currentConfig.volume = cfg.volume;
+    currentConfig.cooldownMinutes = cfg.cooldownMinutes;
+    currentConfig.vacateMinutes = cfg.vacateMinutes;
+    currentConfig.quietHoursEnabled = cfg.quietHoursEnabled;
+    currentConfig.quietStartHour = cfg.quietStartHour;
+    currentConfig.quietStartMin = cfg.quietStartMin;
+    currentConfig.quietEndHour = cfg.quietEndHour;
+    currentConfig.quietEndMin = cfg.quietEndMin;
     savePresenceConfigInternal();
     unlockPresence();
 }
 
+bool addOrUpdatePresenceDevice(int id, const char* name, const char* mac, const char* welcomeFile, bool enabled) {
+    if (!mac || strlen(mac) < 11) return false;
+    lockPresence();
+
+    int targetIdx = -1;
+    if (id >= 0 && id < currentConfig.deviceCount) {
+        targetIdx = id;
+    } else if (currentConfig.deviceCount < MAX_PRESENCE_DEVICES) {
+        targetIdx = currentConfig.deviceCount;
+        currentConfig.deviceCount++;
+    } else {
+        // List full
+        unlockPresence();
+        return false;
+    }
+
+    PresenceDevice& dev = currentConfig.devices[targetIdx];
+    dev.enabled = enabled;
+    if (name && strlen(name) > 0) {
+        strncpy(dev.name, name, sizeof(dev.name) - 1);
+        dev.name[sizeof(dev.name) - 1] = '\0';
+    } else {
+        snprintf(dev.name, sizeof(dev.name), "هاتف %d", targetIdx + 1);
+    }
+
+    String sMac = String(mac);
+    sMac.toLowerCase();
+    strncpy(dev.mac, sMac.c_str(), sizeof(dev.mac) - 1);
+    dev.mac[sizeof(dev.mac) - 1] = '\0';
+
+    if (welcomeFile && strlen(welcomeFile) > 0) {
+        strncpy(dev.welcomeFile, welcomeFile, sizeof(dev.welcomeFile) - 1);
+        dev.welcomeFile[sizeof(dev.welcomeFile) - 1] = '\0';
+    } else {
+        strncpy(dev.welcomeFile, "/Azan/welcome.mp3", sizeof(dev.welcomeFile) - 1);
+    }
+
+    dev.state = PRESENCE_PRESENT; // Start as present to prevent accidental immediate firing
+    dev.lastTriggerTime = millis();
+    dev.lastSeenTime = millis();
+    dev.lastRssi = -100;
+
+    savePresenceConfigInternal();
+    unlockPresence();
+    return true;
+}
+
+bool deletePresenceDevice(int id) {
+    lockPresence();
+    if (id < 0 || id >= currentConfig.deviceCount) {
+        unlockPresence();
+        return false;
+    }
+
+    for (int i = id; i < currentConfig.deviceCount - 1; i++) {
+        currentConfig.devices[i] = currentConfig.devices[i + 1];
+    }
+    currentConfig.deviceCount--;
+    memset(&currentConfig.devices[currentConfig.deviceCount], 0, sizeof(PresenceDevice));
+
+    savePresenceConfigInternal();
+    unlockPresence();
+    return true;
+}
+
 String getPresenceConfigJson() {
     lockPresence();
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(4096);
     doc["enabled"] = currentConfig.enabled;
     doc["mode"] = currentConfig.mode;
-    doc["targetMac"] = currentConfig.targetMac;
-    doc["targetName"] = currentConfig.targetName;
     doc["rssiThresh"] = currentConfig.rssiThreshold;
-    doc["welcomeFile"] = currentConfig.welcomeFile;
     doc["volume"] = currentConfig.volume;
     doc["cooldownMinutes"] = currentConfig.cooldownMinutes;
     doc["vacateMinutes"] = currentConfig.vacateMinutes;
@@ -171,6 +295,28 @@ String getPresenceConfigJson() {
     doc["qStartM"] = currentConfig.quietStartMin;
     doc["qEndH"] = currentConfig.quietEndHour;
     doc["qEndM"] = currentConfig.quietEndMin;
+
+    JsonArray devs = doc.createNestedArray("devices");
+    for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+        JsonObject d = devs.createNestedObject();
+        d["id"] = i;
+        d["enabled"] = currentConfig.devices[i].enabled;
+        d["name"] = currentConfig.devices[i].name;
+        d["mac"] = currentConfig.devices[i].mac;
+        d["welcomeFile"] = currentConfig.devices[i].welcomeFile;
+    }
+
+    // For backward-compatibility with older frontends
+    if (currentConfig.deviceCount > 0) {
+        doc["targetMac"] = currentConfig.devices[0].mac;
+        doc["targetName"] = currentConfig.devices[0].name;
+        doc["welcomeFile"] = currentConfig.devices[0].welcomeFile;
+    } else {
+        doc["targetMac"] = "";
+        doc["targetName"] = "";
+        doc["welcomeFile"] = "";
+    }
+
     String out;
     serializeJson(doc, out);
     unlockPresence();
@@ -178,19 +324,14 @@ String getPresenceConfigJson() {
 }
 
 bool savePresenceConfigFromJson(const String& json) {
-    DynamicJsonDocument doc(1024);
+    DynamicJsonDocument doc(4096);
     DeserializationError err = deserializeJson(doc, json);
     if (err) return false;
 
     lockPresence();
     if (doc.containsKey("enabled")) currentConfig.enabled = doc["enabled"];
     if (doc.containsKey("mode")) currentConfig.mode = doc["mode"];
-    if (doc.containsKey("targetMac")) currentConfig.targetMac = doc["targetMac"].as<String>();
-    else if (doc.containsKey("bleMac")) currentConfig.targetMac = doc["bleMac"].as<String>();
-    if (doc.containsKey("targetName")) currentConfig.targetName = doc["targetName"].as<String>();
-    else if (doc.containsKey("bleName")) currentConfig.targetName = doc["bleName"].as<String>();
     if (doc.containsKey("rssiThresh")) currentConfig.rssiThreshold = doc["rssiThresh"];
-    if (doc.containsKey("welcomeFile")) currentConfig.welcomeFile = doc["welcomeFile"].as<String>();
     if (doc.containsKey("volume")) currentConfig.volume = doc["volume"];
     if (doc.containsKey("cooldownMinutes")) currentConfig.cooldownMinutes = doc["cooldownMinutes"];
     if (doc.containsKey("vacateMinutes")) currentConfig.vacateMinutes = doc["vacateMinutes"];
@@ -199,6 +340,25 @@ bool savePresenceConfigFromJson(const String& json) {
     if (doc.containsKey("qStartM")) currentConfig.quietStartMin = doc["qStartM"];
     if (doc.containsKey("qEndH")) currentConfig.quietEndHour = doc["qEndH"];
     if (doc.containsKey("qEndM")) currentConfig.quietEndMin = doc["qEndM"];
+
+    if (doc.containsKey("devices") && doc["devices"].is<JsonArray>()) {
+        JsonArray arr = doc["devices"].as<JsonArray>();
+        uint8_t count = 0;
+        for (JsonObject d : arr) {
+            if (count >= MAX_PRESENCE_DEVICES) break;
+            currentConfig.devices[count].enabled = d["enabled"] | true;
+            String name = d["name"] | "";
+            strncpy(currentConfig.devices[count].name, name.c_str(), sizeof(currentConfig.devices[count].name) - 1);
+            String mac = d["mac"] | "";
+            mac.toLowerCase();
+            strncpy(currentConfig.devices[count].mac, mac.c_str(), sizeof(currentConfig.devices[count].mac) - 1);
+            String file = d["welcomeFile"] | "/Azan/welcome.mp3";
+            strncpy(currentConfig.devices[count].welcomeFile, file.c_str(), sizeof(currentConfig.devices[count].welcomeFile) - 1);
+            count++;
+        }
+        currentConfig.deviceCount = count;
+    }
+
     savePresenceConfigInternal();
     unlockPresence();
     return true;
@@ -206,17 +366,49 @@ bool savePresenceConfigFromJson(const String& json) {
 
 String getPresenceStatusJson() {
     lockPresence();
-    DynamicJsonDocument doc(512);
-    String stateStr = "away";
-    if (currentState == PRESENCE_PRESENT) stateStr = "present";
-    else if (currentState == PRESENCE_COOLDOWN) stateStr = "cooldown";
+    DynamicJsonDocument doc(4096);
+    unsigned long now = millis();
 
-    doc["state"] = stateStr;
-    doc["lastRssi"] = lastDetectedRssi;
-    doc["lastSeenMs"] = lastSeenTime > 0 ? (millis() - lastSeenTime) : 0;
-    doc["lastTriggerMs"] = lastTriggerTime > 0 ? (millis() - lastTriggerTime) : 0;
-    doc["targetMac"] = currentConfig.targetMac;
-    doc["lastKnownIp"] = lastKnownIp;
+    bool anyPresent = false;
+    for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+        if (currentConfig.devices[i].enabled && currentConfig.devices[i].state == PRESENCE_PRESENT) {
+            anyPresent = true;
+            break;
+        }
+    }
+    doc["state"] = anyPresent ? "present" : "away";
+
+    JsonArray devs = doc.createNestedArray("devices");
+    for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+        const PresenceDevice& dev = currentConfig.devices[i];
+        JsonObject d = devs.createNestedObject();
+        d["id"] = i;
+        d["name"] = dev.name;
+        d["mac"] = dev.mac;
+        d["enabled"] = dev.enabled;
+        d["welcomeFile"] = dev.welcomeFile;
+        d["state"] = (dev.state == PRESENCE_PRESENT) ? "present" : (dev.state == PRESENCE_COOLDOWN ? "cooldown" : "away");
+        d["lastSeenMs"] = dev.lastSeenTime > 0 ? (now - dev.lastSeenTime) : 0;
+        d["lastTriggerMs"] = dev.lastTriggerTime > 0 ? (now - dev.lastTriggerTime) : 0;
+        d["lastRssi"] = dev.lastRssi;
+        d["lastIp"] = dev.lastIp;
+    }
+
+    // Legacy fields
+    if (currentConfig.deviceCount > 0) {
+        doc["lastRssi"] = currentConfig.devices[0].lastRssi;
+        doc["lastSeenMs"] = currentConfig.devices[0].lastSeenTime > 0 ? (now - currentConfig.devices[0].lastSeenTime) : 0;
+        doc["lastTriggerMs"] = currentConfig.devices[0].lastTriggerTime > 0 ? (now - currentConfig.devices[0].lastTriggerTime) : 0;
+        doc["targetMac"] = currentConfig.devices[0].mac;
+        doc["lastKnownIp"] = currentConfig.devices[0].lastIp;
+    } else {
+        doc["lastRssi"] = -100;
+        doc["lastSeenMs"] = 0;
+        doc["lastTriggerMs"] = 0;
+        doc["targetMac"] = "";
+        doc["lastKnownIp"] = "";
+    }
+
     String out;
     serializeJson(doc, out);
     unlockPresence();
@@ -242,7 +434,6 @@ static bool isCurrentTimeInQuietHours(const PresenceConfig& cfg) {
     }
 }
 
-// Helper: guess vendor or device type from MAC address
 static String getDeviceVendorName(const uint8_t* mac) {
     if (mac[0] & 0x02) {
         return "هاتف ذكي (عنوان خاص / Private MAC)";
@@ -327,7 +518,7 @@ String scanNetworkDevicesJson() {
     String myMac = WiFi.macAddress();
     myMac.toLowerCase();
 
-    // 1. Add current ESP32 device
+    // 1. ESP32 device
     DiscoveredNetworkDevice selfDev;
     selfDev.ip = myIp.toString();
     selfDev.mac = myMac;
@@ -335,7 +526,7 @@ String scanNetworkDevicesJson() {
     selfDev.type = "self";
     list.push_back(selfDev);
 
-    // 2. Add gateway (Router / Mobile Hotspot)
+    // 2. Gateway
     if (gwIp != IPAddress(0,0,0,0) && gwIp != myIp) {
         DiscoveredNetworkDevice gwDev;
         gwDev.ip = gwIp.toString();
@@ -355,7 +546,7 @@ String scanNetworkDevicesJson() {
         list.push_back(gwDev);
     }
 
-    // 3. Scan local subnet (/24) in batches using UDP ping to trigger ARP resolution
+    // 3. Subnet scan
     if (myIp != IPAddress(0,0,0,0)) {
         WiFiUDP udp;
         udp.begin(0);
@@ -371,7 +562,6 @@ String scanNetworkDevicesJson() {
             }
             vTaskDelay(pdMS_TO_TICKS(35));
 
-            // Harvest entries from lwIP ARP table
             for (size_t slot = 0; slot < ARP_TABLE_SIZE; slot++) {
                 ip4_addr_t *entryIp = nullptr;
                 struct netif *entryNif = nullptr;
@@ -410,7 +600,7 @@ String scanNetworkDevicesJson() {
         udp.stop();
     }
 
-    // 4. In SoftAP mode, include connected stations
+    // 4. SoftAP mode stations
     if (WiFi.getMode() & WIFI_MODE_AP) {
         wifi_sta_list_t staList;
         esp_wifi_ap_get_sta_list(&staList);
@@ -473,7 +663,6 @@ void triggerBleScanAsync(int durationSeconds) {
         pBLEScan->setAdvertisedDeviceCallbacks(scanCallbacks);
     }
     pBLEScan->setActiveScan(true);
-    // Balanced duty cycle: 50% so Wi-Fi does not get packet-loss
     pBLEScan->setInterval(160);
     pBLEScan->setWindow(80);
 
@@ -513,27 +702,51 @@ String scanNearbyBleDevicesJson(int durationSeconds) {
     return getDiscoveredBleDevicesJson();
 }
 
-static bool checkWifiPresence(const String& targetMac, String& lastIp) {
-    if (targetMac.length() < 11) return false;
-    String tMac = targetMac;
-    tMac.toLowerCase();
+void testPlayWelcome(const char* file, uint8_t volume) {
+    lockPresence();
+    String playFile = "";
+    if (file && strlen(file) > 0) {
+        playFile = String(file);
+    } else if (currentConfig.deviceCount > 0 && strlen(currentConfig.devices[0].welcomeFile) > 0) {
+        playFile = String(currentConfig.devices[0].welcomeFile);
+    } else {
+        playFile = "/Azan/welcome.mp3";
+    }
+    uint8_t vol = (volume > 0) ? volume : currentConfig.volume;
+    unlockPresence();
 
-    // 1. SoftAP connected station check
+    if (playFile.length() > 0) {
+        audioManager.setAudioDescription("تجربة ملف الترحيب: " + playFile);
+        sendPlayCommand(playFile.c_str(), 1, 0, vol);
+    }
+}
+
+// Single-pass Wi-Fi Presence matching across ALL devices
+static void checkWifiPresenceMulti(PresenceConfig& cfg, bool* matchedFlags) {
+    for (uint8_t i = 0; i < cfg.deviceCount; i++) matchedFlags[i] = false;
+    if (cfg.deviceCount == 0) return;
+
+    // 1. SoftAP station list
     if (WiFi.getMode() & WIFI_MODE_AP) {
         wifi_sta_list_t staList;
-        esp_wifi_ap_get_sta_list(&staList);
-        for (int i = 0; i < staList.num; i++) {
-            char mBuf[18];
-            snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
-                     staList.sta[i].mac[0], staList.sta[i].mac[1], staList.sta[i].mac[2],
-                     staList.sta[i].mac[3], staList.sta[i].mac[4], staList.sta[i].mac[5]);
-            if (tMac.equalsIgnoreCase(mBuf)) return true;
+        if (esp_wifi_ap_get_sta_list(&staList) == ESP_OK) {
+            for (int s = 0; s < staList.num; s++) {
+                char mBuf[18];
+                snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
+                         staList.sta[s].mac[0], staList.sta[s].mac[1], staList.sta[s].mac[2],
+                         staList.sta[s].mac[3], staList.sta[s].mac[4], staList.sta[s].mac[5]);
+                for (uint8_t d = 0; d < cfg.deviceCount; d++) {
+                    if (cfg.devices[d].enabled && strcasecmp(cfg.devices[d].mac, mBuf) == 0) {
+                        matchedFlags[d] = true;
+                    }
+                }
+            }
         }
     }
 
-    if (WiFi.status() != WL_CONNECTED) return false;
+    if (WiFi.status() != WL_CONNECTED) return;
 
-    // 2. Gateway match check (e.g. mobile hotspot)
+    // 2. Gateway match (e.g. phone is hotspot gateway)
     IPAddress gw = WiFi.gatewayIP();
     if (gw != IPAddress(0,0,0,0)) {
         ip4_addr_t gw4;
@@ -545,14 +758,16 @@ static bool checkWifiPresence(const String& targetMac, String& lastIp) {
             snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
                      eth_ret->addr[0], eth_ret->addr[1], eth_ret->addr[2],
                      eth_ret->addr[3], eth_ret->addr[4], eth_ret->addr[5]);
-            if (tMac.equalsIgnoreCase(mBuf)) {
-                lastIp = gw.toString();
-                return true;
+            for (uint8_t d = 0; d < cfg.deviceCount; d++) {
+                if (cfg.devices[d].enabled && strcasecmp(cfg.devices[d].mac, mBuf) == 0) {
+                    matchedFlags[d] = true;
+                    strncpy(cfg.devices[d].lastIp, gw.toString().c_str(), sizeof(cfg.devices[d].lastIp) - 1);
+                }
             }
         }
     }
 
-    // 3. Fast check against current ARP cache
+    // 3. Scan current lwIP ARP table
     for (size_t slot = 0; slot < ARP_TABLE_SIZE; slot++) {
         ip4_addr_t *entryIp = nullptr;
         struct netif *entryNif = nullptr;
@@ -562,56 +777,47 @@ static bool checkWifiPresence(const String& targetMac, String& lastIp) {
             snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
                      entryEth->addr[0], entryEth->addr[1], entryEth->addr[2],
                      entryEth->addr[3], entryEth->addr[4], entryEth->addr[5]);
-            if (tMac.equalsIgnoreCase(mBuf)) {
-                char ipBuf[16];
-                snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d",
-                         ip4_addr1(entryIp), ip4_addr2(entryIp), ip4_addr3(entryIp), ip4_addr4(entryIp));
-                lastIp = String(ipBuf);
-                return true;
+            for (uint8_t d = 0; d < cfg.deviceCount; d++) {
+                if (cfg.devices[d].enabled && strcasecmp(cfg.devices[d].mac, mBuf) == 0) {
+                    matchedFlags[d] = true;
+                    char ipBuf[16];
+                    snprintf(ipBuf, sizeof(ipBuf), "%d.%d.%d.%d",
+                             ip4_addr1(entryIp), ip4_addr2(entryIp), ip4_addr3(entryIp), ip4_addr4(entryIp));
+                    strncpy(cfg.devices[d].lastIp, ipBuf, sizeof(cfg.devices[d].lastIp) - 1);
+                }
             }
         }
     }
 
-    // 4. If lastIp is known, probe it with UDP ping to trigger ARP refresh
-    if (lastIp.length() > 0) {
-        IPAddress tip;
-        if (tip.fromString(lastIp)) {
-            ip4_addr_t tip4;
-            tip4.addr = (uint32_t)tip;
-            etharp_request(netif_default, &tip4);
+    // 4. For any device that was NOT found in ARP cache but has a known IP, send ping to wake cache
+    for (uint8_t d = 0; d < cfg.deviceCount; d++) {
+        if (cfg.devices[d].enabled && !matchedFlags[d] && strlen(cfg.devices[d].lastIp) > 0) {
+            IPAddress tip;
+            if (tip.fromString(cfg.devices[d].lastIp)) {
+                ip4_addr_t tip4;
+                tip4.addr = (uint32_t)tip;
+                etharp_request(netif_default, &tip4);
 
-            WiFiUDP udp;
-            udp.begin(0);
-            udp.beginPacket(tip, 9);
-            udp.write(0);
-            udp.endPacket();
-            udp.stop();
+                WiFiUDP udp;
+                udp.begin(0);
+                udp.beginPacket(tip, 9);
+                udp.write(0);
+                udp.endPacket();
+                udp.stop();
 
-            vTaskDelay(pdMS_TO_TICKS(50));
-
-            struct eth_addr *eth_ret = nullptr;
-            const ip4_addr_t *ip_ret = nullptr;
-            if (etharp_find_addr(netif_default, &tip4, &eth_ret, &ip_ret) >= 0 && eth_ret != nullptr) {
-                char mBuf[18];
-                snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
-                         eth_ret->addr[0], eth_ret->addr[1], eth_ret->addr[2],
-                         eth_ret->addr[3], eth_ret->addr[4], eth_ret->addr[5]);
-                if (tMac.equalsIgnoreCase(mBuf)) return true;
+                struct eth_addr *eth_ret = nullptr;
+                const ip4_addr_t *ip_ret = nullptr;
+                if (etharp_find_addr(netif_default, &tip4, &eth_ret, &ip_ret) >= 0 && eth_ret != nullptr) {
+                    char mBuf[18];
+                    snprintf(mBuf, sizeof(mBuf), "%02x:%02x:%02x:%02x:%02x:%02x",
+                             eth_ret->addr[0], eth_ret->addr[1], eth_ret->addr[2],
+                             eth_ret->addr[3], eth_ret->addr[4], eth_ret->addr[5]);
+                    if (strcasecmp(cfg.devices[d].mac, mBuf) == 0) {
+                        matchedFlags[d] = true;
+                    }
+                }
             }
         }
-    }
-
-    return false;
-}
-
-void testPlayWelcome() {
-    lockPresence();
-    String file = currentConfig.welcomeFile;
-    uint8_t vol = currentConfig.volume;
-    unlockPresence();
-
-    if (file.length() > 0) {
-        sendPlayCommand(file.c_str(), 0, 0, vol);
     }
 }
 
@@ -620,58 +826,76 @@ void updatePresenceManager() {
     PresenceConfig cfg = currentConfig;
     unlockPresence();
 
-    if (!cfg.enabled) {
-        currentState = PRESENCE_AWAY;
+    if (!cfg.enabled || cfg.deviceCount == 0) {
         return;
     }
 
     // Audio protection: never run presence scans or triggers while ANY audio is playing
     if (audioManager.getState() != AUDIO_IDLE) {
-        // While Adhan, Iqama, Quran, or other audio is playing, do NOT let presence timer expire
-        if (currentState == PRESENCE_PRESENT) {
-            lastSeenTime = millis();
+        lockPresence();
+        unsigned long n = millis();
+        for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+            if (currentConfig.devices[i].state == PRESENCE_PRESENT) {
+                currentConfig.devices[i].lastSeenTime = n;
+            }
         }
+        unlockPresence();
         return;
     }
 
-    // Wi-Fi disconnect protection: if relying on Wi-Fi and ESP itself is offline,
-    // do NOT assume the user departed!
+    // Wi-Fi disconnect protection
     if ((cfg.mode == 0 || cfg.mode == 2) && WiFi.status() != WL_CONNECTED) {
-        if (currentState == PRESENCE_PRESENT) {
-            lastSeenTime = millis();
+        lockPresence();
+        unsigned long n = millis();
+        for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+            if (currentConfig.devices[i].state == PRESENCE_PRESENT) {
+                currentConfig.devices[i].lastSeenTime = n;
+            }
         }
+        unlockPresence();
         return;
     }
 
     unsigned long now = millis();
-    // Scan every 15 seconds
     if (now - lastScanTime < 15000) {
         return;
     }
     lastScanTime = now;
 
-    // 1. Wi-Fi Presence Check (zero heap allocation, instantaneous)
-    bool wifiMatched = false;
+    bool wifiMatched[MAX_PRESENCE_DEVICES] = {false};
+    bool bleMatched[MAX_PRESENCE_DEVICES] = {false};
+    int devRssi[MAX_PRESENCE_DEVICES];
+    for (uint8_t i = 0; i < MAX_PRESENCE_DEVICES; i++) devRssi[i] = -100;
+
+    // 1. Wi-Fi check (single pass across all devices)
     if (cfg.mode == 0 || cfg.mode == 2) {
-        wifiMatched = checkWifiPresence(cfg.targetMac, lastKnownIp);
+        checkWifiPresenceMulti(cfg, wifiMatched);
     }
 
-    // 2. BLE Proximity Check
-    bool bleMatched = false;
-    int detectedRssi = -100;
+    // 2. BLE check (single pass across all devices)
+    bool needBle = false;
+    if (cfg.mode == 1) {
+        needBle = true;
+    } else if (cfg.mode == 0) {
+        // Hybrid: only need BLE if at least one device wasn't seen on Wi-Fi
+        for (uint8_t i = 0; i < cfg.deviceCount; i++) {
+            if (cfg.devices[i].enabled && !wifiMatched[i] && strlen(cfg.devices[i].mac) > 0) {
+                needBle = true;
+                break;
+            }
+        }
+    }
 
-    // Only invoke BLE if explicitly in BLE mode OR (Hybrid and Wi-Fi not matched),
-    // and never block the 2.4GHz radio with BLE scanning while Setup AP is active in offline mode
     bool setupApOffline = (WiFi.status() != WL_CONNECTED) && (WiFi.getMode() & WIFI_MODE_AP);
-    if (!setupApOffline && (cfg.mode == 1 || (cfg.mode == 0 && !wifiMatched)) && (cfg.targetMac.length() > 0 || cfg.targetName.length() > 0)) {
+    if (!setupApOffline && needBle) {
         if (!bleInitialized) {
             BLEDevice::init("VivoSmart-Presence");
             bleInitialized = true;
         }
         BLEScan* pScan = BLEDevice::getScan();
-        pScan->setActiveScan(false); // passive is fast & friendly to Wi-Fi
+        pScan->setActiveScan(false);
         pScan->setInterval(200);
-        pScan->setWindow(60);        // 30% duty cycle
+        pScan->setWindow(60);
 
         BLEScanResults results = pScan->start(1, false);
         int count = results.getCount();
@@ -680,75 +904,81 @@ void updatePresenceManager() {
             String devMac = String(dev.getAddress().toString().c_str());
             devMac.toLowerCase();
             String devName = dev.haveName() ? String(dev.getName().c_str()) : "";
-            int devRssi = dev.getRSSI();
+            int rssi = dev.getRSSI();
 
-            bool macMatch = (cfg.targetMac.length() > 0 && devMac.equalsIgnoreCase(cfg.targetMac));
-            bool nameMatch = (cfg.targetName.length() > 0 && devName.length() > 0 && devName.indexOf(cfg.targetName) >= 0);
-
-            if (macMatch || nameMatch) {
-                if (devRssi >= cfg.rssiThreshold) {
-                    bleMatched = true;
-                    detectedRssi = devRssi;
-                    break;
+            for (uint8_t d = 0; d < cfg.deviceCount; d++) {
+                if (!cfg.devices[d].enabled) continue;
+                bool mMatch = (strlen(cfg.devices[d].mac) > 0 && devMac.equalsIgnoreCase(cfg.devices[d].mac));
+                bool nMatch = (strlen(cfg.devices[d].name) > 0 && devName.length() > 0 && devName.indexOf(cfg.devices[d].name) >= 0);
+                if (mMatch || nMatch) {
+                    if (rssi >= cfg.rssiThreshold) {
+                        bleMatched[d] = true;
+                        devRssi[d] = rssi;
+                    }
                 }
             }
         }
         pScan->clearResults();
     }
 
-    // 3. Final Decision Logic
-    bool isPresentNow = false;
-    if (cfg.mode == 0) {
-        // Hybrid: Wi-Fi presence OR BLE proximity
-        isPresentNow = wifiMatched || (bleMatched && detectedRssi >= cfg.rssiThreshold);
-    } else if (cfg.mode == 1) {
-        // BLE only
-        isPresentNow = bleMatched && (detectedRssi >= cfg.rssiThreshold);
-    } else if (cfg.mode == 2) {
-        // Wi-Fi only
-        isPresentNow = wifiMatched;
-    }
+    // 3. Process each device independently
+    lockPresence();
+    bool welcomeTriggeredThisLoop = false;
 
-    if (isPresentNow) {
-        lastSeenTime = now;
-        lastDetectedRssi = detectedRssi;
+    for (uint8_t i = 0; i < currentConfig.deviceCount; i++) {
+        PresenceDevice& dev = currentConfig.devices[i];
+        if (!dev.enabled) continue;
 
-        if (currentState == PRESENCE_AWAY) {
-            unsigned long cooldownMs = cfg.cooldownMinutes * 60000UL;
-            bool cooldownExpired = (lastTriggerTime == 0) || (now - lastTriggerTime >= cooldownMs);
-            bool inQuiet = isCurrentTimeInQuietHours(cfg);
-            // Require user to have been confirmed away for at least 3 minutes to avoid false trigger on brief Wi-Fi glitches
-            bool minAwaySatisfied = (awaySinceTime == 0) || (now - awaySinceTime >= 180000UL);
+        bool isPresentNow = false;
+        if (cfg.mode == 0) {
+            isPresentNow = wifiMatched[i] || (bleMatched[i] && devRssi[i] >= cfg.rssiThreshold);
+        } else if (cfg.mode == 1) {
+            isPresentNow = bleMatched[i] && (devRssi[i] >= cfg.rssiThreshold);
+        } else if (cfg.mode == 2) {
+            isPresentNow = wifiMatched[i];
+        }
 
-            if (cooldownExpired && !inQuiet && minAwaySatisfied) {
-                if (cfg.welcomeFile.length() > 0) {
-                    Serial.printf("[Presence] Welcome triggered for target [%s]! (RSSI: %d dBm)\n",
-                                  cfg.targetMac.c_str(), detectedRssi);
-                    LOG_SYS("PRESENCE", "Welcome triggered: %s (Target: %s)", cfg.welcomeFile.c_str(), cfg.targetMac.c_str());
-                    sendPlayCommand(cfg.welcomeFile.c_str(), 0, 0, cfg.volume);
-                    lastTriggerTime = now;
-                    currentState = PRESENCE_PRESENT;
+        if (isPresentNow) {
+            dev.lastSeenTime = now;
+            if (devRssi[i] > -100) dev.lastRssi = devRssi[i];
+
+            if (dev.state == PRESENCE_AWAY) {
+                unsigned long cooldownMs = cfg.cooldownMinutes * 60000UL;
+                bool cooldownExpired = (dev.lastTriggerTime == 0) || (now - dev.lastTriggerTime >= cooldownMs);
+                bool inQuiet = isCurrentTimeInQuietHours(cfg);
+                bool minAwaySatisfied = (dev.awaySinceTime == 0) || (now - dev.awaySinceTime >= 180000UL); // 3 minutes away
+
+                if (cooldownExpired && !inQuiet && minAwaySatisfied && !welcomeTriggeredThisLoop) {
+                    if (strlen(dev.welcomeFile) > 0) {
+                        Serial.printf("[Presence] Welcome triggered for device [%s] (%s)! (File: %s)\n",
+                                      dev.name, dev.mac, dev.welcomeFile);
+                        LOG_SYS("PRESENCE", "Welcome triggered for %s (%s): %s", dev.name, dev.mac, dev.welcomeFile);
+                        audioManager.setAudioDescription("ترحيب ذكي: " + String(dev.name));
+                        sendPlayCommand(dev.welcomeFile, 0, 0, cfg.volume);
+                        dev.lastTriggerTime = now;
+                        dev.state = PRESENCE_PRESENT;
+                        welcomeTriggeredThisLoop = true;
+                    }
+                } else {
+                    dev.state = PRESENCE_PRESENT;
                 }
-            } else {
-                // If cooldown hasn't expired, or away time was too brief (glitch), lock to PRESENT without playing
-                currentState = PRESENCE_PRESENT;
             }
-        }
-        // In-session lock: if already PRESENT, do not repeat
-    } else {
-        // Target absent: check vacate timeout (apply safety floor of 5 min for Wi-Fi mode to accommodate smartphone sleep)
-        uint32_t effVacateMins = cfg.vacateMinutes;
-        if ((cfg.mode == 0 || cfg.mode == 2) && effVacateMins < 5) {
-            effVacateMins = 5;
-        }
-        unsigned long vacateMs = effVacateMins * 60000UL;
-        if (lastSeenTime > 0 && (now - lastSeenTime >= vacateMs)) {
-            if (currentState != PRESENCE_AWAY) {
-                Serial.println("[Presence] Area vacated. System reset to AWAY.");
-                LOG_SYS("PRESENCE", "Target departed. System ready for next arrival.");
-                currentState = PRESENCE_AWAY;
-                awaySinceTime = now;
+        } else {
+            // Vacate logic
+            uint32_t effVacateMins = cfg.vacateMinutes;
+            if ((cfg.mode == 0 || cfg.mode == 2) && effVacateMins < 5) {
+                effVacateMins = 5;
+            }
+            unsigned long vacateMs = effVacateMins * 60000UL;
+            if (dev.lastSeenTime > 0 && (now - dev.lastSeenTime >= vacateMs)) {
+                if (dev.state != PRESENCE_AWAY) {
+                    Serial.printf("[Presence] Device [%s] (%s) departed. State -> AWAY.\n", dev.name, dev.mac);
+                    LOG_SYS("PRESENCE", "Device %s (%s) departed.", dev.name, dev.mac);
+                    dev.state = PRESENCE_AWAY;
+                    dev.awaySinceTime = now;
+                }
             }
         }
     }
+    unlockPresence();
 }

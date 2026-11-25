@@ -237,6 +237,13 @@ static void sendOk(AsyncWebServerRequest *request) {
     request->send(200, "application/json", "{\"ok\":true}");
 }
 
+static void sendError(AsyncWebServerRequest *request, const char *msg) {
+    DynamicJsonDocument doc(256);
+    doc["ok"] = false;
+    doc["error"] = msg;
+    sendJson(request, doc);
+}
+
 static String nextPrayerName(const PrayerTimesResult &times) {
     if (!times.valid) return "";
     String nowStr = getCurrentTimeStr();
@@ -1958,18 +1965,8 @@ void startWebServer() {
             cfg.enabled = postBool(request, "enabled");
         if (request->hasParam("mode", true) || request->hasParam("mode")) 
             cfg.mode = postValue(request, "mode").toInt();
-        if (request->hasParam("targetMac", true) || request->hasParam("targetMac")) 
-            cfg.targetMac = postValue(request, "targetMac");
-        else if (request->hasParam("bleMac", true) || request->hasParam("bleMac")) 
-            cfg.targetMac = postValue(request, "bleMac");
-        if (request->hasParam("targetName", true) || request->hasParam("targetName")) 
-            cfg.targetName = postValue(request, "targetName");
-        else if (request->hasParam("bleName", true) || request->hasParam("bleName")) 
-            cfg.targetName = postValue(request, "bleName");
         if (request->hasParam("rssiThresh", true) || request->hasParam("rssiThresh")) 
             cfg.rssiThreshold = postValue(request, "rssiThresh").toInt();
-        if (request->hasParam("welcomeFile", true) || request->hasParam("welcomeFile")) 
-            cfg.welcomeFile = postValue(request, "welcomeFile");
         if (request->hasParam("volume", true) || request->hasParam("volume")) 
             cfg.volume = postValue(request, "volume").toInt();
         if (request->hasParam("cooldownMinutes", true) || request->hasParam("cooldownMinutes")) 
@@ -1987,8 +1984,50 @@ void startWebServer() {
         if (request->hasParam("qEndM", true) || request->hasParam("qEndM")) 
             cfg.quietEndMin = postValue(request, "qEndM").toInt();
 
+        // Support updating single device from legacy parameters if present
+        if (request->hasParam("targetMac", true) || request->hasParam("targetMac")) {
+            String tMac = postValue(request, "targetMac");
+            String tName = postValue(request, "targetName", "جهازي الأساسي");
+            String tFile = postValue(request, "welcomeFile", "/Azan/welcome.mp3");
+            if (tMac.length() >= 11) {
+                addOrUpdatePresenceDevice(0, tName.c_str(), tMac.c_str(), tFile.c_str(), true);
+            }
+        }
+
         setPresenceConfig(cfg);
         sendOk(request);
+    });
+    server.on("/api/presence/device/save", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int id = postValue(request, "id", "-1").toInt();
+        String name = postValue(request, "name", "");
+        String mac = postValue(request, "mac", "");
+        String welcomeFile = postValue(request, "welcomeFile", "/Azan/welcome.mp3");
+        bool enabled = postBool(request, "enabled", true);
+
+        if (mac.length() < 11) {
+            sendError(request, "عنوان الماك (MAC) غير صالح");
+            return;
+        }
+
+        bool ok = addOrUpdatePresenceDevice(id, name.c_str(), mac.c_str(), welcomeFile.c_str(), enabled);
+        if (ok) {
+            sendOk(request);
+        } else {
+            sendError(request, "تعذر حفظ الجهاز - تم الوصول للحد الأقصى (8 أجهزة)");
+        }
+    });
+    server.on("/api/presence/device/delete", HTTP_POST, [](AsyncWebServerRequest *request) {
+        int id = postValue(request, "id", "-1").toInt();
+        if (id < 0) {
+            sendError(request, "معرّف الجهاز غير صالح");
+            return;
+        }
+        bool ok = deletePresenceDevice(id);
+        if (ok) {
+            sendOk(request);
+        } else {
+            sendError(request, "فشل حذف الجهاز");
+        }
     });
     server.on("/api/presence/status", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(200, "application/json", getPresenceStatusJson());
@@ -2013,7 +2052,7 @@ void startWebServer() {
                 testVol = cfg.volume > 0 ? cfg.volume : 20;
             }
             audioManager.setAudioDescription("تجربة ملف الترحيب الذكي: " + testFile);
-            sendPlayCommand(testFile.c_str(), 0, 0, testVol);
+            sendPlayCommand(testFile.c_str(), 1, 0, testVol);
         } else {
             testPlayWelcome();
         }

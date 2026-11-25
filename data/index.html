@@ -491,8 +491,25 @@
           <div id="singleAlertLocalFileContainer">
             <label>ملف الصوت</label><select id="singleAlertFile" style="width:100%; margin-bottom:10px;"></select>
           </div>
-          <div id="singleAlertRadioContainer" style="display:none;">
-            <label>إذاعة البث المباشر</label><select id="singleAlertRadioFile" style="width:100%; margin-bottom:10px;"></select>
+          <div id="singleAlertRadioContainer" style="display:none; margin-bottom:15px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <label style="margin:0;"><i class="fas fa-broadcast-tower"></i> إذاعة البث المباشر (<span id="singleAlertRadioCount">0</span> إذاعة متاحة)</label>
+              <span id="singleAlertRadioSelectedBadge" style="font-size:12px; color:var(--accent); font-weight:bold;"></span>
+            </div>
+
+            <!-- Quick search input for fast filtering -->
+            <div style="position:relative; margin-bottom:8px;">
+              <input type="text" id="singleAlertRadioSearch" placeholder="🔍 اكتب اسم الإذاعة أو القارئ للبحث السريع (مثال: عبد الباسط، المنشاوي، الحصري)..." oninput="filterSingleAlertRadioDropdown()" style="width:100%; padding:9px 12px; border-radius:8px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.2); color:#fff; font-size:13.5px; box-sizing:border-box;">
+            </div>
+
+            <!-- Scrollable select list box -->
+            <select id="singleAlertRadioFile" size="8" style="width:100%; margin-bottom:6px; border-radius:8px; background:rgba(18,22,38,0.95); border:1px solid rgba(255,255,255,0.2); color:#fff; padding:6px; font-size:13.5px; height:190px; overflow-y:auto; line-height:1.6;" onchange="onSingleAlertRadioChange()">
+            </select>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11.5px; color:rgba(255,255,255,0.6); margin-top:2px;">
+              <span>💡 يمكنك التمرير (الاسكرول) للاختيار من كافة الإذاعات أو البحث بالاسم.</span>
+              <button type="button" class="btn btn-secondary" onclick="testPlayCurrentRadio()" style="margin:0; padding:4px 10px; font-size:11.5px; display:inline-flex; align-items:center; gap:5px;"><i class="fas fa-play"></i> تجربة البث</button>
+            </div>
           </div>
           <label>النوع</label>
           <select id="singleAlertType" onchange="toggleScheduleFields('singleAlert')">
@@ -778,49 +795,41 @@
             </div>
           </div>
 
-          <!-- Target Device Config -->
-          <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:12px; margin:15px 0;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
-              <h4 style="margin:0;"><i class="fas fa-mobile-alt"></i> تحديد الهاتف أو الجهاز المستهدف</h4>
-              <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="btn" type="button" onclick="openWifiScanModal()" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; font-weight:bold; padding:6px 14px; font-size:13px;">
-                  <i class="fas fa-network-wired"></i> فحص أجهزة شبكة الواي فاي
+          <!-- Multi-Device Presence Config -->
+          <div style="background:rgba(255,255,255,0.05); padding:16px; border-radius:12px; margin:15px 0;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+              <div>
+                <h4 style="margin:0; font-size:16px;"><i class="fas fa-users"></i> قائمة أجهزة الترحيب المعتمدة</h4>
+                <small style="color:rgba(255,255,255,0.7); display:block; margin-top:3px;">
+                  يمكنك إضافة حتى 8 هواتف/أجهزة وتعيين ملف صوتي ترحيبي مخصص ومستقل لكل جهاز.
+                </small>
+              </div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button type="button" onclick="openAddPresenceDeviceModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold; padding:8px 16px; font-size:13px; border:none; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                  <i class="fas fa-plus-circle"></i> إضافة جهاز جديد
                 </button>
-                <button class="btn" type="button" onclick="openBleScanModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold; padding:6px 14px; font-size:13px;">
-                  <i class="fab fa-bluetooth-b"></i> فحص أجهزة البلوتوث
+                <button type="button" onclick="openWifiScanModal()" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; font-weight:bold; padding:8px 16px; font-size:13px; border:none; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                  <i class="fas fa-network-wired"></i> فحص أجهزة الواي فاي
+                </button>
+                <button type="button" onclick="openBleScanModal()" style="background:linear-gradient(135deg, #9b59b6, #8e44ad); color:#fff; font-weight:bold; padding:8px 16px; font-size:13px; border:none; border-radius:8px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+                  <i class="fab fa-bluetooth-b"></i> فحص البلوتوث
                 </button>
               </div>
             </div>
-            
-            <div class="row">
-              <div class="col">
-                <label><i class="fas fa-fingerprint"></i> عنوان الماك المستهدف (Target MAC Address)</label>
-                <input type="text" id="presenceTargetMac" placeholder="مثال: aa:bb:cc:dd:ee:ff (اختر من الفحص أعلاه)">
-              </div>
-              <div class="col">
-                <label><i class="fas fa-tag"></i> اسم الجهاز / الهاتف المستهدف</label>
-                <input type="text" id="presenceTargetName" placeholder="مثال: هاتف صديق أو Honor X9d">
+
+            <!-- Devices Container -->
+            <div id="presenceDevicesList" style="margin-top:15px; display:flex; flex-direction:column; gap:10px;">
+              <div style="text-align:center; padding:15px; color:rgba(255,255,255,0.6);">
+                <i class="fas fa-spinner fa-spin"></i> جاري تحميل قائمة الأجهزة...
               </div>
             </div>
-            <small style="color:rgba(255,255,255,0.7); display:block; margin-top:6px;">
-              <i class="fas fa-info-circle" style="color:#00f2fe;"></i> يتم حفظ وتتبع الجهاز عبر عنوان الماك (MAC Address) لضمان استمرار رصد الهاتف بدقة حتى لو تغيّر عنوان الـ IP من الراوتر (DHCP).
-            </small>
           </div>
 
-          <!-- Audio & Volume -->
+          <!-- Volume Settings -->
           <div class="row">
             <div class="col">
-              <label><i class="fas fa-music"></i> ملف الترحيب الصوتي (أدنى أولوية 0)</label>
-              <div style="display:flex; gap:8px;">
-                <select id="presenceAudioFile" style="flex:1;"></select>
-                <button class="btn" type="button" onclick="testPresenceAudio()" title="تجربة تشغيل الصوت" style="padding:0 15px;">
-                  <i class="fas fa-play"></i> تجربة
-                </button>
-              </div>
-            </div>
-            <div class="col">
               <div class="dashboard-volume-row">
-                <span><i class="fas fa-volume-down"></i> مستوى صوت الترحيب</span>
+                <span><i class="fas fa-volume-down"></i> مستوى صوت الترحيب العام</span>
                 <strong id="presenceVolValue">20</strong>
               </div>
               <input type="range" id="presenceVolume" min="0" max="30" value="20" oninput="if($('presenceVolValue')) $('presenceVolValue').textContent=this.value">
@@ -882,6 +891,63 @@
               <i class="fas fa-save"></i> حفظ إعدادات الترحيب الذكي
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal for Adding / Editing Presence Device -->
+    <div id="presenceDeviceModal" class="modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:9999; align-items:center; justify-content:center;">
+      <div class="glass-card" style="max-width:540px; width:92%; max-height:85vh; overflow-y:auto; padding:25px; border:1px solid rgba(0,242,254,0.4); border-radius:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+          <h3 style="margin:0; color:#00f2fe;" id="presenceDeviceModalTitle"><i class="fas fa-mobile-alt"></i> إضافة جهاز ترحيب</h3>
+          <button type="button" onclick="closePresenceDeviceModal()" style="background:rgba(255,255,255,0.1); border:none; color:#fff; border-radius:50%; width:32px; height:32px; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center;"><i class="fas fa-times"></i></button>
+        </div>
+        <input type="hidden" id="presenceDevId" value="-1">
+        
+        <div style="margin-bottom:14px;">
+          <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-tag" style="color:#00f2fe;"></i> اسم الجهاز / الشخص (مثال: هاتف صديق، هاتف مصطفى)</label>
+          <input type="text" id="presenceDevName" placeholder="أدخل اسم الشخص أو الهاتف" style="margin:0;">
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-fingerprint" style="color:#f39c12;"></i> عنوان الماك (Target MAC Address)</label>
+          <input type="text" id="presenceDevMac" placeholder="مثال: aa:bb:cc:dd:ee:ff" style="margin:0 0 8px 0; font-family:monospace; font-size:15px;">
+          <div style="display:flex; gap:10px;">
+            <button type="button" onclick="openWifiScanModal()" style="flex:1; background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:9px 12px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="fas fa-wifi"></i> فحص أجهزة الواي فاي
+            </button>
+            <button type="button" onclick="openBleScanModal()" style="flex:1; background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; border:none; border-radius:8px; padding:9px 12px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+              <i class="fab fa-bluetooth-b"></i> فحص البلوتوث
+            </button>
+          </div>
+          <small style="color:rgba(255,255,255,0.6); display:block; margin-top:5px;">
+            يمكنك كتابة عنوان الماك يدوياً أو اختيار هاتفك مباشرة بالضغط على أحد زري الفحص أعلاه.
+          </small>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-music" style="color:#e056fd;"></i> ملف الترحيب المخصص لهذا الجهاز</label>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <select id="presenceDevAudioFile" style="flex:1; margin:0; height:42px;"></select>
+            <button type="button" onclick="testDeviceModalAudio()" title="تجربة تشغيل الصوت المختار" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-weight:bold; font-size:13px; white-space:nowrap; cursor:pointer; display:flex; align-items:center; gap:6px; height:42px;">
+              <i class="fas fa-play"></i> تجربة الصوت
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px; display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.03); padding:10px 14px; border-radius:10px;">
+          <label class="switch" style="margin:0;">
+            <input type="checkbox" id="presenceDevEnabled" checked>
+            <span class="slider"></span>
+          </label>
+          <strong style="font-size:14px;">تفعيل الترحيب لهذا الجهاز</strong>
+        </div>
+
+        <div style="text-align:left; display:flex; gap:10px; justify-content:flex-end; border-top:1px solid rgba(255,255,255,0.1); padding-top:15px;">
+          <button type="button" onclick="savePresenceDeviceFromModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; border:none; border-radius:8px; padding:10px 24px; font-weight:bold; font-size:15px; cursor:pointer; display:flex; align-items:center; gap:8px;">
+            <i class="fas fa-save"></i> حفظ الجهاز
+          </button>
+          <button type="button" onclick="closePresenceDeviceModal()" style="background:rgba(255,255,255,0.1); color:#fff; border:1px solid rgba(255,255,255,0.25); border-radius:8px; padding:10px 20px; font-size:15px; cursor:pointer;">إلغاء</button>
         </div>
       </div>
     </div>

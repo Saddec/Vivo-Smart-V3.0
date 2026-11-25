@@ -1178,7 +1178,7 @@ function populateFileSelects() {
 
   [
     'fajrAdhanFileSelect', 'adhanFileSelect', 'iqamaFileSelect', 'singleAlertFile',
-    'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect', 'presenceAudioFile'
+    'eidTakbeerFile', 'playlistFileSelect', 'startupFileSelect', 'presenceAudioFile', 'presenceDevAudioFile'
   ].forEach((id) => { if ($(id)) $(id).innerHTML = options; });
 
   [
@@ -3760,38 +3760,1093 @@ function downloadRawLogFile() {
 // ==========================================
 
 let radioLanguage = 'ar';
-let allRadiosList = [];
+let allRadiosList = [
+  {
+    "id": 99999,
+    "name": "إذاعة القرآن الكريم من القاهرة",
+    "url": "http://stream.radiojar.com/8s5u5tpdtwzuv"
+  },
+  {
+    "id": 1,
+    "name": "إبراهيم الأخضر",
+    "url": "https://backup.qurango.net/radio/ibrahim_alakdar",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 2,
+    "name": "شيخ أبو بكر الشاطري",
+    "url": "https://backup.qurango.net/radio/shaik_abu_bakr_al_shatri",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 3,
+    "name": "أحمد العجمي",
+    "url": "https://backup.qurango.net/radio/ahmad_alajmy",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 4,
+    "name": "أحمد الحواشي",
+    "url": "https://backup.qurango.net/radio/ahmad_alhawashi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 5,
+    "name": "أحمد صابر",
+    "url": "https://backup.qurango.net/radio/ahmad_saber",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 6,
+    "name": "أحمد نعينع",
+    "url": "https://backup.qurango.net/radio/ahmad_nauina",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 7,
+    "name": "أكرم العلاقمي",
+    "url": "https://backup.qurango.net/radio/akram_alalaqmi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 8,
+    "name": "إدريس أبكر",
+    "url": "https://backup.qurango.net/radio/idrees_abkr",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 9,
+    "name": "الزين محمد أحمد",
+    "url": "https://backup.qurango.net/radio/alzain_mohammad_ahmad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 10,
+    "name": "القارئ ياسين",
+    "url": "https://backup.qurango.net/radio/alqaria_yassen",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 11,
+    "name": "العيون الكوشي",
+    "url": "https://backup.qurango.net/radio/aloyoon_alkoshi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 12,
+    "name": "توفيق الصايغ",
+    "url": "https://backup.qurango.net/radio/tawfeeq_assayegh",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 13,
+    "name": "جمال شاكر عبدالله",
+    "url": "https://backup.qurango.net/radio/jamal_shaker_abdullah",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 14,
+    "name": "خالد القحطاني",
+    "url": "https://backup.qurango.net/radio/khaled_alqahtani",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 15,
+    "name": "خالد عبدالكافي",
+    "url": "https://backup.qurango.net/radio/khalid_abdulkafi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 16,
+    "name": "خليفة الطنيجي",
+    "url": "https://backup.qurango.net/radio/khalifa_altunaiji",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 17,
+    "name": "سعد الغامدي",
+    "url": "https://backup.qurango.net/radio/saad_alghamdi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 18,
+    "name": "سعود الشريم",
+    "url": "https://backup.qurango.net/radio/saud_alshuraim",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 19,
+    "name": "سهل ياسين",
+    "url": "https://backup.qurango.net/radio/sahl_yassin",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 20,
+    "name": "زكي داغستاني",
+    "url": "https://backup.qurango.net/radio/zaki_daghistani",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 21,
+    "name": "سيد رمضان",
+    "url": "https://backup.qurango.net/radio/sayeed_ramadan",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 22,
+    "name": "شيرزاد عبدالرحمن طاهر",
+    "url": "https://backup.qurango.net/radio/shirazad_taher",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 23,
+    "name": "صابر عبدالحكم",
+    "url": "https://backup.qurango.net/radio/saber_abdulhakm",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 24,
+    "name": "صلاح البدير",
+    "url": "https://backup.qurango.net/radio/salah_albudair",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 25,
+    "name": "صلاح الهاشم",
+    "url": "https://backup.qurango.net/radio/salah_alhashim",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 26,
+    "name": "صلاح بو خاطر",
+    "url": "https://backup.qurango.net/radio/slaah_bukhatir",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 27,
+    "name": "عادل ريان",
+    "url": "https://backup.qurango.net/radio/adel_ryyan",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 28,
+    "name": "عبدالبارئ الثبيتي",
+    "url": "https://backup.qurango.net/radio/abdelbari_altoubayti",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 29,
+    "name": "عبدالبارئ محمد",
+    "url": "https://backup.qurango.net/radio/abdulbari_mohammad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 30,
+    "name": "عبدالباسط عبدالصمد",
+    "url": "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 31,
+    "name": "عبدالباسط عبدالصمد",
+    "url": "https://backup.qurango.net/radio/abdulbasit_abdulsamad_warsh",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 32,
+    "name": "عبدالباسط عبدالصمد",
+    "url": "https://backup.qurango.net/radio/abdulbasit_abdulsamad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 33,
+    "name": "عبدالرحمن السديس",
+    "url": "https://backup.qurango.net/radio/abdulrahman_alsudaes",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 34,
+    "name": "عبدالعزيز الأحمد",
+    "url": "https://backup.qurango.net/radio/abdul_aziz_alahmad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 35,
+    "name": "عبدالله المطرود",
+    "url": "https://backup.qurango.net/radio/abdullah_almattrod",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 36,
+    "name": "عبدالله بصفر",
+    "url": "https://backup.qurango.net/radio/abdullah_basfer",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 37,
+    "name": "عبدالله خياط",
+    "url": "https://backup.qurango.net/radio/abdullah_khayyat",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 38,
+    "name": "عبدالله عواد الجهني",
+    "url": "https://backup.qurango.net/radio/abdullah_aljohany",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 39,
+    "name": "عبدالرشيد صوفي",
+    "url": "https://backup.qurango.net/radio/abdulrasheed_soufi_khalaf",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 40,
+    "name": "عبدالرشيد صوفي",
+    "url": "https://backup.qurango.net/radio/abdulrasheed_soufi_assosi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 41,
+    "name": "عبدالمحسن الحارثي",
+    "url": "https://backup.qurango.net/radio/abdulmohsin_alharthy",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 42,
+    "name": "عبدالمحسن القاسم",
+    "url": "https://backup.qurango.net/radio/abdulmohsen_alqasim",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 43,
+    "name": "عبدالمحسن العبيكان",
+    "url": "https://backup.qurango.net/radio/abdulmohsin_alobaikan",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 44,
+    "name": "عبدالهادي أحمد كناكري",
+    "url": "https://backup.qurango.net/radio/abdulhadi_kanakeri",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 45,
+    "name": "عبدالودود حنيف",
+    "url": "https://backup.qurango.net/radio/abdulwadood_haneef",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 46,
+    "name": "علي بن عبدالرحمن الحذيفي",
+    "url": "https://backup.qurango.net/radio/ali_alhuthaifi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 47,
+    "name": "علي الحذيفي",
+    "url": "https://backup.qurango.net/radio/ali_alhuthaifi_qalon",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 48,
+    "name": "علي جابر",
+    "url": "https://backup.qurango.net/radio/ali_jaber",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 49,
+    "name": "علي حجاج السويسي",
+    "url": "https://backup.qurango.net/radio/ali_hajjaj_alsouasi",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 50,
+    "name": "عماد زهير حافظ",
+    "url": "https://backup.qurango.net/radio/emad_hafez",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 51,
+    "name": "عمر القزابري",
+    "url": "https://backup.qurango.net/radio/omar_alqazabri",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 52,
+    "name": "فارس عباد",
+    "url": "https://backup.qurango.net/radio/fares_abbad",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 53,
+    "name": "ناصر القطامي",
+    "url": "https://backup.qurango.net/radio/nasser_alqatami",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 54,
+    "name": "نبيل الرفاعي",
+    "url": "https://backup.qurango.net/radio/nabil_al_rifay",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 55,
+    "name": "نعمة الحسان",
+    "url": "https://backup.qurango.net/radio/neamah_alhassan",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 56,
+    "name": "هاني الرفاعي",
+    "url": "https://backup.qurango.net/radio/hani_arrifai",
+    "recent_date": "2020-04-25 22:04:04"
+  },
+  {
+    "id": 57,
+    "name": "وليد النائحي",
+    "url": "https://backup.qurango.net/radio/waleed_alnaehi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 58,
+    "name": "ياسر الدوسري",
+    "url": "https://backup.qurango.net/radio/yasser_aldosari",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 59,
+    "name": "ياسر القرشي",
+    "url": "https://backup.qurango.net/radio/yasser_alqurashi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 60,
+    "name": "ياسر المزروعي",
+    "url": "https://backup.qurango.net/radio/yasser_almazroyee",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 61,
+    "name": "يحيى حوا",
+    "url": "https://backup.qurango.net/radio/yahya_hawwa",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 62,
+    "name": "يوسف الشويعي",
+    "url": "https://backup.qurango.net/radio/yousef_alshoaey",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 63,
+    "name": "ماهر المعيقلي",
+    "url": "https://backup.qurango.net/radio/maher",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 64,
+    "name": "محمد الطبلاوي",
+    "url": "https://backup.qurango.net/radio/mohammad_altablaway",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 65,
+    "name": "محمد اللحيدان",
+    "url": "https://backup.qurango.net/radio/mohammed_allohaidan",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 66,
+    "name": "محمد أيوب",
+    "url": "https://backup.qurango.net/radio/mohammed_ayyub",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 67,
+    "name": "محمد صالح عالم شاه",
+    "url": "https://backup.qurango.net/radio/mohammad_saleh_alim_shah",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 68,
+    "name": "محمد جبريل",
+    "url": "https://backup.qurango.net/radio/mohammed_jibreel",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 69,
+    "name": "محمد صديق المنشاوي",
+    "url": "https://backup.qurango.net/radio/mohammed_siddiq_alminshawi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 70,
+    "name": "محمد صديق المنشاوي",
+    "url": "https://backup.qurango.net/radio/mohammed_siddiq_alminshawi_mojawwad",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 71,
+    "name": "محمد عبدالكريم",
+    "url": "https://backup.qurango.net/radio/mohammad_abdullkarem",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 72,
+    "name": "محمد عبدالحكيم سعيد العبدالله",
+    "url": "https://backup.qurango.net/radio/mohammad_alabdullah_albizi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 73,
+    "name": "محمد عبدالحكيم سعيد العبدالله",
+    "url": "https://backup.qurango.net/radio/mohammad_alabdullah_aldorai",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 74,
+    "name": "محمود خليل الحصري",
+    "url": "https://backup.qurango.net/radio/mahmoud_khalil_alhussary",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 75,
+    "name": "محمود خليل الحصري",
+    "url": "https://backup.qurango.net/radio/mahmoud_khalil_alhussary_mojawwad",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 76,
+    "name": "محمود خليل الحصري",
+    "url": "https://backup.qurango.net/radio/mahmoud_khalil_alhussary_warsh",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 77,
+    "name": "محمود علي البنا",
+    "url": "https://backup.qurango.net/radio/mahmoud_ali__albanna",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 78,
+    "name": "محمود علي البنا",
+    "url": "https://backup.qurango.net/radio/mahmoud_ali__albanna_mojawwad",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 79,
+    "name": "مشاري العفاسي",
+    "url": "https://backup.qurango.net/radio/mishary_alafasi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 80,
+    "name": "مصطفى إسماعيل",
+    "url": "https://backup.qurango.net/radio/mustafa_ismail",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 81,
+    "name": "مصطفى اللاهوني",
+    "url": "https://backup.qurango.net/radio/mustafa_allahoni",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 82,
+    "name": "مصطفى رعد العزاوي",
+    "url": "https://backup.qurango.net/radio/mustafa_raad_alazawy",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 83,
+    "name": "مفتاح السلطني",
+    "url": "https://backup.qurango.net/radio/muftah_alsaltany_aldori_an_abi_amr",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 84,
+    "name": "ماهر شخاشيرو",
+    "url": "https://backup.qurango.net/radio/maher_shakhashero",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 85,
+    "name": "محمود الشيمي",
+    "url": "https://backup.qurango.net/radio/mahmood_alsheimy",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 86,
+    "name": "خالد المهنا",
+    "url": "https://backup.qurango.net/radio/khalid_almohana",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 87,
+    "name": "عادل الكلباني",
+    "url": "https://backup.qurango.net/radio/adel_alkhalbany",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 88,
+    "name": "موسى بلال",
+    "url": "https://backup.qurango.net/radio/mousa_bilal",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 89,
+    "name": "حاتم فريد الواعر",
+    "url": "https://backup.qurango.net/radio/hatem_fareed_alwaer",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 90,
+    "name": "محمود الرفاعي",
+    "url": "https://backup.qurango.net/radio/mahmood_al_rifai",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 91,
+    "name": "ابراهيم الدوسري",
+    "url": "https://backup.qurango.net/radio/ibrahim_aldosari",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 92,
+    "name": "مفتاح السلطني",
+    "url": "https://backup.qurango.net/radio/muftah_alsaltany_aldorai",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 93,
+    "name": "جمعان العصيمي",
+    "url": "https://backup.qurango.net/radio/jamaan_alosaimi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 94,
+    "name": "مفتاح السلطني",
+    "url": "https://backup.qurango.net/radio/muftah_alsaltany",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 95,
+    "name": "يوسف بن نوح أحمد",
+    "url": "https://backup.qurango.net/radio/yousef_bin_noah_ahmad",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 96,
+    "name": "مفتاح السلطني",
+    "url": "https://backup.qurango.net/radio/muftah_alsaltany_ibn_thakwan_an_ibn_amr",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 97,
+    "name": "معيض الحارثي",
+    "url": "https://backup.qurango.net/radio/moeedh_alharthi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 98,
+    "name": "محمد رشاد الشريف",
+    "url": "https://backup.qurango.net/radio/mohammad_rashad_alshareef",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 99,
+    "name": "أحمد خضر الطرابلسي",
+    "url": "https://backup.qurango.net/radio/ahmad_khader_altarabulsi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 100,
+    "name": "أحمد الطرابلسي",
+    "url": "https://backup.qurango.net/radio/ahmed_altrabulsi",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 101,
+    "name": "عبدالله الكندري",
+    "url": "https://backup.qurango.net/radio/abdullah_alkandari",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 102,
+    "name": "أحمد عامر",
+    "url": "https://backup.qurango.net/radio/ahmed_amer",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 103,
+    "name": "محمد عثمان خان",
+    "url": "https://backup.qurango.net/radio/mohammed_osman_khan",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 104,
+    "name": "الدوكالي محمد العالم",
+    "url": "https://backup.qurango.net/radio/addokali_mohammad_alalim",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 105,
+    "name": "محمد عبدالكريم",
+    "url": "https://backup.qurango.net/radio/mohammad_abdullkarem_alasbahani",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 106,
+    "name": "الفاتح محمد الزبير",
+    "url": "https://backup.qurango.net/radio/alfateh_alzubair",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 107,
+    "name": "طارق عبدالغني دعوب",
+    "url": "https://backup.qurango.net/radio/tareq_abdulgani_daawob",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 108,
+    "name": "العامة - متنوعة لمختلف القراء",
+    "url": "https://backup.qurango.net/radio/mix",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 109,
+    "name": "تلاوات خاشعة-",
+    "url": "https://backup.qurango.net/radio/salma",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 110,
+    "name": "تكبيرات العيد",
+    "url": "https://backup.qurango.net/radio/eid",
+    "recent_date": "2020-06-27 02:41:26"
+  },
+  {
+    "id": 111,
+    "name": "عبدالرحمن الماجد",
+    "url": "https://backup.qurango.net/radio/abdulrahman_almajed",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 113,
+    "name": "الفتاوى العامة",
+    "url": "https://backup.qurango.net/radio/fatwa",
+    "recent_date": "2020-06-27 02:39:55"
+  },
+  {
+    "id": 114,
+    "name": "الرقية الشرعية",
+    "url": "https://backup.qurango.net/radio/roqiah",
+    "recent_date": "2020-06-27 02:38:21"
+  },
+  {
+    "id": 115,
+    "name": "سورة البقرة - لعدد من القراء---",
+    "url": "https://backup.qurango.net/radio/albaqarah",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 116,
+    "name": "تفسير القران الكريم--",
+    "url": "https://backup.qurango.net/radio/tafseer",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 117,
+    "name": "خالد الجليل",
+    "url": "https://backup.qurango.net/radio/khalid_aljileel",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 118,
+    "name": "ناصر الماجد",
+    "url": "https://backup.qurango.net/radio/nasser_almajed",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 119,
+    "name": "هيثم الجدعاني",
+    "url": "https://backup.qurango.net/radio/hitham_aljadani",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 120,
+    "name": "أحمد خليل شاهين",
+    "url": "https://backup.qurango.net/radio/ahmad_shaheen",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 121,
+    "name": "عبدالله الموسى",
+    "url": "https://backup.qurango.net/radio/abdullah_almousa",
+    "recent_date": "2020-06-27 02:46:31"
+  },
+  {
+    "id": 122,
+    "name": "عبدالله الخلف",
+    "url": "https://backup.qurango.net/radio/abdullah_alkhalaf",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 123,
+    "name": "تراتيل قصيرة متميزة-",
+    "url": "https://backup.qurango.net/radio/tarateel",
+    "recent_date": "2020-04-25 22:04:05"
+  },
+  {
+    "id": 139,
+    "name": "ماجد الزامل",
+    "url": "https://backup.qurango.net/radio/majed_alzamel",
+    "recent_date": "2020-06-27 01:43:46"
+  },
+  {
+    "id": 217,
+    "name": "بندر بليلة",
+    "url": "https://backup.qurango.net/radio/bandar_balilah",
+    "recent_date": "2021-09-06 22:14:27"
+  },
+  {
+    "id": 248,
+    "name": "ناصر العصفور",
+    "url": "https://backup.qurango.net/radio/nasser_alosfor",
+    "recent_date": "2020-05-05 02:27:02"
+  },
+  {
+    "id": 261,
+    "name": "محمد أيوب - قراءة مميزة-",
+    "url": "https://backup.qurango.net/radio/ayyoub2",
+    "recent_date": "2020-06-27 02:35:33"
+  },
+  {
+    "id": 265,
+    "name": "أحمد ديبان",
+    "url": "https://backup.qurango.net/radio/ahmad_deban",
+    "recent_date": "2020-06-27 01:46:13"
+  },
+  {
+    "id": 274,
+    "name": "أذاعة محمد أبوسنينة",
+    "url": "https://backup.qurango.net/radio/sneineh",
+    "recent_date": "2022-08-17 16:40:49"
+  },
+  {
+    "id": 275,
+    "name": "محمد الأمين قنيوة",
+    "url": "https://backup.qurango.net/radio/qeniwa",
+    "recent_date": "2022-08-17 16:44:08"
+  },
+  {
+    "id": 287,
+    "name": "عبدالرحمن الشحات",
+    "url": "https://backup.qurango.net/radio/a_alshahhat",
+    "recent_date": "2022-09-20 17:28:01"
+  },
+  {
+    "id": 307,
+    "name": "عبدالعزيز سحيم",
+    "url": "https://backup.qurango.net/radio/a_sheim",
+    "recent_date": "2023-10-11 04:18:00"
+  },
+  {
+    "id": 10902,
+    "name": "آيات السكينة",
+    "url": "https://backup.qurango.net/radio/sakeenah",
+    "recent_date": "2020-07-17 14:39:15"
+  },
+  {
+    "id": 10903,
+    "name": "صور من حياة الصحابة والتابعين رضوان الله عليهم---",
+    "url": "https://backup.qurango.net/radio/sahabah",
+    "recent_date": "2020-07-17 14:40:45"
+  },
+  {
+    "id": 10904,
+    "name": "المختصر في تفسير القرآن الكريم",
+    "url": "https://backup.qurango.net/radio/mukhtasartafsir",
+    "recent_date": "2021-03-25 17:28:18"
+  },
+  {
+    "id": 10906,
+    "name": "أذكار الصباح",
+    "url": "https://backup.qurango.net/radio/athkar_sabah",
+    "recent_date": "2021-08-27 12:48:42"
+  },
+  {
+    "id": 10907,
+    "name": "أذكار المساء",
+    "url": "https://backup.qurango.net/radio/athkar_masa",
+    "recent_date": "2021-08-27 12:49:07"
+  },
+  {
+    "id": 21114,
+    "name": "في ظلال السيرة النبوية - 400 حلقة عن سيرة نبينا محمد صلى الله عليه وسلم",
+    "url": "https://backup.qurango.net/radio/fi_zilal_alsiyra",
+    "recent_date": "2021-09-27 01:36:41"
+  },
+  {
+    "id": 21115,
+    "name": "المختصر في السيرة النبوية",
+    "url": "https://backup.qurango.net/radio/almukhtasar_fi_alsiyra",
+    "recent_date": "2025-05-30 11:38:35"
+  },
+  {
+    "id": 21116,
+    "name": "كتاب الاختيارات الفقهية في مسائل العبادات والمعاملات",
+    "url": "https://backup.qurango.net/radio/alaikhtiarat_alfiqhayh_bin_baz",
+    "recent_date": "2022-02-13 23:48:06"
+  },
+  {
+    "id": 21117,
+    "name": "تفسير القران الكريم-الخلاصة من تفسير الطبري",
+    "url": "https://backup.qurango.net/radio/tabri",
+    "recent_date": "2023-12-02 20:42:00"
+  },
+  {
+    "id": 109038,
+    "name": "صالح الهبدان",
+    "url": "https://backup.qurango.net/radio/saleh_alhabdan",
+    "recent_date": "2020-06-27 01:47:04"
+  },
+  {
+    "id": 109039,
+    "name": "ترجمة معاني القرآن باللغة الأوردية - عبدالباسط عبدالصمد",
+    "url": "https://backup.qurango.net/radio/translation_quran_urdu_basit",
+    "recent_date": "2024-04-13 04:18:10"
+  },
+  {
+    "id": 109040,
+    "name": "ترجمة معاني القرآن باللغة الأسبانية",
+    "url": "https://backup.qurango.net/radio/translation_quran_spanish_afs",
+    "recent_date": "2024-04-13 04:21:03"
+  },
+  {
+    "id": 109041,
+    "name": "ترجمة معاني القرآن باللغة الألبانية",
+    "url": "https://backup.qurango.net/radio/translation_quran_albanian",
+    "recent_date": "2024-04-13 04:22:03"
+  },
+  {
+    "id": 109042,
+    "name": "ترجمة معاني القرآن باللغة الألمانية",
+    "url": "https://backup.qurango.net/radio/translation_quran_german",
+    "recent_date": "2024-04-13 04:23:33"
+  },
+  {
+    "id": 109043,
+    "name": "ترجمة معاني القرآن باللغة الأمازيغية",
+    "url": "https://backup.qurango.net/radio/translation_quran_tamazight",
+    "recent_date": "2024-04-13 04:25:33"
+  },
+  {
+    "id": 109044,
+    "name": "ترجمة معاني القرآن باللغة الأوردية",
+    "url": "https://backup.qurango.net/radio/translation_quran_urdu_sds_shur",
+    "recent_date": "2024-04-13 04:26:22"
+  },
+  {
+    "id": 109045,
+    "name": "ترجمة معاني القرآن باللغة الأوردية",
+    "url": "https://backup.qurango.net/radio/translation_quran_urdu_minsh",
+    "recent_date": "2024-04-13 04:27:09"
+  },
+  {
+    "id": 109046,
+    "name": "ترجمة معاني القرآن باللغة الإنجليزية",
+    "url": "https://backup.qurango.net/radio/translation_quran_english_basit",
+    "recent_date": "2024-04-13 04:28:32"
+  },
+  {
+    "id": 109047,
+    "name": "ترجمة معاني القرآن باللغة الإنجليزية",
+    "url": "https://backup.qurango.net/radio/translation_quran_english_bsfr",
+    "recent_date": "2024-04-13 04:29:17"
+  },
+  {
+    "id": 109048,
+    "name": "ترجمة معاني القرآن باللغة الإنجليزية -ترجمة والك-",
+    "url": "https://backup.qurango.net/radio/translation_quran_english_walk_basit",
+    "recent_date": "2024-04-13 04:30:25"
+  },
+  {
+    "id": 109049,
+    "name": "ترجمة معاني القرآن باللغة البرتغالية",
+    "url": "https://backup.qurango.net/radio/translation_quran_portuguese",
+    "recent_date": "2024-04-13 04:31:18"
+  },
+  {
+    "id": 109050,
+    "name": "ترجمة معاني القرآن باللغة البوسنية",
+    "url": "https://backup.qurango.net/radio/translation_quran_bosnia",
+    "recent_date": "2024-04-13 04:32:27"
+  },
+  {
+    "id": 109051,
+    "name": "ترجمة معاني القرآن باللغة التركية",
+    "url": "https://backup.qurango.net/radio/translation_quran_turkish",
+    "recent_date": "2024-04-13 04:33:38"
+  },
+  {
+    "id": 109052,
+    "name": "ترجمة معاني القرآن باللغة الروسية",
+    "url": "https://backup.qurango.net/radio/translation_quran_Russia",
+    "recent_date": "2024-04-13 04:35:33"
+  },
+  {
+    "id": 109053,
+    "name": "ترجمة معاني القرآن باللغة الصينية",
+    "url": "https://backup.qurango.net/radio/translation_quran_chinese",
+    "recent_date": "2024-04-13 04:36:48"
+  },
+  {
+    "id": 109054,
+    "name": "ترجمة معاني القرآن باللغة الفارسية",
+    "url": "https://backup.qurango.net/radio/translation_quran_farsi",
+    "recent_date": "2024-04-13 05:07:34"
+  },
+  {
+    "id": 109055,
+    "name": "ترجمة معاني القرآن باللغة الفرنسية",
+    "url": "https://backup.qurango.net/radio/translation_quran_french",
+    "recent_date": "2024-04-13 05:08:08"
+  },
+  {
+    "id": 109056,
+    "name": "ترجمة معاني القرآن باللغة الكردية",
+    "url": "https://backup.qurango.net/radio/translation_quran_kurdish",
+    "recent_date": "2024-04-13 05:10:28"
+  },
+  {
+    "id": 109057,
+    "name": "ترجمة معاني القرآن باللغة الكورية",
+    "url": "https://backup.qurango.net/radio/translation_quran_Korean",
+    "recent_date": "2024-04-13 05:10:52"
+  },
+  {
+    "id": 109058,
+    "name": "ترجمة معاني القرآن باللغة المجرية",
+    "url": "https://backup.qurango.net/radio/translation_quran_hungarian",
+    "recent_date": "2024-04-13 05:16:54"
+  },
+  {
+    "id": 109059,
+    "name": "ترجمة معاني القرآن باللغة اليونانية",
+    "url": "https://backup.qurango.net/radio/translation_quran_greek",
+    "recent_date": "2024-04-13 05:17:34"
+  },
+  {
+    "id": 109060,
+    "name": "سورة الملك",
+    "url": "https://backup.qurango.net/radio/Surah_Al-Mulk",
+    "recent_date": "2024-04-13 05:32:01"
+  },
+  {
+    "id": 109061,
+    "name": "فضل شهر رمضان",
+    "url": "https://backup.qurango.net/radio/ramadan",
+    "recent_date": "2024-04-13 05:33:01"
+  },
+  {
+    "id": 109062,
+    "name": "ترجمة معاني القرآن باللغة الهوسا",
+    "url": "https://backup.qurango.net/radio/Translation_Quran_Hausa",
+    "recent_date": "2024-09-26 00:18:57"
+  },
+  {
+    "id": 109066,
+    "name": "صحيح مسلم",
+    "url": "https://backup.qurango.net/radio/saheh-muslim",
+    "recent_date": "2025-05-20 18:30:06"
+  },
+  {
+    "id": 109067,
+    "name": "صحيح البخاري",
+    "url": "https://backup.qurango.net/radio/saheh-bokharee",
+    "recent_date": "2025-05-20 18:34:32"
+  },
+  {
+    "id": 109069,
+    "name": "***قصص الأنبياء***",
+    "url": "https://backup.qurango.net/radio/alanbiya",
+    "recent_date": "2025-07-04 18:34:32"
+  },
+  {
+    "id": 109073,
+    "name": "رياض الصالحين",
+    "url": "https://backup.qurango.net/radio/riyad",
+    "recent_date": "2025-07-20 13:36:55"
+  },
+  {
+    "id": 109074,
+    "name": "عبدالله البعيجان",
+    "url": "https://backup.qurango.net/radio/buajan",
+    "recent_date": "2025-07-20 19:47:08"
+  },
+  {
+    "id": 109075,
+    "name": "أحمد طالب بن حميد",
+    "url": "https://backup.qurango.net/radio/a_binhameed",
+    "recent_date": "2025-07-20 19:54:30"
+  },
+  {
+    "id": 109076,
+    "name": "تفسير غريب القرآن",
+    "url": "https://backup.qurango.net/radio/gareeb-quran",
+    "recent_date": "2025-09-06 11:00:48"
+  },
+  {
+    "id": 109077,
+    "name": "بدر التركي",
+    "url": "https://backup.qurango.net/radio/bader",
+    "recent_date": "2025-09-12 19:09:35"
+  },
+  {
+    "id": 109078,
+    "name": "هزاع البلوشي",
+    "url": "https://backup.qurango.net/radio/hazza",
+    "recent_date": "2025-09-12 19:22:27"
+  },
+  {
+    "id": 109082,
+    "name": "إذاعة القرآن الكريم - السعودية",
+    "url": "https://stream.radiojar.com/0tpy1h0kxtzuv",
+    "recent_date": "2026-02-13 17:41:50"
+  },
+  {
+    "id": 109083,
+    "name": "الشمائل المحمدية",
+    "url": "https://backup.qurango.net/radio/shmaeel",
+    "recent_date": "2026-04-08 10:58:22"
+  },
+  {
+    "id": 109084,
+    "name": "نورين محمد صديق",
+    "url": "https://backup.qurango.net/radio/nourin_siddig",
+    "recent_date": "2026-06-12 15:14:52"
+  }
+];
+let hasLoadedLiveRadios = false;
 
 const defaultOfflineRadios = {
-  ar: [
-    { id: 99999, name: "إذاعة القرآن الكريم من القاهرة", url: "http://stream.radiojar.com/8s5u5tpdtwzuv" },
-    { id: 109082, name: "إذاعة القرآن الكريم - السعودية", url: "https://stream.radiojar.com/0tpy1h0kxtzuv" },
-    { id: 108, name: "الإذاعة العامة - تلاوات متنوعة (Mp3Quran)", url: "https://backup.qurango.net/radio/mix" },
-    { id: 110, name: "إذاعة تكبيرات العيد", url: "https://backup.qurango.net/radio/eid" },
-    { id: 114, name: "إذاعة الرقية الشرعية", url: "https://backup.qurango.net/radio/roqiah" },
-    { id: 116, name: "إذاعة تفسير القرآن الكريم", url: "https://backup.qurango.net/radio/tafseer" },
-    { id: 10902, name: "آيات السكينة (تلاوات هادئة)", url: "https://backup.qurango.net/radio/sakeenah" },
-    { id: 10906, name: "أذكار الصباح (بث مباشر)", url: "https://backup.qurango.net/radio/athkar_sabah" },
-    { id: 10907, name: "أذكار المساء (بث مباشر)", url: "https://backup.qurango.net/radio/athkar_masa" },
-    { id: 79, name: "إذاعة مشاري العفاسي", url: "https://backup.qurango.net/radio/mishary_alafasi" },
-    { id: 33, name: "إذاعة عبد الرحمن السديس", url: "https://backup.qurango.net/radio/abdulrahman_alsudaes" },
-    { id: 63, name: "إذاعة ماهر المعيقلي", url: "https://backup.qurango.net/radio/maher" },
-    { id: 30, name: "إذاعة عبد الباسط عبد الصمد (المصحف المجود)", url: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
-  ],
+  ar: allRadiosList,
   eng: [
     { id: 99999, name: "Holy Quran Radio from Cairo", url: "http://stream.radiojar.com/8s5u5tpdtwzuv" },
     { id: 109082, name: "Holy Quran Radio from Saudi Arabia", url: "https://stream.radiojar.com/0tpy1h0kxtzuv" },
     { id: 108, name: "General Radio - Various Recitations", url: "https://backup.qurango.net/radio/mix" },
     { id: 110, name: "Eid Takbeer", url: "https://backup.qurango.net/radio/eid" },
-    { id: 114, name: "Sharia Ruqyah (Quran Healing)", url: "https://backup.qurango.net/radio/roqiah" },
-    { id: 116, name: "Quran Tafseer (Interpretation)", url: "https://backup.qurango.net/radio/tafseer" },
+    { id: 114, name: "Sharia Ruqyah", url: "https://backup.qurango.net/radio/roqiah" },
+    { id: 116, name: "Quran Tafseer", url: "https://backup.qurango.net/radio/tafseer" },
     { id: 10902, name: "Verses of Serenity", url: "https://backup.qurango.net/radio/sakeenah" },
-    { id: 10906, name: "Athkar Morning (Remembrances)", url: "https://backup.qurango.net/radio/athkar_sabah" },
-    { id: 10907, name: "Athkar Evening (Remembrances)", url: "https://backup.qurango.net/radio/athkar_masa" },
+    { id: 10906, name: "Athkar Morning", url: "https://backup.qurango.net/radio/athkar_sabah" },
+    { id: 10907, name: "Athkar Evening", url: "https://backup.qurango.net/radio/athkar_masa" },
     { id: 79, name: "Radio Mishary Alafasi", url: "https://backup.qurango.net/radio/mishary_alafasi" },
     { id: 33, name: "Radio Abdulrahman Alsudaes", url: "https://backup.qurango.net/radio/abdulrahman_alsudaes" },
     { id: 63, name: "Radio Maher Al Meaqli", url: "https://backup.qurango.net/radio/maher" },
-    { id: 30, name: "Radio Abdulbasit Abdulsamad (Mojawwad)", url: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
+    { id: 30, name: "Radio Abdulbasit Abdulsamad", url: "https://backup.qurango.net/radio/abdulbasit_abdulsamad_mojawwad" }
   ]
 };
 
@@ -3802,10 +4857,10 @@ function toggleAlertSourceType() {
     if ($('singleAlertRadioContainer')) $('singleAlertRadioContainer').style.display = 'block';
     if (allRadiosList.length === 0) {
       allRadiosList = defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar;
-      populateRadioDropdowns();
+    }
+    populateRadioDropdowns();
+    if (!hasLoadedLiveRadios) {
       fetchRadiosFromApi();
-    } else if ($('singleAlertRadioFile') && $('singleAlertRadioFile').options.length === 0) {
-      populateRadioDropdowns();
     }
   } else {
     if ($('singleAlertLocalFileContainer')) $('singleAlertLocalFileContainer').style.display = 'block';
@@ -3841,7 +4896,7 @@ function fetchRadiosFromApi(force = false) {
   const statusTxt = $('radioStatusText');
   if (statusTxt) statusTxt.textContent = "جاري تحميل الإذاعات...";
 
-  if (!force && allRadiosList.length > 0) {
+  if (!force && hasLoadedLiveRadios && allRadiosList.length > 20) {
     renderRadioList(allRadiosList);
     return;
   }
@@ -3860,6 +4915,7 @@ function fetchRadiosFromApi(force = false) {
           url: "http://stream.radiojar.com/8s5u5tpdtwzuv"
         };
         allRadiosList = [cairoRadio, ...data.radios];
+        hasLoadedLiveRadios = true;
         if (statusTxt) statusTxt.textContent = `تم تحميل ${allRadiosList.length} إذاعة من الإنترنت.`;
         populateRadioDropdowns();
         renderRadioList(allRadiosList);
@@ -4068,16 +5124,21 @@ function populateRadioDropdowns() {
   const previousText = select.selectedIndex >= 0 ? select.options[select.selectedIndex].textContent : '';
   select.innerHTML = '';
   const list = allRadiosList.length > 0 ? allRadiosList : (defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar);
+  
   list.forEach(radio => {
     const opt = document.createElement('option');
     opt.value = radio.url;
     opt.textContent = radio.name;
+    opt.style.padding = '5px 8px';
+    opt.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
     select.appendChild(opt);
   });
+
   if (previousVal) {
     let found = false;
     for (let i = 0; i < select.options.length; i++) {
       if (select.options[i].value === previousVal) {
+        select.options[i].selected = true;
         found = true;
         break;
       }
@@ -4086,14 +5147,76 @@ function populateRadioDropdowns() {
       const opt = document.createElement('option');
       opt.value = previousVal;
       opt.textContent = previousText || previousVal;
+      opt.selected = true;
       select.appendChild(opt);
     }
     select.value = previousVal;
+  } else if (select.options.length > 0) {
+    select.selectedIndex = 0;
+  }
+
+  const countBadge = $('singleAlertRadioCount');
+  if (countBadge) countBadge.textContent = list.length;
+  onSingleAlertRadioChange();
+}
+
+function filterSingleAlertRadioDropdown() {
+  const query = ($('singleAlertRadioSearch')?.value || '').toLowerCase().trim();
+  const select = $('singleAlertRadioFile');
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = '';
+
+  const list = allRadiosList.length > 0 ? allRadiosList : (defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar);
+  let count = 0;
+  list.forEach(radio => {
+    if (!query || radio.name.toLowerCase().includes(query)) {
+      const opt = document.createElement('option');
+      opt.value = radio.url;
+      opt.textContent = radio.name;
+      opt.style.padding = '5px 8px';
+      opt.style.borderBottom = '1px solid rgba(255,255,255,0.04)';
+      if (radio.url === currentVal) opt.selected = true;
+      select.appendChild(opt);
+      count++;
+    }
+  });
+
+  if (count === 0) {
+    const opt = document.createElement('option');
+    opt.disabled = true;
+    opt.textContent = '⚠️ لا توجد إذاعة تطابق البحث';
+    select.appendChild(opt);
+  } else if (!select.value && select.options.length > 0) {
+    select.selectedIndex = 0;
+  }
+
+  const countBadge = $('singleAlertRadioCount');
+  if (countBadge) countBadge.textContent = count;
+  onSingleAlertRadioChange();
+}
+
+function onSingleAlertRadioChange() {
+  const sel = $('singleAlertRadioFile');
+  const badge = $('singleAlertRadioSelectedBadge');
+  if (sel && badge) {
+    if (sel.selectedIndex >= 0 && sel.options[sel.selectedIndex] && !sel.options[sel.selectedIndex].disabled) {
+      badge.textContent = `المختارة: ${sel.options[sel.selectedIndex].textContent}`;
+    } else {
+      badge.textContent = '';
+    }
   }
 }
 
-// ==================== Smart Presence & Welcome ====================
-let presenceSavedConfig = {};
+function testPlayCurrentRadio() {
+  const sel = $('singleAlertRadioFile');
+  if (!sel || !sel.value) return toast('يرجى اختيار إذاعة أولاً');
+  const name = sel.options[sel.selectedIndex]?.textContent || 'البث المباشر';
+  playRadioStream(sel.value, name);
+}
+
+// ==================== Smart Presence & Welcome (Multi-device) ====================
+let presenceSavedConfig = { devices: [] };
 
 function togglePresenceFields() {
   const en = $('presenceEnabled')?.checked;
@@ -4122,22 +5245,6 @@ function loadPresenceConfig() {
     if ($('presenceEnabled')) $('presenceEnabled').checked = !!cfg.enabled;
     if ($('presenceMode')) $('presenceMode').value = cfg.mode !== undefined ? cfg.mode : 0;
     if ($('presenceRssi')) $('presenceRssi').value = cfg.rssiThresh !== undefined ? cfg.rssiThresh : -65;
-    if ($('presenceTargetMac')) $('presenceTargetMac').value = cfg.targetMac || cfg.bleMac || '';
-    if ($('presenceTargetName')) $('presenceTargetName').value = cfg.targetName || cfg.bleName || '';
-    if ($('presenceAudioFile')) {
-      const target = cfg.welcomeFile || '';
-      const noSlash = target.startsWith('/') ? target.slice(1) : target;
-      const withSlash = '/' + noSlash;
-      let matched = false;
-      for (const opt of $('presenceAudioFile').options) {
-        if (opt.value === target || opt.value === noSlash || opt.value === withSlash) {
-          $('presenceAudioFile').value = opt.value;
-          matched = true;
-          break;
-        }
-      }
-      if (!matched && target) $('presenceAudioFile').value = target;
-    }
     if ($('presenceVolume')) $('presenceVolume').value = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceVolValue')) $('presenceVolValue').textContent = cfg.volume !== undefined ? cfg.volume : 20;
     if ($('presenceCooldown')) $('presenceCooldown').value = cfg.cooldownMinutes !== undefined ? cfg.cooldownMinutes : 30;
@@ -4152,11 +5259,78 @@ function loadPresenceConfig() {
       $('presenceQuietEnd').value = `${pad(cfg.qEndH !== undefined ? cfg.qEndH : 7)}:${pad(cfg.qEndM !== undefined ? cfg.qEndM : 0)}`;
     }
 
+    renderPresenceDevicesList(cfg.devices || []);
     togglePresenceFields();
     onPresenceModeChange();
   }).catch((err) => {
     console.warn("Failed to load presence config:", err);
   });
+}
+
+function renderPresenceDevicesList(devices) {
+  const container = $('presenceDevicesList');
+  if (!container) return;
+
+  if (!Array.isArray(devices) || devices.length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:25px; background:rgba(255,255,255,0.02); border:1px dashed rgba(255,255,255,0.15); border-radius:10px;">
+        <i class="fas fa-user-slash" style="font-size:32px; color:rgba(255,255,255,0.3); margin-bottom:10px; display:block;"></i>
+        <div style="font-size:15px; font-weight:bold; color:rgba(255,255,255,0.8);">لا توجد أجهزة مسجلة للترحيب حتى الآن</div>
+        <div style="font-size:13px; color:rgba(255,255,255,0.5); margin:6px 0 15px 0;">أضف هواتفك وهواتف أصدقائك أو أفراد العائلة لتخصيص ترحيب لكل هاتف عند دخوله.</div>
+        <button class="btn" type="button" onclick="openAddPresenceDeviceModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; font-weight:bold; padding:8px 18px;">
+          <i class="fas fa-plus"></i> إضافة أول جهاز الآن
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  let html = '';
+  devices.forEach((dev) => {
+    const isEn = dev.enabled !== false;
+    let badgeHtml = '';
+    if (dev.state === 'present') {
+      badgeHtml = '<span class="dev-status-badge" style="background:rgba(46,204,113,0.2); color:#2ecc71; border:1px solid rgba(46,204,113,0.5); padding:2px 8px; border-radius:10px; font-size:11px;"><i class="fas fa-circle"></i> متواجد الآن</span>';
+    } else if (dev.state === 'cooldown') {
+      badgeHtml = '<span class="dev-status-badge" style="background:rgba(241,196,15,0.2); color:#f1c40f; border:1px solid rgba(241,196,15,0.5); padding:2px 8px; border-radius:10px; font-size:11px;"><i class="fas fa-hourglass-half"></i> فترة انتظار</span>';
+    } else {
+      badgeHtml = '<span class="dev-status-badge" style="background:rgba(255,255,255,0.08); color:#aaa; border:1px solid rgba(255,255,255,0.15); padding:2px 8px; border-radius:10px; font-size:11px;"><i class="fas fa-walking"></i> غير متواجد</span>';
+    }
+
+    html += `
+      <div class="glass-card" id="pres-dev-row-${dev.id}" style="margin:0; padding:12px 16px; background:rgba(255,255,255,0.04); border-radius:10px; border:1px solid ${isEn ? 'rgba(0,242,254,0.15)' : 'rgba(255,255,255,0.05)'}; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; ${!isEn ? 'opacity:0.6;' : ''}">
+        <div style="min-width:200px; flex:1;">
+          <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <i class="fas fa-mobile-alt" style="color:#00f2fe; font-size:16px;"></i>
+            <strong style="font-size:15px; color:#fff;">${safeText(dev.name || ('هاتف ' + (dev.id + 1)))}</strong>
+            ${badgeHtml}
+          </div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.7); font-family:monospace; margin-top:4px;">
+            <i class="fas fa-fingerprint" style="color:#f39c12;"></i> <span style="color:#00f2fe; font-weight:bold;">${safeText(dev.mac)}</span>
+            ${dev.lastIp ? ` <span style="color:rgba(255,255,255,0.5);">|</span> IP: ${safeText(dev.lastIp)}` : ''}
+            ${dev.lastRssi && dev.lastRssi > -99 ? ` <span style="color:rgba(255,255,255,0.5);">|</span> <span style="color:#2ecc71;">${dev.lastRssi} dBm</span>` : ''}
+          </div>
+          <div style="font-size:12px; color:rgba(255,255,255,0.85); margin-top:4px;">
+            <i class="fas fa-music" style="color:#e056fd;"></i> ملف الترحيب: <span style="color:#00f2fe; font-family:monospace;">${safeText(dev.welcomeFile || 'افتراضي')}</span>
+          </div>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+          <button type="button" onclick="testDeviceAudio('${safeAttr(dev.welcomeFile || '')}')" title="تجربة تشغيل الصوت" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+            <i class="fas fa-play"></i> تجربة
+          </button>
+          <button type="button" onclick="editPresenceDevice(${dev.id})" title="تعديل الجهاز" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+            <i class="fas fa-edit"></i> تعديل
+          </button>
+          <button type="button" onclick="deletePresenceDevice(${dev.id}, '${safeAttr(dev.name || '')}')" title="حذف الجهاز" style="background:linear-gradient(135deg, #e74c3c, #c0392b); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+            <i class="fas fa-trash"></i> حذف
+          </button>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
 }
 
 function savePresenceConfig() {
@@ -4167,12 +5341,9 @@ function savePresenceConfig() {
     enabled: $('presenceEnabled')?.checked ? '1' : '0',
     mode: $('presenceMode')?.value || '0',
     rssiThresh: $('presenceRssi')?.value || '-65',
-    targetMac: ($('presenceTargetMac')?.value || '').trim(),
-    targetName: ($('presenceTargetName')?.value || '').trim(),
-    welcomeFile: $('presenceAudioFile')?.value || '',
     volume: $('presenceVolume')?.value || '20',
     cooldownMinutes: $('presenceCooldown')?.value || '30',
-    vacateMinutes: $('presenceVacate')?.value || '3',
+    vacateMinutes: $('presenceVacate')?.value || '10',
     quietEn: $('presenceQuietEn')?.checked ? '1' : '0',
     qStartH: qStart[0] || '23',
     qStartM: qStart[1] || '0',
@@ -4181,7 +5352,7 @@ function savePresenceConfig() {
   };
 
   apiPost('/api/presence/config', payload).then(() => {
-    toast('تم حفظ إعدادات الترحيب الذكي وعنوان الماك بنجاح');
+    toast('تم حفظ إعدادات الترحيب الذكي العامة بنجاح');
     refreshPresenceStatus();
   }).catch((err) => {
     toast(`فشل الحفظ: ${err.message}`);
@@ -4213,23 +5384,185 @@ function refreshPresenceStatus() {
 
     if (rssiTxt) {
       let extra = [];
-      if (st.targetMac) extra.push(`الماك: ${st.targetMac}`);
-      if (st.lastKnownIp) extra.push(`IP: ${st.lastKnownIp}`);
-      if (st.lastRssi && st.lastRssi > -99) extra.push(`إشارة: ${st.lastRssi} dBm`);
+      if (Array.isArray(st.devices) && st.devices.length > 0) {
+        extra.push(`الأجهزة المسجلة: ${st.devices.length}`);
+        const activeCount = st.devices.filter(d => d.state === 'present').length;
+        if (activeCount > 0) extra.push(`المتواجدون حالياً: ${activeCount}`);
+      }
+      if (st.lastRssi && st.lastRssi > -99) extra.push(`آخر إشارة: ${st.lastRssi} dBm`);
       rssiTxt.textContent = extra.join(' | ');
+    }
+
+    if (Array.isArray(st.devices) && presenceSavedConfig.devices) {
+      st.devices.forEach((d) => {
+        const found = presenceSavedConfig.devices.find(x => x.id === d.id);
+        if (found) {
+          found.state = d.state;
+          found.lastRssi = d.lastRssi;
+          found.lastIp = d.lastIp;
+        }
+      });
+      renderPresenceDevicesList(presenceSavedConfig.devices);
     }
   }).catch(() => {});
 }
 
-function testPresenceAudio() {
-  const file = $('presenceAudioFile')?.value;
+// ---- Modal Handlers for Multi-Device ----
+function ensurePresenceAudioOptions(selectedFile) {
+  const sel = $('presenceDevAudioFile');
+  if (!sel) return;
+
+  const audioFiles = (appState.files || []).filter((f) =>
+    !f.isDirectory &&
+    !String(f.name || '').startsWith('prayer_csv/') &&
+    /\.(mp3|wav)$/i.test(f.name || '')
+  );
+
+  let html = '';
+  audioFiles.forEach((f) => {
+    html += `<option value="${safeAttr(f.name)}">${safeText(f.name)}</option>`;
+  });
+  sel.innerHTML = html;
+
+  if (selectedFile) {
+    const target = selectedFile;
+    const noSlash = target.startsWith('/') ? target.slice(1) : target;
+    const withSlash = '/' + noSlash;
+    let matched = false;
+    for (const opt of sel.options) {
+      if (opt.value === target || opt.value === noSlash || opt.value === withSlash) {
+        sel.value = opt.value;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched && target) {
+      const opt = document.createElement('option');
+      opt.value = target;
+      opt.textContent = target;
+      sel.appendChild(opt);
+      sel.value = target;
+    }
+  }
+
+  // If audio files list not yet in memory, fetch it directly from device!
+  if (audioFiles.length === 0) {
+    apiGet('/api/files/list').then((data) => {
+      const files = Array.isArray(data) ? data : (data.files || []);
+      appState.files = files;
+      ensurePresenceAudioOptions(selectedFile || sel.value);
+    }).catch(() => {});
+  }
+}
+
+function openAddPresenceDeviceModal() {
+  if (presenceSavedConfig.devices && presenceSavedConfig.devices.length >= 8) {
+    toast('تم الوصول للحد الأقصى المسموح (8 أجهزة). احذف جهازاً قديماً للإضافة.');
+    return;
+  }
+  if ($('presenceDeviceModalTitle')) $('presenceDeviceModalTitle').innerHTML = '<i class="fas fa-user-plus"></i> إضافة جهاز ترحيب جديد';
+  if ($('presenceDevId')) $('presenceDevId').value = '-1';
+  if ($('presenceDevName')) $('presenceDevName').value = '';
+  if ($('presenceDevMac')) $('presenceDevMac').value = '';
+  if ($('presenceDevEnabled')) $('presenceDevEnabled').checked = true;
+  
+  ensurePresenceAudioOptions('');
+  const modal = $('presenceDeviceModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function editPresenceDevice(id) {
+  const devs = presenceSavedConfig.devices || [];
+  const dev = devs.find(d => d.id === id);
+  if (!dev) return;
+
+  if ($('presenceDeviceModalTitle')) $('presenceDeviceModalTitle').innerHTML = `<i class="fas fa-edit"></i> تعديل: ${safeText(dev.name)}`;
+  if ($('presenceDevId')) $('presenceDevId').value = String(dev.id);
+  if ($('presenceDevName')) $('presenceDevName').value = dev.name || '';
+  if ($('presenceDevMac')) $('presenceDevMac').value = dev.mac || '';
+  if ($('presenceDevEnabled')) $('presenceDevEnabled').checked = dev.enabled !== false;
+
+  ensurePresenceAudioOptions(dev.welcomeFile || '');
+
+  const modal = $('presenceDeviceModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closePresenceDeviceModal() {
+  const modal = $('presenceDeviceModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function savePresenceDeviceFromModal() {
+  const id = parseInt($('presenceDevId')?.value || '-1', 10);
+  const name = ($('presenceDevName')?.value || '').trim();
+  const mac = ($('presenceDevMac')?.value || '').trim().toLowerCase();
+  const welcomeFile = $('presenceDevAudioFile')?.value || '/Azan/welcome.mp3';
+  const enabled = $('presenceDevEnabled')?.checked ? '1' : '0';
+
+  if (!mac || mac.length < 11) {
+    toast('يرجى إدخال عنوان ماك (MAC) صحيح للجهاز');
+    return;
+  }
+
+  const payload = {
+    id: String(id),
+    name: name || ('هاتف ' + mac.slice(-5)),
+    mac: mac,
+    welcomeFile: welcomeFile,
+    enabled: enabled
+  };
+
+  apiPost('/api/presence/device/save', payload).then(() => {
+    toast(`تم حفظ الجهاز [${payload.name}] بنجاح`);
+    closePresenceDeviceModal();
+    loadPresenceConfig();
+    refreshPresenceStatus();
+  }).catch((err) => {
+    toast(`فشل حفظ الجهاز: ${err.message}`);
+  });
+}
+
+function deletePresenceDevice(id, name) {
+  if (!confirm(`هل أنت متأكد من حذف جهاز [${name || 'المحدد'}] من قائمة الترحيب؟`)) {
+    return;
+  }
+  apiPost('/api/presence/device/delete', { id: String(id) }).then(() => {
+    toast('تم حذف الجهاز بنجاح');
+    loadPresenceConfig();
+    refreshPresenceStatus();
+  }).catch((err) => {
+    toast(`فشل الحذف: ${err.message}`);
+  });
+}
+
+function testDeviceAudio(file) {
+  if (!file) {
+    toast('الملف الصوتي غير محدد');
+    return;
+  }
+  const volume = $('presenceVolume')?.value || '20';
+  const playPath = file.startsWith('/') ? file : ('/' + file);
+  apiPost('/api/presence/test', { file: playPath, volume: volume }).then(() => {
+    toast(`جاري تجربة تشغيل: ${file}`);
+  }).catch((err) => {
+    toast(`فشل التشغيل: ${err.message}`);
+  });
+}
+
+function testDeviceModalAudio() {
+  const file = $('presenceDevAudioFile')?.value;
   if (!file) {
     toast('يرجى اختيار ملف صوتي أولاً');
     return;
   }
-  const volume = $('presenceVolume')?.value || '20';
-  apiPost('/api/presence/test', { file: file, volume: volume }).then(() => {
-    toast('جاري تجربة تشغيل ملف الترحيب المختار...');
+  testDeviceAudio(file);
+}
+
+function testPresenceAudio() {
+  const vol = $('presenceVolume')?.value || '20';
+  apiPost('/api/presence/test', { volume: vol }).then(() => {
+    toast('جاري تجربة تشغيل ملف الترحيب...');
   }).catch((err) => {
     toast(`فشل التشغيل: ${err.message}`);
   });
@@ -4299,10 +5632,17 @@ function startWifiScan() {
 }
 
 function selectWifiDevice(mac, name, ip) {
-  if ($('presenceTargetMac')) $('presenceTargetMac').value = mac;
-  if ($('presenceTargetName')) $('presenceTargetName').value = name || ip || 'هاتف محمول';
+  const modal = $('presenceDeviceModal');
+  if (modal && modal.style.display !== 'none') {
+    if ($('presenceDevMac')) $('presenceDevMac').value = mac;
+    if ($('presenceDevName') && !$('presenceDevName').value) $('presenceDevName').value = name || 'هاتف شبكة';
+  } else {
+    openAddPresenceDeviceModal();
+    if ($('presenceDevMac')) $('presenceDevMac').value = mac;
+    if ($('presenceDevName')) $('presenceDevName').value = name || 'هاتف شبكة';
+  }
   closeWifiScanModal();
-  toast(`تم حفظ عنوان الماك: ${mac}`);
+  toast(`تم اختيار الماك: ${mac}`);
 }
 
 // ---- BLE Devices Scanner ----
@@ -4371,8 +5711,15 @@ function startBleScan() {
 }
 
 function selectBleDevice(mac, name) {
-  if ($('presenceTargetMac')) $('presenceTargetMac').value = mac;
-  if ($('presenceTargetName')) $('presenceTargetName').value = (name && name !== 'Unknown Device') ? name : 'هاتف بلوتوث';
+  const modal = $('presenceDeviceModal');
+  if (modal && modal.style.display !== 'none') {
+    if ($('presenceDevMac')) $('presenceDevMac').value = mac;
+    if ($('presenceDevName') && !$('presenceDevName').value) $('presenceDevName').value = (name && name !== 'Unknown Device') ? name : 'هاتف بلوتوث';
+  } else {
+    openAddPresenceDeviceModal();
+    if ($('presenceDevMac')) $('presenceDevMac').value = mac;
+    if ($('presenceDevName')) $('presenceDevName').value = (name && name !== 'Unknown Device') ? name : 'هاتف بلوتوث';
+  }
   closeBleScanModal();
   toast(`تم اختيار الجهاز: ${name || mac}`);
 }
