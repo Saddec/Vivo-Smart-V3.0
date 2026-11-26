@@ -8175,6 +8175,12 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
   @override
   void initState() {
     super.initState();
+    // Refresh immediately when entering this screen
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(presenceProvider.notifier).refresh();
+      }
+    });
     // Poll status periodically while on this screen
     _statusTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       if (mounted) {
@@ -8635,15 +8641,38 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
     final config = pState.config;
     final status = pState.status;
 
-    // Devices list from config or status
-    final rawDevices = config['devices'] as List? ?? status['devices'] as List? ?? [];
+    // Merge config (metadata: name, mac, file, enabled) with live status (presence runtime state)
+    final configDevList = (config['devices'] as List? ?? []).whereType<Map>().toList();
+    final statusDevList = (status['devices'] as List? ?? []).whereType<Map>().toList();
+
+    final Map<String, Map<String, dynamic>> statusByMac = {};
+    final Map<int, Map<String, dynamic>> statusById = {};
+    for (int i = 0; i < statusDevList.length; i++) {
+      final s = Map<String, dynamic>.from(statusDevList[i]);
+      final mac = (s['mac'] ?? '').toString().toUpperCase().trim();
+      if (mac.isNotEmpty) statusByMac[mac] = s;
+      final sId = s['id'] is int ? s['id'] as int : int.tryParse(s['id']?.toString() ?? '');
+      if (sId != null) statusById[sId] = s;
+    }
+
     final List<Map<String, dynamic>> devices = [];
-    for (int i = 0; i < rawDevices.length; i++) {
-      if (rawDevices[i] is Map) {
-        final d = Map<String, dynamic>.from(rawDevices[i]);
-        d['id'] = d['id'] ?? i;
-        devices.add(d);
+    final sourceList = configDevList.isNotEmpty ? configDevList : statusDevList;
+    for (int i = 0; i < sourceList.length; i++) {
+      final d = Map<String, dynamic>.from(sourceList[i]);
+      final id = d['id'] is int ? d['id'] as int : (int.tryParse(d['id']?.toString() ?? '') ?? i);
+      d['id'] = id;
+      final mac = (d['mac'] ?? '').toString().toUpperCase().trim();
+
+      // Find matching live runtime state from ESP32
+      final live = (mac.isNotEmpty ? statusByMac[mac] : null) ?? statusById[id];
+      if (live != null) {
+        d['state'] = live['state'];
+        d['lastSeenMs'] = live['lastSeenMs'];
+        d['lastTriggerMs'] = live['lastTriggerMs'];
+        d['lastRssi'] = live['lastRssi'];
+        d['lastIp'] = live['lastIp'];
       }
+      devices.add(d);
     }
 
     // System summary state
@@ -9005,9 +9034,23 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                 final devMac = (dev['mac'] ?? '').toString();
                 final devFile = (dev['welcomeFile'] ?? '/Azan/welcome.mp3').toString();
                 final devEnabled = dev['enabled'] != false;
-                final devState = dev['state'] as int? ?? (dev['state'] == 'present' ? 1 : (dev['state'] == 'cooldown' ? 2 : 0));
-                final devRssi = dev['lastRssi'] ?? -100;
-                final devIp = (dev['lastIp'] ?? '').toString();
+                final rawState = dev['state'];
+                int devState = 0;
+                if (rawState is int) {
+                  devState = rawState;
+                } else if (rawState != null) {
+                  final s = rawState.toString().toLowerCase().trim();
+                  if (s == 'present' || s == '1' || s == 'true') {
+                    devState = 1;
+                  } else if (s == 'cooldown' || s == '2') {
+                    devState = 2;
+                  } else {
+                    devState = 0;
+                  }
+                }
+                final devRssi = (dev['lastRssi'] as num?)?.toInt() ?? -100;
+                final devIp = (dev['lastIp'] ?? '').toString().trim();
+                final devSeenMs = (dev['lastSeenMs'] as num?)?.toInt() ?? 0;
 
                 String statusLabel = 'غائب';
                 Color statusClr = Colors.white38;
@@ -9021,6 +9064,24 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                   statusClr = const Color(0xFF00F2FE);
                   statusIcn = Icons.hourglass_bottom;
                 }
+
+                String seenText = '';
+                if (devSeenMs > 0) {
+                  final secs = devSeenMs ~/ 1000;
+                  if (secs < 60) {
+                    seenText = 'آخر رصد: $secs ث';
+                  } else if (secs < 3600) {
+                    seenText = 'آخر رصد: ${secs ~/ 60} د';
+                  } else {
+                    seenText = 'آخر رصد: ${secs ~/ 3600} س';
+                  }
+                }
+
+                final List<String> devDetails = [];
+                if (devMac.isNotEmpty) devDetails.add('MAC: $devMac');
+                if (devIp.isNotEmpty) devDetails.add('IP: $devIp');
+                if (devRssi > -100) devDetails.add('$devRssi dBm');
+                if (seenText.isNotEmpty) devDetails.add(seenText);
 
                 return Container(
                   padding: const EdgeInsets.all(14),
@@ -9078,7 +9139,7 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'MAC: $devMac ${devIp.isNotEmpty ? " | IP: $devIp" : ""} ${devRssi > -100 ? " | $devRssi dBm" : ""}',
+                                  devDetails.join(' | '),
                                   style: const TextStyle(color: Colors.white54, fontSize: 11),
                                   textDirection: TextDirection.ltr,
                                 ),
