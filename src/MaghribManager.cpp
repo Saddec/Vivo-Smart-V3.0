@@ -197,14 +197,28 @@ int MaghribManager::getOffset() {
 
 bool MaghribManager::shouldSkipAdhan() {
     if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    time_t now = time(nullptr);
+    struct tm tinfo;
+    localtime_r(&now, &tinfo);
+    int wday = tinfo.tm_wday;
     bool val = _skipAdhan;
+    if (wday >= 0 && wday < 7 && alerts[wday].enabled) {
+        val = alerts[wday].skipAdhan;
+    }
     if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
     return val;
 }
 
 bool MaghribManager::shouldSkipIqama() {
     if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    time_t now = time(nullptr);
+    struct tm tinfo;
+    localtime_r(&now, &tinfo);
+    int wday = tinfo.tm_wday;
     bool val = _skipIqama;
+    if (wday >= 0 && wday < 7 && alerts[wday].enabled) {
+        val = alerts[wday].skipIqama;
+    }
     if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
     return val;
 }
@@ -246,6 +260,8 @@ String MaghribManager::getAlertsJson() {
         obj["enabled"] = alerts[i].enabled;
         obj["volume"] = alerts[i].volume;
         obj["loop"] = alerts[i].loopDuration;
+        obj["skipAdhan"] = alerts[i].skipAdhan;
+        obj["skipIqama"] = alerts[i].skipIqama;
     }
     String json;
     serializeJson(doc, json);
@@ -285,6 +301,8 @@ void MaghribManager::saveAlertsJson(const String& json) {
             alerts[i].enabled = obj["enabled"] | false;
             alerts[i].volume = obj["volume"] | 15;
             alerts[i].loopDuration = obj["loop"] | 0;
+            alerts[i].skipAdhan = obj["skipAdhan"] | false;
+            alerts[i].skipIqama = obj["skipIqama"] | false;
 
             if (alerts[i].type == 1) {
                 // Live radio duration
@@ -439,6 +457,8 @@ void MaghribManager::loadFromNVS() {
             alerts[i].enabled = obj["enabled"] | false;
             alerts[i].volume = obj["volume"] | 15;
             alerts[i].loopDuration = obj["loop"] | 0;
+            alerts[i].skipAdhan = obj["skipAdhan"] | false;
+            alerts[i].skipIqama = obj["skipIqama"] | false;
             i++;
         }
     }
@@ -459,6 +479,8 @@ void MaghribManager::saveToNVS() {
         obj["enabled"] = alerts[i].enabled;
         obj["volume"] = alerts[i].volume;
         obj["loop"] = alerts[i].loopDuration;
+        obj["skipAdhan"] = alerts[i].skipAdhan;
+        obj["skipIqama"] = alerts[i].skipIqama;
     }
     String json;
     serializeJson(doc, json);

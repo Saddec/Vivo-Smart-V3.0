@@ -13,6 +13,8 @@ struct DailyMaghribAlert {
     bool enabled = false;
     uint8_t volume = 15;
     uint32_t loopDuration = 0; // seconds
+    bool skipAdhan = false;
+    bool skipIqama = false;
 };
 
 class MaghribManager {
