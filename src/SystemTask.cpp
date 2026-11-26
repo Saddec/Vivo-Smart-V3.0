@@ -770,6 +770,10 @@ void checkPrayerTimes() {
 
     // Stop playing audio 15 seconds before any upcoming Adhan
     for (int i = 0; i < 5; i++) {
+        if (i == 3 && maghribManager.shouldSkipAdhan()) {
+            // User disabled Maghrib Adhan: let pre-Maghrib audio/radio continue playing smoothly
+            continue;
+        }
         if (prayers[i].length() >= 5) {
             int hh = prayers[i].substring(0, 2).toInt();
             int mm = prayers[i].substring(3, 5).toInt();
@@ -801,7 +805,10 @@ void checkPrayerTimes() {
             adhanStartTime = millis();
             activePrayerIndex = i;
             
-            if (scheduler.shouldSkipAdhan(i)) {
+            if (i == 3 && maghribManager.shouldSkipAdhan()) {
+                Serial.println("[System] Skipping Adhan for Maghrib (disabled in Maghrib settings)");
+                LOG_PR("PRAYER", "Skipping Adhan for Maghrib (disabled in Maghrib settings)");
+            } else if (scheduler.shouldSkipAdhan(i)) {
                 Serial.printf("[System] Skipping Adhan for prayer %d due to radio schedule override\n", i);
                 LOG_PR("PRAYER", "Skipping Adhan for prayer %s due to radio schedule override", prayerNames[i].c_str());
             } else {
@@ -815,7 +822,11 @@ void checkPrayerTimes() {
     }
     for (int i=0; i<5; i++) {
         if (adhanPlayed[i] && !iqamaPlayed[i]) {
-            if (scheduler.shouldSkipIqama(i)) {
+            if (i == 3 && maghribManager.shouldSkipIqama()) {
+                Serial.println("[System] Skipping Iqama for Maghrib (disabled in Maghrib settings)");
+                LOG_PR("PRAYER", "Skipping Iqama for Maghrib (disabled in Maghrib settings)");
+                iqamaPlayed[i] = true;
+            } else if (scheduler.shouldSkipIqama(i)) {
                 Serial.printf("[System] Skipping Iqama for prayer %d due to radio schedule override\n", i);
                 LOG_PR("PRAYER", "Skipping Iqama for prayer %s due to radio schedule override", prayerNames[i].c_str());
                 iqamaPlayed[i] = true;

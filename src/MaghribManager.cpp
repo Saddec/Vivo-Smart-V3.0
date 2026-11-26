@@ -195,13 +195,52 @@ int MaghribManager::getOffset() {
     return val;
 }
 
+bool MaghribManager::shouldSkipAdhan() {
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    bool val = _skipAdhan;
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+    return val;
+}
+
+bool MaghribManager::shouldSkipIqama() {
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    bool val = _skipIqama;
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+    return val;
+}
+
+void MaghribManager::setSkipAdhan(bool skip) {
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    _skipAdhan = skip;
+    Preferences prefs;
+    prefs.begin("maghrib", false);
+    prefs.putBool("skipAdhan", _skipAdhan);
+    prefs.end();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+}
+
+void MaghribManager::setSkipIqama(bool skip) {
+    if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
+    _skipIqama = skip;
+    Preferences prefs;
+    prefs.begin("maghrib", false);
+    prefs.putBool("skipIqama", _skipIqama);
+    prefs.end();
+    if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
+}
+
 String MaghribManager::getAlertsJson() {
     if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
     DynamicJsonDocument doc(4096);
-    JsonArray arr = doc.to<JsonArray>();
+    JsonObject root = doc.to<JsonObject>();
+    root["skipAdhan"] = _skipAdhan;
+    root["skipIqama"] = _skipIqama;
+    root["offset"] = _offsetMin;
+    JsonArray arr = root.createNestedArray("alerts");
     for (int i = 0; i < 7; i++) {
         JsonObject obj = arr.createNestedObject();
         obj["day"] = i;
+        obj["type"] = alerts[i].type;
         obj["file"] = alerts[i].fileName;
         obj["duration"] = alerts[i].durationSec;
         obj["enabled"] = alerts[i].enabled;
@@ -217,26 +256,50 @@ String MaghribManager::getAlertsJson() {
 void MaghribManager::saveAlertsJson(const String& json) {
     DynamicJsonDocument doc(4096);
     DeserializationError err = deserializeJson(doc, json);
-    if (err || !doc.is<JsonArray>()) return;
-    JsonArray arr = doc.as<JsonArray>();
+    if (err) return;
     if (_maghribMutex) xSemaphoreTakeRecursive(_maghribMutex, portMAX_DELAY);
-    int i = 0;
-    for (JsonObject obj : arr) {
-        if (i >= 7) break;
-        String newFile = obj["file"].as<String>();
-        bool fileChanged = (alerts[i].fileName != newFile);
-        alerts[i].fileName = newFile;
-        alerts[i].enabled = obj["enabled"] | false;
-        alerts[i].volume = obj["volume"] | 15;
-        alerts[i].loopDuration = obj["loop"] | 0;
-        if (newFile.length() == 0) {
-            alerts[i].durationSec = 0;
-        } else if (fileChanged || alerts[i].durationSec <= 0) {
-            if (audioManager.getState() == AUDIO_IDLE) {
-                alerts[i].durationSec = getMP3Duration(newFile);
-            }
+
+    JsonArray arr;
+    if (doc.is<JsonObject>()) {
+        if (doc.containsKey("skipAdhan")) _skipAdhan = doc["skipAdhan"];
+        if (doc.containsKey("skipIqama")) _skipIqama = doc["skipIqama"];
+        if (doc.containsKey("offset")) _offsetMin = doc["offset"];
+        if (doc.containsKey("alerts") && doc["alerts"].is<JsonArray>()) {
+            arr = doc["alerts"].as<JsonArray>();
         }
-        i++;
+    } else if (doc.is<JsonArray>()) {
+        arr = doc.as<JsonArray>();
+    }
+
+    if (!arr.isNull()) {
+        int i = 0;
+        for (JsonObject obj : arr) {
+            if (i >= 7) break;
+            String newFile = obj["file"].as<String>();
+            bool fileChanged = (alerts[i].fileName != newFile);
+            alerts[i].fileName = newFile;
+            alerts[i].type = obj["type"] | 0;
+            if (newFile.startsWith("http://") || newFile.startsWith("https://")) {
+                alerts[i].type = 1;
+            }
+            alerts[i].enabled = obj["enabled"] | false;
+            alerts[i].volume = obj["volume"] | 15;
+            alerts[i].loopDuration = obj["loop"] | 0;
+
+            if (alerts[i].type == 1) {
+                // Live radio duration
+                alerts[i].durationSec = (int)alerts[i].loopDuration;
+            } else {
+                if (newFile.length() == 0) {
+                    alerts[i].durationSec = 0;
+                } else if (fileChanged || alerts[i].durationSec <= 0) {
+                    if (audioManager.getState() == AUDIO_IDLE) {
+                        alerts[i].durationSec = getMP3Duration(newFile);
+                    }
+                }
+            }
+            i++;
+        }
     }
     triggeredToday = false;
     saveToNVS();
@@ -255,7 +318,6 @@ void MaghribManager::checkAndTrigger() {
     int wday = timeinfo.tm_wday;   // 0 = Sunday
     int yday = timeinfo.tm_yday;   // 0..365
 
-    // Always reset trigger flag on a new calendar day (even if previous days were disabled!)
     static int lastCheckedYday = -1;
     if (yday != lastCheckedYday) {
         triggeredToday = false;
@@ -268,7 +330,10 @@ void MaghribManager::checkAndTrigger() {
         if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
         return;
     }
-    if (alert.durationSec <= 0) {
+
+    bool isRadio = (alert.type == 1) || alert.fileName.startsWith("http://") || alert.fileName.startsWith("https://");
+
+    if (!isRadio && alert.durationSec <= 0) {
         if (audioManager.getState() == AUDIO_IDLE) {
             alert.durationSec = getMP3Duration(alert.fileName);
             if (alert.durationSec > 0) saveToNVS();
@@ -279,7 +344,7 @@ void MaghribManager::checkAndTrigger() {
         }
     }
 
-    // Get today's Maghrib time (cached in SystemTask or recalc)
+    // Get today's Maghrib time
     extern PrayerTimesResult getTodayPrayerSafe();
     extern PrayerConfig currentPrayerConfig;
     PrayerTimesResult cachedP = getTodayPrayerSafe();
@@ -300,31 +365,50 @@ void MaghribManager::checkAndTrigger() {
     maghribTm.tm_sec = 0;
     time_t maghribEpoch = mktime(&maghribTm);
 
-    // Desired start time = Maghrib - (duration + _offsetMin*60)
-    int playWindowSec = (alert.loopDuration > 0) ? (int)alert.loopDuration : alert.durationSec;
-    time_t triggerTime = maghribEpoch - (playWindowSec + _offsetMin * 60);
+    time_t triggerTime = 0;
+    uint32_t playDuration = 0;
+
+    if (isRadio) {
+        uint32_t radioWindowSec = (alert.loopDuration > 0) ? alert.loopDuration : (_offsetMin * 60UL);
+        if (radioWindowSec < 60) radioWindowSec = 60;
+        triggerTime = maghribEpoch - radioWindowSec;
+        playDuration = radioWindowSec;
+    } else {
+        int playWindowSec = (alert.loopDuration > 0) ? (int)alert.loopDuration : alert.durationSec;
+        triggerTime = maghribEpoch - (playWindowSec + _offsetMin * 60);
+        playDuration = alert.loopDuration;
+    }
     triggerTimeToday = triggerTime;
 
-    if (!triggeredToday && now >= triggerTime && now < (maghribEpoch - 15)) {
-        String clean = alert.fileName;
-        clean.trim();
-        clean.replace("\\", "/");
-        while (clean.startsWith("/")) clean.remove(0, 1);
-        String fullPath = "/" + clean;
-        lockSD();
-        bool exists = SD.exists(fullPath);
-        unlockSD();
-
-        if (!exists) {
-            LOG_E("MAGHRIB", "Pre-Maghrib alert file missing on SD: %s", fullPath.c_str());
+    if (!triggeredToday && now >= triggerTime && now < (maghribEpoch - 5)) {
+        if (isRadio) {
+            Serial.printf("[Maghrib] Triggering live radio before Maghrib (day=%d, url=%s, dur=%lus, vol=%d)\n",
+                          wday, alert.fileName.c_str(), (unsigned long)playDuration, alert.volume);
+            LOG_SYS("MAGHRIB", "Triggering live radio before Maghrib (day=%d, vol=%d, dur=%lus)",
+                    wday, alert.volume, (unsigned long)playDuration);
+            audioManager.setAudioDescription("إذاعة قبل المغرب");
+            sendPlayCommand(alert.fileName.c_str(), 1, 0, alert.volume, playDuration);
             triggeredToday = true;
         } else {
-            LOG_SYS("MAGHRIB", "Triggering pre-Maghrib alert (day=%d, file=%s, dur=%ds, offset=%dm, vol=%d)",
-                    wday, alert.fileName.c_str(), alert.durationSec, _offsetMin, alert.volume);
-            audioManager.setAudioDescription("تنبيه قبل المغرب: " + alert.fileName);
-            // Pass durationSec=0 when loopDuration==0 so natural EOF finishes the track (SystemTask stops audio 15s before Maghrib)
-            sendPlayCommand(alert.fileName.c_str(), 1, 0, alert.volume, alert.loopDuration);
-            triggeredToday = true;
+            String clean = alert.fileName;
+            clean.trim();
+            clean.replace("\\", "/");
+            while (clean.startsWith("/")) clean.remove(0, 1);
+            String fullPath = "/" + clean;
+            lockSD();
+            bool exists = SD.exists(fullPath);
+            unlockSD();
+
+            if (!exists) {
+                LOG_E("MAGHRIB", "Pre-Maghrib alert file missing on SD: %s", fullPath.c_str());
+                triggeredToday = true;
+            } else {
+                LOG_SYS("MAGHRIB", "Triggering pre-Maghrib alert (day=%d, file=%s, dur=%ds, offset=%dm, vol=%d)",
+                        wday, alert.fileName.c_str(), alert.durationSec, _offsetMin, alert.volume);
+                audioManager.setAudioDescription("تنبيه قبل المغرب: " + alert.fileName);
+                sendPlayCommand(alert.fileName.c_str(), 1, 0, alert.volume, alert.loopDuration);
+                triggeredToday = true;
+            }
         }
     }
     if (_maghribMutex) xSemaphoreGiveRecursive(_maghribMutex);
@@ -335,6 +419,8 @@ void MaghribManager::loadFromNVS() {
     prefs.begin("maghrib", true);
     String json = prefs.getString("alerts", "[]");
     _offsetMin = prefs.getInt("offset", 1);
+    _skipAdhan = prefs.getBool("skipAdhan", false);
+    _skipIqama = prefs.getBool("skipIqama", false);
     prefs.end();
 
     DynamicJsonDocument doc(4096);
@@ -344,7 +430,11 @@ void MaghribManager::loadFromNVS() {
         int i = 0;
         for (JsonObject obj : arr) {
             if (i >= 7) break;
+            alerts[i].type = obj["type"] | 0;
             alerts[i].fileName = obj["file"].as<String>();
+            if (alerts[i].fileName.startsWith("http://") || alerts[i].fileName.startsWith("https://")) {
+                alerts[i].type = 1;
+            }
             alerts[i].durationSec = obj["duration"] | 0;
             alerts[i].enabled = obj["enabled"] | false;
             alerts[i].volume = obj["volume"] | 15;
@@ -362,6 +452,8 @@ void MaghribManager::saveToNVS() {
     JsonArray arr = doc.to<JsonArray>();
     for (int i = 0; i < 7; i++) {
         JsonObject obj = arr.createNestedObject();
+        obj["day"] = i;
+        obj["type"] = alerts[i].type;
         obj["file"] = alerts[i].fileName;
         obj["duration"] = alerts[i].durationSec;
         obj["enabled"] = alerts[i].enabled;
@@ -373,5 +465,7 @@ void MaghribManager::saveToNVS() {
     Preferences prefs;
     prefs.begin("maghrib", false);
     prefs.putString("alerts", json);
+    prefs.putBool("skipAdhan", _skipAdhan);
+    prefs.putBool("skipIqama", _skipIqama);
     prefs.end();
 }

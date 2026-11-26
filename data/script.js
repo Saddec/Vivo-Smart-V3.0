@@ -2647,49 +2647,173 @@ function clearPlaylist() {
 }
 
 function saveMaghribOffset() {
-  apiPost('/api/maghrib/offset', { offset: $('maghribOffset')?.value || 1 })
-    .then(() => toast('تم حفظ تنبيه المغرب')).catch((err) => toast(`فشل الحفظ: ${err.message}`));
+  saveMaghribGeneralSettings();
+}
+
+function saveMaghribGeneralSettings() {
+  const offset = parseInt($('maghribOffset')?.value || '1', 10);
+  const skipAdhan = $('maghribSkipAdhan')?.checked || false;
+  const skipIqama = $('maghribSkipIqama')?.checked || false;
+  
+  const payload = {
+    offset: offset,
+    skipAdhan: skipAdhan,
+    skipIqama: skipIqama
+  };
+  apiPost('/api/maghrib/alert/save', { json: JSON.stringify(payload) })
+    .then(() => toast('تم حفظ إعدادات المغرب العامة بنجاح'))
+    .catch((err) => toast(`فشل الحفظ: ${err.message}`));
+}
+
+function getAvailableRadiosList() {
+  return (Array.isArray(allRadiosList) && allRadiosList.length > 0)
+    ? allRadiosList
+    : (defaultOfflineRadios[radioLanguage] || defaultOfflineRadios.ar || []);
+}
+
+function toggleMaghribType(index) {
+  const isRadio = $(`maghribType_${index}`)?.value === '1';
+  const fileContainer = $(`maghribFileRow_${index}`);
+  const radioContainer = $(`maghribRadioRow_${index}`);
+  if (fileContainer) fileContainer.style.display = isRadio ? 'none' : 'block';
+  if (radioContainer) radioContainer.style.display = isRadio ? 'block' : 'none';
+}
+
+function testMaghribItem(index) {
+  const isRadio = $(`maghribType_${index}`)?.value === '1';
+  const file = isRadio ? $(`maghribRadio_${index}`)?.value : $(`maghribFile_${index}`)?.value;
+  if (!file) {
+    toast(isRadio ? 'يرجى اختيار إذاعة أولاً' : 'يرجى اختيار ملف صوتي أولاً');
+    return;
+  }
+  const volume = $(`maghribVolume_${index}`)?.value || 15;
+  const loop = $(`maghribLoop_${index}`)?.value || 0;
+  const name = isRadio ? ($(`maghribRadio_${index}`)?.options?.[$(`maghribRadio_${index}`).selectedIndex]?.textContent || 'إذاعة المغرب') : file;
+  
+  apiPost('/api/audio/play', { file: file, name: name, volume: volume, priority: 1, loopDuration: parseInt(loop) * 60 })
+    .then(() => toast(`جاري تجربة: ${name}`))
+    .catch((err) => toast(`فشل التجربة: ${err.message}`));
 }
 
 function loadMaghribAlerts() {
-  apiGet('/api/maghrib/offset', { offset: 1 }).then((offData) => {
-    if ($('maghribOffset') && offData && offData.offset !== undefined) {
-      $('maghribOffset').value = offData.offset;
+  apiGet('/api/maghrib/alerts', {}).then((data) => {
+    const isRootObj = data && typeof data === 'object' && !Array.isArray(data);
+    const alerts = isRootObj ? (data.alerts || []) : (Array.isArray(data) ? data : []);
+    
+    if ($('maghribOffset') && isRootObj && data.offset !== undefined) {
+      $('maghribOffset').value = data.offset;
     }
-  }).catch(() => {});
-  apiGet('/api/maghrib/alerts', []).then((data) => {
-    const alerts = Array.isArray(data) ? data : (data.alerts || []);
+    if ($('maghribSkipAdhan') && isRootObj) {
+      $('maghribSkipAdhan').checked = !!data.skipAdhan;
+    }
+    if ($('maghribSkipIqama') && isRootObj) {
+      $('maghribSkipIqama').checked = !!data.skipIqama;
+    }
+
+    const radios = getAvailableRadiosList();
+    const audioFiles = (appState.files || []).filter(f => !f.isDirectory && !String(f.name || '').startsWith('prayer_csv/') && /\.(mp3|wav)$/i.test(f.name || ''));
+
     if (!$('maghribAlerts')) return;
+
     $('maghribAlerts').innerHTML = dayNames.map((d, i) => {
-      const a = alerts[i] || {file:'', enabled:false, volume:15, loop:0};
-      return `<div class="eid-alert-row" style="background:rgba(255,255,255,0.06); padding:15px; border-radius:12px; margin-bottom:15px; display:flex; flex-direction:column; gap:10px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
-          <span class="day-label" style="font-size:1.2em; font-weight:bold; color:#f1c40f;"><i class="fas fa-calendar-day"></i> ${d}</span>
-          <label class="switch" style="margin:0;"><input type="checkbox" id="maghribEnabled_${i}" ${a.enabled?'checked':''}><span class="slider"></span></label>
+      const a = alerts[i] || { type: 0, file: '', enabled: false, volume: 15, loop: 0 };
+      const isRadio = (a.type === 1) || (a.file && (a.file.startsWith('http://') || a.file.startsWith('https://')));
+
+      const fileOptions = audioFiles.map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('');
+      const radioOptions = radios.map(r => `<option value="${safeAttr(r.url)}" ${r.url === a.file ? 'selected' : ''}>${safeText(r.name)}</option>`).join('');
+
+      return `
+        <div class="eid-alert-row" style="background:rgba(255,255,255,0.04); padding:16px; border-radius:12px; border:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="day-label" style="font-size:15px; font-weight:bold; color:#f1c40f;"><i class="fas fa-calendar-day"></i> يوم ${d}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:12px; color:rgba(255,255,255,0.7);">تفعيل التنبيه</span>
+              <label class="switch" style="margin:0;">
+                <input type="checkbox" id="maghribEnabled_${i}" ${a.enabled ? 'checked' : ''}>
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px;">
+            <div>
+              <label style="font-size:12px; color:rgba(255,255,255,0.8); display:block; margin-bottom:4px;">نوع المصدر</label>
+              <select id="maghribType_${i}" onchange="toggleMaghribType(${i})" style="margin:0; width:100%; height:40px;">
+                <option value="0" ${!isRadio ? 'selected' : ''}>📁 ملف صوتي من الذاكرة (SD)</option>
+                <option value="1" ${isRadio ? 'selected' : ''}>📻 إذاعة بث مباشر (Online Radio)</option>
+              </select>
+            </div>
+
+            <div id="maghribFileRow_${i}" style="${isRadio ? 'display:none;' : ''}">
+              <label style="font-size:12px; color:rgba(255,255,255,0.8); display:block; margin-bottom:4px;">الملف الصوتي</label>
+              <select id="maghribFile_${i}" style="margin:0; width:100%; height:40px;">
+                ${fileOptions || '<option value="">لا توجد ملفات صوتية</option>'}
+              </select>
+            </div>
+
+            <div id="maghribRadioRow_${i}" style="${!isRadio ? 'display:none;' : ''}">
+              <label style="font-size:12px; color:rgba(255,255,255,0.8); display:block; margin-bottom:4px;">قناة الإذاعة</label>
+              <select id="maghribRadio_${i}" style="margin:0; width:100%; height:40px;">
+                ${radioOptions || '<option value="">لا توجد قنوات إذاعية محملة</option>'}
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; align-items:center; background:rgba(0,0,0,0.15); padding:10px 14px; border-radius:8px;">
+            <div>
+              <label style="font-size:12px; color:rgba(255,255,255,0.7); display:block; margin-bottom:4px;">مدة التشغيل (بالدقائق)</label>
+              <input type="number" id="maghribLoop_${i}" value="${a.loop || 0}" min="0" max="180" placeholder="0 = حتى الأذان" style="margin:0; width:100%; height:38px;">
+              <small style="font-size:11px; opacity:0.6;">0 تعني الاستمرار حتى وقت الأذان</small>
+            </div>
+
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <label style="font-size:12px; color:rgba(255,255,255,0.7); margin:0;">مستوى الصوت</label>
+                <span id="magVolVal_${i}" style="font-weight:bold; color:#00f2fe; font-size:13px;">${a.volume || 15}</span>
+              </div>
+              <input type="range" id="maghribVolume_${i}" value="${a.volume || 15}" min="0" max="30" oninput="$('magVolVal_${i}').textContent=this.value" style="width:100%; margin:0;">
+            </div>
+
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+              <button type="button" class="pres-action-btn pres-btn-play" onclick="testMaghribItem(${i})" title="تجربة تشغيل هذا التنبيه">
+                <i class="fas fa-play"></i> تجربة
+              </button>
+              <button type="button" class="pres-action-btn pres-btn-delete" onclick="stopAudio()" title="إيقاف الصوت">
+                <i class="fas fa-stop"></i> إيقاف
+              </button>
+            </div>
+          </div>
         </div>
-        <div style="display:flex; flex-direction:column; gap:5px;">
-          <label style="font-size:0.9em; opacity:0.8;">الملف الصوتي</label>
-          <select id="maghribFile_${i}" style="width:100%;">${appState.files.filter(f => !f.isDirectory && !String(f.name || '').startsWith('prayer_csv/') && /\.(mp3|wav)$/i.test(f.name || '')).map(f => `<option value="${safeAttr(f.name)}" ${f.name === a.file ? 'selected' : ''}>${safeText(f.name)}</option>`).join('')}</select>
-        </div>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <label style="font-size:0.9em; opacity:0.8; white-space:nowrap;">مستوى الصوت</label>
-          <input type="range" id="maghribVolume_${i}" value="${a.volume||15}" min="0" max="30" oninput="$('magVolVal_${i}').textContent=this.value" style="width:100%">
-          <span id="magVolVal_${i}" style="font-weight:bold; width:30px; text-align:center;">${a.volume||15}</span>
-        </div>
-      </div>`;
+      `;
     }).join('');
+  }).catch((err) => {
+    toast(`فشل تحميل تنبيهات المغرب: ${err.message}`);
   });
 }
 
 function saveMaghribAlerts() {
-  const alerts = dayNames.map((_, i) => ({
-    day: i,
-    file: $(`maghribFile_${i}`)?.value || '',
-    enabled: $(`maghribEnabled_${i}`)?.checked || false,
-    volume: parseInt($(`maghribVolume_${i}`)?.value || '15')
-  }));
-  apiPost('/api/maghrib/alert/save', {json: JSON.stringify(alerts)})
-    .then(() => toast('تم حفظ تنبيهات المغرب'))
+  const payload = {
+    offset: parseInt($('maghribOffset')?.value || '1', 10),
+    skipAdhan: $('maghribSkipAdhan')?.checked || false,
+    skipIqama: $('maghribSkipIqama')?.checked || false,
+    alerts: dayNames.map((_, i) => {
+      const isRadio = $(`maghribType_${i}`)?.value === '1';
+      const file = isRadio ? ($(`maghribRadio_${i}`)?.value || '') : ($(`maghribFile_${i}`)?.value || '');
+      return {
+        day: i,
+        type: isRadio ? 1 : 0,
+        file: file,
+        enabled: $(`maghribEnabled_${i}`)?.checked || false,
+        volume: parseInt($(`maghribVolume_${i}`)?.value || '15', 10),
+        loop: parseInt($(`maghribLoop_${i}`)?.value || '0', 10)
+      };
+    })
+  };
+
+  apiPost('/api/maghrib/alert/save', { json: JSON.stringify(payload) })
+    .then(() => toast('تم حفظ كافة تنبيهات وإذاعات المغرب بنجاح'))
     .catch((err) => toast(`فشل الحفظ: ${err.message}`));
 }
 
@@ -5316,14 +5440,14 @@ function renderPresenceDevicesList(devices) {
         </div>
         
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-          <button type="button" onclick="testDeviceAudio('${safeAttr(dev.welcomeFile || '')}')" title="تجربة تشغيل الصوت" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+          <button type="button" class="pres-action-btn pres-btn-play" onclick="testDeviceAudio('${safeAttr(dev.welcomeFile || '')}')" title="تجربة تشغيل الصوت">
             <i class="fas fa-play"></i> تجربة
           </button>
-          <button type="button" onclick="editPresenceDevice(${dev.id})" title="تعديل الجهاز" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+          <button type="button" class="pres-action-btn pres-btn-edit" onclick="editPresenceDevice(${dev.id})" title="تعديل الجهاز">
             <i class="fas fa-edit"></i> تعديل
           </button>
-          <button type="button" onclick="deletePresenceDevice(${dev.id}, '${safeAttr(dev.name || '')}')" title="حذف الجهاز" style="background:linear-gradient(135deg, #e74c3c, #c0392b); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:bold; cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
-            <i class="fas fa-trash"></i> حذف
+          <button type="button" class="pres-action-btn pres-btn-delete" onclick="deletePresenceDevice(${dev.id}, '${safeAttr(dev.name || '')}')" title="حذف الجهاز">
+            <i class="fas fa-trash-alt"></i> حذف
           </button>
         </div>
       </div>
@@ -5419,9 +5543,13 @@ function ensurePresenceAudioOptions(selectedFile) {
   );
 
   let html = '';
-  audioFiles.forEach((f) => {
-    html += `<option value="${safeAttr(f.name)}">${safeText(f.name)}</option>`;
-  });
+  if (audioFiles.length === 0) {
+    html += '<option value="">⏳ جاري جلب قائمة الملفات من الذاكرة...</option>';
+  } else {
+    audioFiles.forEach((f) => {
+      html += `<option value="${safeAttr(f.name)}">${safeText(f.name)}</option>`;
+    });
+  }
   sel.innerHTML = html;
 
   if (selectedFile) {

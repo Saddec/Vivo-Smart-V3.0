@@ -909,28 +909,31 @@
           <input type="text" id="presenceDevName" placeholder="أدخل اسم الشخص أو الهاتف" style="margin:0;">
         </div>
 
-        <div style="margin-bottom:14px;">
+        <div style="margin-bottom:16px;">
           <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-fingerprint" style="color:#f39c12;"></i> عنوان الماك (Target MAC Address)</label>
-          <input type="text" id="presenceDevMac" placeholder="مثال: aa:bb:cc:dd:ee:ff" style="margin:0 0 8px 0; font-family:monospace; font-size:15px;">
-          <div style="display:flex; gap:10px;">
-            <button type="button" onclick="openWifiScanModal()" style="flex:1; background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:9px 12px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+          <input type="text" id="presenceDevMac" placeholder="مثال: aa:bb:cc:dd:ee:ff" style="width:100%; box-sizing:border-box; margin:0 0 10px 0; font-family:monospace; font-size:15px; display:block;">
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" class="pres-scan-btn" onclick="openWifiScanModal()" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff;">
               <i class="fas fa-wifi"></i> فحص أجهزة الواي فاي
             </button>
-            <button type="button" onclick="openBleScanModal()" style="flex:1; background:linear-gradient(135deg, #00f2fe, #4facfe); color:#000; border:none; border-radius:8px; padding:9px 12px; font-weight:bold; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
+            <button type="button" class="pres-scan-btn" onclick="openBleScanModal()" style="background:linear-gradient(135deg, #00f2fe, #4facfe); color:#0b1021;">
               <i class="fab fa-bluetooth-b"></i> فحص البلوتوث
             </button>
           </div>
-          <small style="color:rgba(255,255,255,0.6); display:block; margin-top:5px;">
-            يمكنك كتابة عنوان الماك يدوياً أو اختيار هاتفك مباشرة بالضغط على أحد زري الفحص أعلاه.
+          <small style="color:rgba(255,255,255,0.65); display:block; margin-top:6px; font-size:12px;">
+            💡 يمكنك كتابة عنوان الماك يدوياً أو اختيار هاتفك مباشرة بالضغط على أحد زري الفحص أعلاه.
           </small>
         </div>
 
-        <div style="margin-bottom:16px;">
+        <div style="margin-bottom:18px;">
           <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-music" style="color:#e056fd;"></i> ملف الترحيب المخصص لهذا الجهاز</label>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <select id="presenceDevAudioFile" style="flex:1; margin:0; height:42px;"></select>
-            <button type="button" onclick="testDeviceModalAudio()" title="تجربة تشغيل الصوت المختار" style="background:linear-gradient(135deg, #2ecc71, #27ae60); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-weight:bold; font-size:13px; white-space:nowrap; cursor:pointer; display:flex; align-items:center; gap:6px; height:42px;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="presenceDevAudioFile" style="flex:1 1 240px; margin:0; height:42px; min-width:200px; box-sizing:border-box;"></select>
+            <button type="button" class="pres-action-btn pres-btn-play" onclick="testDeviceModalAudio()" title="تجربة تشغيل الصوت المختار" style="min-width:115px; height:42px;">
               <i class="fas fa-play"></i> تجربة الصوت
+            </button>
+            <button type="button" class="pres-action-btn pres-btn-delete" onclick="stopAudio()" title="إيقاف الصوت" style="min-width:70px; height:42px;">
+              <i class="fas fa-stop"></i> إيقاف
             </button>
           </div>
         </div>
@@ -1322,15 +1325,75 @@
     </div>
     <!-- Maghrib -->
     <div id="tab-maghrib" class="tab">
-      <h1><i class="fas fa-sun"></i> تنبيهات المغرب</h1>
-      <div class="glass-card">
-        <label>قبل المغرب بـ (دقائق)</label><input type="number" id="maghribOffset" value="1">
-        <button class="btn" onclick="saveMaghribOffset()">حفظ</button>
+      <h1><i class="fas fa-sun"></i> تنبيهات وإذاعات صلاة المغرب</h1>
+      
+      <!-- إعدادات مواعيد وأذان المغرب -->
+      <div class="glass-card" style="margin-bottom:20px;">
+        <h3 style="margin-top:0; color:#00f2fe;"><i class="fas fa-sliders-h"></i> خيارات تشغيل وأذان المغرب العامة</h3>
+        
+        <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:15px; margin-bottom:15px;">
+          <div>
+            <label style="display:block; margin-bottom:6px; font-weight:bold;"><i class="fas fa-clock"></i> وقت بدء التنبيه قبل أذان المغرب (بالدقائق)</label>
+            <input type="number" id="maghribOffset" value="1" min="0" max="180" style="margin:0;">
+            <small style="color:rgba(255,255,255,0.6); display:block; margin-top:4px;">مثال: 15 لبدء تشغيل الإذاعة أو التنبيه قبل أذان المغرب بربع ساعة.</small>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px; background:rgba(255,255,255,0.03); padding:14px; border-radius:10px; border:1px solid rgba(255,255,255,0.08);">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="maghribSkipAdhan">
+              <span class="slider"></span>
+            </label>
+            <div>
+              <strong style="font-size:14px; color:#fff;">إلغاء أذان المغرب عند وجود تنبيه / إذاعة نشطة</strong>
+              <small style="color:rgba(255,255,255,0.65); display:block; margin-top:2px;">عند تفعيله، لن يتم مقاطعة البث الإذاعي أو التنبيه الصوتي بأذان المغرب، وسيستمر الصوت بالعمل دون توقف.</small>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
+            <label class="switch" style="margin:0;">
+              <input type="checkbox" id="maghribSkipIqama">
+              <span class="slider"></span>
+            </label>
+            <div>
+              <strong style="font-size:14px; color:#fff;">إلغاء إقامة صلاة المغرب عند وجود تنبيه / إذاعة نشطة</strong>
+              <small style="color:rgba(255,255,255,0.65); display:block; margin-top:2px;">عند تفعيله، لن يتم رفع تكبيرات إقامة المغرب حتى لا تقطع البث أو التنبيه المستمر.</small>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:15px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-save" type="button" onclick="saveMaghribGeneralSettings()" style="padding:10px 20px;">
+            <i class="fas fa-save"></i> حفظ الإعدادات العامة للمغرب
+          </button>
+        </div>
       </div>
+
+      <!-- جدول الأيام -->
       <div class="glass-card">
-        <div id="maghribAlerts"></div>
-        <button class="btn" onclick="saveMaghribAlerts()">حفظ التنبيهات</button>
-        <button class="btn" onclick="loadMaghribAlerts()">تحديث</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin:0; color:#f1c40f;"><i class="fas fa-calendar-alt"></i> جدول تنبيهات وإذاعات المغرب الأسبوعية</h3>
+            <small style="color:rgba(255,255,255,0.65); display:block; margin-top:3px;">خصص لكل يوم من أيام الأسبوع إما إذاعة بث مباشر (مثل إذاعة القرآن الكريم) أو ملف صوتي من بطاقة الذاكرة.</small>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-save" type="button" onclick="saveMaghribAlerts()" style="padding:9px 18px;">
+              <i class="fas fa-save"></i> حفظ كافة تنبيهات المغرب
+            </button>
+            <button class="btn btn-secondary" type="button" onclick="loadMaghribAlerts()" style="padding:9px 14px;">
+              <i class="fas fa-sync-alt"></i> تحديث
+            </button>
+          </div>
+        </div>
+        
+        <div id="maghribAlerts" style="display:flex; flex-direction:column; gap:14px;"></div>
+
+        <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+          <button class="btn btn-save" type="button" onclick="saveMaghribAlerts()" style="padding:12px 28px; font-size:15px;">
+            <i class="fas fa-save"></i> حفظ كافة تنبيهات المغرب
+          </button>
+        </div>
       </div>
     </div>
     <!-- OTA (merged into settings) -->

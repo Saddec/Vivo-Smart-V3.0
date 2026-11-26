@@ -1453,3 +1453,66 @@ body.is-mobile.logged-in .mobile-header {
     font-size: 18px;
   }
 }
+
+/* Presence & Modal Action Buttons */
+.pres-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  min-width: 78px;
+  height: 38px;
+  box-sizing: border-box;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.pres-action-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.15);
+}
+.pres-action-btn:active {
+  transform: translateY(0);
+}
+.pres-btn-play {
+  background: linear-gradient(135deg, #2ecc71, #27ae60);
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(46, 204, 113, 0.3);
+}
+.pres-btn-edit {
+  background: linear-gradient(135deg, #00f2fe, #4facfe);
+  color: #0b1021 !important;
+  box-shadow: 0 4px 12px rgba(0, 242, 254, 0.3);
+}
+.pres-btn-delete {
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+.pres-scan-btn {
+  flex: 1 1 200px;
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.pres-scan-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.15);
+}
+

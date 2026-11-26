@@ -1,11 +1,10 @@
 .fas,
-.far {
+.far,
+.fab {
   display: inline-block;
-  width: 1.25em;
+  font-style: normal;
+  font-variant: normal;
+  text-rendering: auto;
+  line-height: 1;
   text-align: center;
-}
-
-.fas::before,
-.far::before {
-  content: "";
 }

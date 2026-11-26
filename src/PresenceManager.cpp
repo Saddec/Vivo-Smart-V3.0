@@ -716,6 +716,9 @@ void testPlayWelcome(const char* file, uint8_t volume) {
     unlockPresence();
 
     if (playFile.length() > 0) {
+        if (!playFile.startsWith("http://") && !playFile.startsWith("https://") && !playFile.startsWith("/")) {
+            playFile = "/" + playFile;
+        }
         audioManager.setAudioDescription("تجربة ملف الترحيب: " + playFile);
         sendPlayCommand(playFile.c_str(), 1, 0, vol);
     }

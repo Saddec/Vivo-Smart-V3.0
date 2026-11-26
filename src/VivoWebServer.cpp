@@ -1147,12 +1147,13 @@ void startWebServer() {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"adhan_playing\"}");
             return;
         }
-        String file = postValue(request, "file", "");
+        String file = urlDecode(postValue(request, "file", ""));
+        file.trim();
         if (file.length() == 0) {
             request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing file\"}");
             return;
         }
-        String name = postValue(request, "name", "");
+        String name = urlDecode(postValue(request, "name", ""));
         bool isUrl = file.startsWith("http://") || file.startsWith("https://");
         if (name.length() > 0) {
             audioManager.setAudioDescription((isUrl ? "بث مباشر: " : "تشغيل يدوي: ") + name);
@@ -1941,7 +1942,7 @@ void startWebServer() {
         request->send(200, "application/json", maghribManager.getAlertsJson());
     });
     server.on("/api/maghrib/alert/save", HTTP_POST, [](AsyncWebServerRequest *request) {
-        String json = postValue(request, "json", "[]");
+        String json = urlDecode(postValue(request, "json", "[]"));
         maghribManager.saveAlertsJson(json);
         sendOk(request);
     });
@@ -1987,8 +1988,8 @@ void startWebServer() {
         // Support updating single device from legacy parameters if present
         if (request->hasParam("targetMac", true) || request->hasParam("targetMac")) {
             String tMac = postValue(request, "targetMac");
-            String tName = postValue(request, "targetName", "جهازي الأساسي");
-            String tFile = postValue(request, "welcomeFile", "/Azan/welcome.mp3");
+            String tName = urlDecode(postValue(request, "targetName", "جهازي الأساسي"));
+            String tFile = urlDecode(postValue(request, "welcomeFile", "/Azan/welcome.mp3"));
             if (tMac.length() >= 11) {
                 addOrUpdatePresenceDevice(0, tName.c_str(), tMac.c_str(), tFile.c_str(), true);
             }
@@ -1999,9 +2000,12 @@ void startWebServer() {
     });
     server.on("/api/presence/device/save", HTTP_POST, [](AsyncWebServerRequest *request) {
         int id = postValue(request, "id", "-1").toInt();
-        String name = postValue(request, "name", "");
+        String name = urlDecode(postValue(request, "name", ""));
+        name.trim();
         String mac = postValue(request, "mac", "");
-        String welcomeFile = postValue(request, "welcomeFile", "/Azan/welcome.mp3");
+        mac.trim();
+        String welcomeFile = urlDecode(postValue(request, "welcomeFile", "/Azan/welcome.mp3"));
+        welcomeFile.trim();
         bool enabled = postBool(request, "enabled", true);
 
         if (mac.length() < 11) {
@@ -2044,14 +2048,18 @@ void startWebServer() {
         }
     });
     server.on("/api/presence/test", HTTP_POST, [](AsyncWebServerRequest *request) {
-        String testFile = postValue(request, "file", "");
+        String testFile = urlDecode(postValue(request, "file", ""));
+        testFile.trim();
         uint8_t testVol = postValue(request, "volume", "0").toInt();
         if (testFile.length() > 0) {
             if (testVol == 0) {
                 PresenceConfig cfg = getPresenceConfig();
                 testVol = cfg.volume > 0 ? cfg.volume : 20;
             }
-            audioManager.setAudioDescription("تجربة ملف الترحيب الذكي: " + testFile);
+            if (!testFile.startsWith("http://") && !testFile.startsWith("https://") && !testFile.startsWith("/")) {
+                testFile = "/" + testFile;
+            }
+            audioManager.setAudioDescription("تجربة ملف الترحيب: " + testFile);
             sendPlayCommand(testFile.c_str(), 1, 0, testVol);
         } else {
             testPlayWelcome();
