@@ -1027,6 +1027,24 @@ class ApiService {
   }
 
   // --- Maghrib Alerts APIs ---
+  Future<Map<String, dynamic>> getMaghribConfig() async {
+    try {
+      final response = await _dio.get('/api/maghrib/alerts');
+      final data = response.data is String ? jsonDecode(response.data) : response.data;
+      if (data is Map<String, dynamic>) {
+        return data;
+      } else if (data is Map) {
+        return Map<String, dynamic>.from(data);
+      } else if (data is List) {
+        return {'alerts': data, 'offset': 1, 'skipAdhan': false, 'skipIqama': false};
+      }
+      return {'alerts': [], 'offset': 1, 'skipAdhan': false, 'skipIqama': false};
+    } catch (e) {
+      debugPrint('Error getting Maghrib config: $e');
+      return {'alerts': [], 'offset': 1, 'skipAdhan': false, 'skipIqama': false};
+    }
+  }
+
   Future<List<dynamic>> getMaghribAlerts() async {
     try {
       final response = await _dio.get('/api/maghrib/alerts');
@@ -1038,9 +1056,9 @@ class ApiService {
     }
   }
 
-  Future<bool> saveMaghribAlerts(List<dynamic> alerts) async {
+  Future<bool> saveMaghribAlerts(dynamic alertsOrConfig) async {
     try {
-      final jsonStr = jsonEncode(alerts);
+      final jsonStr = jsonEncode(alertsOrConfig);
       final response = await _dio.post(
         '/api/maghrib/alert/save',
         data: 'json=${Uri.encodeComponent(jsonStr)}',

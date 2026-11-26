@@ -1167,19 +1167,27 @@ final eidStateProvider = StateNotifierProvider<EidStateNotifier, AsyncValue<EidS
 // --- Maghrib Alerts Provider ---
 class MaghribState {
   final int offset;
+  final bool skipAdhan;
+  final bool skipIqama;
   final List<dynamic> alerts;
 
   MaghribState({
     this.offset = 1,
+    this.skipAdhan = false,
+    this.skipIqama = false,
     this.alerts = const [],
   });
 
   MaghribState copyWith({
     int? offset,
+    bool? skipAdhan,
+    bool? skipIqama,
     List<dynamic>? alerts,
   }) {
     return MaghribState(
       offset: offset ?? this.offset,
+      skipAdhan: skipAdhan ?? this.skipAdhan,
+      skipIqama: skipIqama ?? this.skipIqama,
       alerts: alerts ?? this.alerts,
     );
   }
@@ -1196,23 +1204,41 @@ class MaghribAlertsNotifier extends StateNotifier<AsyncValue<MaghribState>> {
 
   Future<void> refresh() async {
     try {
-      final alerts = await _api.getMaghribAlerts();
-      final currentOffset = await _api.getMaghribOffset();
-      
+      final config = await _api.getMaghribConfig();
+      final alerts = config['alerts'] is List ? (config['alerts'] as List) : [];
+      final currentOffset = (config['offset'] as num?)?.toInt() ?? await _api.getMaghribOffset();
+      final skipAdhan = config['skipAdhan'] == true || config['skipAdhan'] == 1 || config['skipAdhan'] == 'true';
+      final skipIqama = config['skipIqama'] == true || config['skipIqama'] == 1 || config['skipIqama'] == 'true';
+
       // Ensure we have exactly 7 days in the list (Sunday to Saturday, 0 to 6)
       final parsedAlerts = List<Map<String, dynamic>>.generate(7, (index) {
         final existing = alerts.firstWhere(
-          (a) => a['day'] == index,
+          (a) => (a is Map && a['day'] == index),
           orElse: () => null,
         );
-        if (existing != null) {
-          return Map<String, dynamic>.from(existing);
+        if (existing != null && existing is Map) {
+          final m = Map<String, dynamic>.from(existing);
+          final String f = (m['file'] ?? '').toString();
+          int t = (m['type'] as num?)?.toInt() ?? 0;
+          if (f.startsWith('http://') || f.startsWith('https://')) {
+            t = 1;
+          }
+          m['type'] = t;
+          m['loop'] = (m['loop'] as num?)?.toInt() ?? 0;
+          m['skipAdhan'] = m['skipAdhan'] == true || m['skipAdhan'] == 1 || m['skipAdhan'] == 'true';
+          m['skipIqama'] = m['skipIqama'] == true || m['skipIqama'] == 1 || m['skipIqama'] == 'true';
+          return m;
         } else {
           return {
             'day': index,
+            'type': 0,
             'file': '',
+            'duration': 0,
             'enabled': false,
             'volume': 15,
+            'loop': 0,
+            'skipAdhan': false,
+            'skipIqama': false,
           };
         }
       });
@@ -1220,6 +1246,8 @@ class MaghribAlertsNotifier extends StateNotifier<AsyncValue<MaghribState>> {
       if (mounted) {
         state = AsyncValue.data(MaghribState(
           offset: currentOffset,
+          skipAdhan: skipAdhan,
+          skipIqama: skipIqama,
           alerts: parsedAlerts,
         ));
       }
@@ -1243,6 +1271,24 @@ class MaghribAlertsNotifier extends StateNotifier<AsyncValue<MaghribState>> {
   Future<bool> saveAlerts(List<dynamic> alertsList) async {
     state = const AsyncValue.loading();
     final success = await _api.saveMaghribAlerts(alertsList);
+    await refresh();
+    return success;
+  }
+
+  Future<bool> saveFullConfig({
+    required int offset,
+    required bool skipAdhan,
+    required bool skipIqama,
+    required List<dynamic> alertsList,
+  }) async {
+    state = const AsyncValue.loading();
+    final payload = {
+      'offset': offset,
+      'skipAdhan': skipAdhan,
+      'skipIqama': skipIqama,
+      'alerts': alertsList,
+    };
+    final success = await _api.saveMaghribAlerts(payload);
     await refresh();
     return success;
   }

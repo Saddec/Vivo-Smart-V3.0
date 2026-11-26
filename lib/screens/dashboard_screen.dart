@@ -52,6 +52,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   // Maghrib alerts local editing states
   int? _localMaghribOffset;
+  bool? _localMaghribSkipAdhan;
+  bool? _localMaghribSkipIqama;
   List<Map<String, dynamic>>? _localMaghribAlerts;
 
   // Prayer times source and manual adjustment state variables
@@ -7477,341 +7479,1235 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   Widget _buildMaghribTab() {
     final filesState = ref.watch(filesProvider);
     final maghribStateAsync = ref.watch(maghribAlertsProvider);
+    final statusState = ref.watch(statusPollingProvider);
 
-    return filesState.when(
+    final List filesList = filesState.valueOrNull?['files'] as List? ?? [];
+    final List<String> audioFiles = [];
+    for (var f in filesList) {
+      final String name = f['name'] ?? '';
+      final bool isDir = f['isDirectory'] ?? false;
+      if (!isDir && !name.startsWith('prayer_csv/') && (name.endsWith('.mp3') || name.endsWith('.wav'))) {
+        audioFiles.add(name);
+      }
+    }
+
+    return maghribStateAsync.when(
       loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
-      error: (err, stack) => Center(child: Text('فشل تحميل الملفات: $err', style: GoogleFonts.cairo(color: Colors.white))),
-      data: (filesData) {
-        final List filesList = filesData['files'] as List? ?? [];
-        final List<String> audioFiles = [];
-        for (var f in filesList) {
-          final String name = f['name'] ?? '';
-          final bool isDir = f['isDirectory'] ?? false;
-          if (!isDir && !name.startsWith('prayer_csv/') && (name.endsWith('.mp3') || name.endsWith('.wav'))) {
-            audioFiles.add(name);
-          }
-        }
-
-        if (audioFiles.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Text(
-                'الرجاء رفع ملفات صوتية للتنبيهات أولاً',
-                style: GoogleFonts.cairo(color: const Color(0xFFADCCFF)),
-                textAlign: TextAlign.center,
-              ),
+      error: (err, stack) => Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('فشل تحميل إعدادات المغرب: $err', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF))),
+            const SizedBox(height: 12),
+            ElevatedButton(
+              onPressed: () => ref.read(maghribAlertsProvider.notifier).refresh(),
+              child: Text('تحديث', style: GoogleFonts.cairo()),
             ),
-          );
-        }
+          ],
+        ),
+      ),
+      data: (maghribState) {
+        // Initialize local variables
+        _localMaghribOffset ??= maghribState.offset;
+        _localMaghribSkipAdhan ??= maghribState.skipAdhan;
+        _localMaghribSkipIqama ??= maghribState.skipIqama;
+        _localMaghribAlerts ??= maghribState.alerts.map((a) => Map<String, dynamic>.from(a)).toList();
 
-        return maghribStateAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator(color: Colors.white)),
-          error: (err, stack) => Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('فشل تحميل إعدادات المغرب: $err', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF))),
-                const SizedBox(height: 12),
-                ElevatedButton(
-                  onPressed: () => ref.read(maghribAlertsProvider.notifier).refresh(),
-                  child: Text('تحديث', style: GoogleFonts.cairo()),
-                ),
-              ],
-            ),
-          ),
-          data: (maghribState) {
-            // Initialize local variables
-            if (_localMaghribOffset == null) {
-              _localMaghribOffset = maghribState.offset;
-            }
-            if (_localMaghribAlerts == null) {
-              _localMaghribAlerts = maghribState.alerts.map((a) => Map<String, dynamic>.from(a)).toList();
-            }
+        // Helper to open Multi-file Playlist selector modal for a specific day
+        void openMaghribPlaylistSelector(int dayIndex) {
+          final alert = _localMaghribAlerts![dayIndex];
+          final rawFile = alert['file']?.toString() ?? '';
+          final List<String> currentSelected = rawFile.contains(',')
+              ? rawFile.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+              : (rawFile.isNotEmpty && !rawFile.startsWith('http') ? [rawFile] : []);
+          final List<String> tempSelected = List.from(currentSelected);
+          String filterQuery = '';
 
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Offset Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0x7316132C),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withOpacity(0.08)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'توقيت تنبيه المغرب قبل الأذان',
-                          style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                        const Divider(color: Colors.white10, height: 24),
-                        Row(
-                          children: [
-                            Text(
-                              'قبل المغرب بـ',
-                              style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              constraints: const BoxConstraints(),
-                              padding: const EdgeInsets.all(8),
-                              icon: const Icon(Icons.remove_circle_outline, color: Colors.white60, size: 20),
-                              onPressed: () {
-                                if (_localMaghribOffset! > 0) {
-                                  setState(() {
-                                    _localMaghribOffset = _localMaghribOffset! - 1;
-                                  });
-                                }
-                              },
-                            ),
-                            Text(
-                              '$_localMaghribOffset',
-                              style: GoogleFonts.orbitron(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            IconButton(
-                              constraints: const BoxConstraints(),
-                              padding: const EdgeInsets.all(8),
-                              icon: const Icon(Icons.add_circle_outline, color: Color(0xFF00F2FE), size: 20),
-                              onPressed: () {
-                                setState(() {
-                                  _localMaghribOffset = _localMaghribOffset! + 1;
-                                });
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'دقائق',
-                              style: GoogleFonts.cairo(color: Colors.white54, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              final success = await ref.read(maghribAlertsProvider.notifier).saveOffset(_localMaghribOffset!);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(success ? 'تم حفظ الإزاحة بنجاح' : 'فشل حفظ الإزاحة'),
-                                    backgroundColor: success ? Colors.green : Colors.redAccent,
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.save, size: 16),
-                            label: Text('حفظ الإزاحة', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF00F2FE),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Weekly Alerts List Card
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0x7316132C),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: Colors.white.withOpacity(0.08)),
-                    ),
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: const Color(0xFF150D2A),
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            builder: (ctx) => StatefulBuilder(
+              builder: (ctx, setModalState) {
+                final filtered = audioFiles.where((f) => f.toLowerCase().contains(filterQuery.toLowerCase())).toList();
+                return Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Container(
+                    height: MediaQuery.of(context).size.height * 0.75,
+                    padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Icon(Icons.calendar_view_week, color: Color(0xFF8E44AD), size: 20),
-                            const SizedBox(width: 8),
                             Text(
-                              'إعدادات التنبيهات لأيام الأسبوع',
-                              style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              'اختيار ملفات قائمة التشغيل (${_daysOfWeek[dayIndex]})',
+                              style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFBF5AF2).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'المحدد: ${tempSelected.length} ملف',
+                                style: GoogleFonts.cairo(color: const Color(0xFFBF5AF2), fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
                             ),
                           ],
                         ),
-                        const Divider(color: Colors.white10, height: 24),
-                        if (_localMaghribAlerts != null)
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _localMaghribAlerts!.length,
-                            separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 24),
-                            itemBuilder: (context, index) {
-                              final alert = _localMaghribAlerts![index];
-                              final dayName = _daysOfWeek[index];
-                              final isEnabled = alert['enabled'] == true;
-                              final file = alert['file'] as String? ?? '';
-                              final volume = alert['volume'] ?? 15;
-
-                              // Ensure a valid selected file
-                              final resolvedFile = _findMatchingFile(audioFiles, file);
-                              if (resolvedFile != null) {
-                                alert['file'] = resolvedFile;
-                              } else if (audioFiles.isNotEmpty) {
-                                alert['file'] = audioFiles.first;
-                              } else {
-                                alert['file'] = '';
-                              }
-
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.today, color: Color(0xFFF1C40F), size: 18),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            dayName,
-                                            style: GoogleFonts.cairo(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Switch(
-                                        value: isEnabled,
-                                        activeColor: const Color(0xFF8E44AD),
-                                        onChanged: (val) {
-                                          setState(() {
-                                            alert['enabled'] = val;
-                                          });
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                  if (isEnabled) ...[
-                                    const SizedBox(height: 8),
-                                    Text('ملف التنبيه', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12)),
-                                    const SizedBox(height: 6),
-                                    DropdownButtonFormField<String>(
-                                      isExpanded: true,
-                                      dropdownColor: const Color(0xFF1C132E),
-                                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                                      value: _findMatchingFile(audioFiles, alert['file'] as String?),
-                                      decoration: InputDecoration(
-                                        filled: true,
-                                        fillColor: Colors.black12,
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                                      ),
-                                      items: audioFiles.map((f) {
-                                        return DropdownMenuItem<String>(
-                                          value: f,
-                                          child: Text(f, textDirection: TextDirection.ltr),
-                                        );
-                                      }).toList(),
-                                      onChanged: (val) {
-                                        setState(() {
-                                          alert['file'] = val;
-                                        });
-                                      },
-                                    ),
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text('مستوى الصوت', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12)),
-                                        Text(
-                                          '$volume',
-                                          style: GoogleFonts.orbitron(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 12),
-                                        ),
-                                      ],
-                                    ),
-                                    SliderTheme(
-                                      data: SliderTheme.of(context).copyWith(
-                                        activeTrackColor: const Color(0xFF00F2FE),
-                                        inactiveTrackColor: Colors.white.withOpacity(0.1),
-                                        thumbColor: const Color(0xFF00F2FE),
-                                        trackHeight: 4,
-                                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                                      ),
-                                      child: Slider(
-                                        value: volume.toDouble(),
-                                        min: 0,
-                                        max: 30,
-                                        divisions: 30,
-                                        onChanged: (val) {
-                                          setState(() {
-                                            alert['volume'] = val.toInt();
-                                          });
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            },
+                        const SizedBox(height: 12),
+                        TextField(
+                          onChanged: (v) => setModalState(() => filterQuery = v),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'بحث في الملفات الصوتية...',
+                            hintStyle: GoogleFonts.cairo(color: Colors.white38, fontSize: 12),
+                            prefixIcon: const Icon(Icons.search, color: Color(0xFFBF5AF2), size: 20),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.05),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           ),
-                        const SizedBox(height: 24),
+                        ),
+                        const SizedBox(height: 10),
                         Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () async {
-                                  final success = await ref.read(maghribAlertsProvider.notifier).saveAlerts(_localMaghribAlerts!);
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(success ? 'تم حفظ تنبيهات المغرب بنجاح' : 'فشل حفظ التنبيهات'),
-                                        backgroundColor: success ? Colors.green : Colors.redAccent,
-                                      ),
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.save),
-                                label: Text('حفظ كل تنبيهات الأسبوع', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF8E44AD),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            ElevatedButton.icon(
+                            TextButton.icon(
                               onPressed: () {
-                                ref.read(maghribAlertsProvider.notifier).refresh();
-                                setState(() {
-                                  _localMaghribAlerts = null;
-                                  _localMaghribOffset = null;
+                                setModalState(() {
+                                  if (tempSelected.length == filtered.length) {
+                                    tempSelected.clear();
+                                  } else {
+                                    tempSelected.clear();
+                                    tempSelected.addAll(filtered);
+                                  }
                                 });
                               },
-                              icon: const Icon(Icons.refresh),
-                              label: Text('تحديث', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white12,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              icon: Icon(
+                                tempSelected.length == filtered.length && filtered.isNotEmpty
+                                    ? Icons.deselect
+                                    : Icons.select_all,
+                                size: 16,
+                                color: const Color(0xFF00F2FE),
+                              ),
+                              label: Text(
+                                tempSelected.length == filtered.length && filtered.isNotEmpty
+                                    ? 'إلغاء تحديد الكل'
+                                    : 'تحديد الكل',
+                                style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 12),
                               ),
                             ),
                           ],
+                        ),
+                        Expanded(
+                          child: filtered.isEmpty
+                              ? Center(
+                                  child: Text('لا توجد ملفات صوتية مطابقة', style: GoogleFonts.cairo(color: Colors.white38)),
+                                )
+                              : ListView.builder(
+                                  itemCount: filtered.length,
+                                  itemBuilder: (ctx, i) {
+                                    final f = filtered[i];
+                                    final isSel = tempSelected.contains(f);
+                                    final selIndex = isSel ? tempSelected.indexOf(f) + 1 : null;
+                                    return CheckboxListTile(
+                                      value: isSel,
+                                      activeColor: const Color(0xFFBF5AF2),
+                                      checkColor: Colors.white,
+                                      title: Text(
+                                        f,
+                                        style: GoogleFonts.cairo(
+                                          color: isSel ? Colors.white : Colors.white70,
+                                          fontSize: 12,
+                                          fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      secondary: isSel
+                                          ? Container(
+                                              width: 24,
+                                              height: 24,
+                                              alignment: Alignment.center,
+                                              decoration: const BoxDecoration(
+                                                color: Color(0xFF00F2FE),
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: Text(
+                                                '$selIndex',
+                                                style: const TextStyle(color: Colors.black, fontSize: 11, fontWeight: FontWeight.bold),
+                                              ),
+                                            )
+                                          : const Icon(Icons.audiotrack, color: Colors.white24, size: 20),
+                                      onChanged: (val) {
+                                        setModalState(() {
+                                          if (val == true) {
+                                            if (!tempSelected.contains(f)) tempSelected.add(f);
+                                          } else {
+                                            tempSelected.remove(f);
+                                          }
+                                        });
+                                      },
+                                    );
+                                  },
+                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              alert['type'] = 0;
+                              alert['file'] = tempSelected.join(',');
+                            });
+                            Navigator.pop(ctx);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFBF5AF2),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text(
+                            'تأكيد اختيار (${tempSelected.length}) ملفات',
+                            style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                );
+              },
+            ),
+          );
+        }
+
+        // Helper to open Radio Station picker modal for a specific day
+        void openMaghribRadioSelector(int dayIndex) {
+          final alert = _localMaghribAlerts![dayIndex];
+          final radioState = ref.read(radioStationsProvider);
+          final List<Map<String, dynamic>> allStations = radioState.stations;
+          String filterQuery = '';
+
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: const Color(0xFF150D2A),
+            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            builder: (ctx) => StatefulBuilder(
+              builder: (ctx, setModalState) {
+                final filtered = allStations.where((s) {
+                  final name = s['name']?.toString().toLowerCase() ?? '';
+                  final cat = s['category']?.toString().toLowerCase() ?? '';
+                  final q = filterQuery.toLowerCase();
+                  return name.contains(q) || cat.contains(q);
+                }).toList();
+
+                return Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: Container(
+                    height: MediaQuery.of(context).size.height * 0.8,
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'اختيار محطة إذاعية قبل المغرب (${_daysOfWeek[dayIndex]})',
+                              style: GoogleFonts.cairo(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00F2FE).withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${filtered.length} إذاعة',
+                                style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 12, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          onChanged: (v) => setModalState(() => filterQuery = v),
+                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          decoration: InputDecoration(
+                            hintText: 'بحث في الإذاعات (مثل: القاهرة، ماهر المعيقلي، الحرمين...)',
+                            hintStyle: GoogleFonts.cairo(color: Colors.white38, fontSize: 12),
+                            prefixIcon: const Icon(Icons.search, color: Color(0xFF00F2FE), size: 20),
+                            filled: true,
+                            fillColor: Colors.white.withOpacity(0.05),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: filtered.isEmpty
+                              ? Center(
+                                  child: Text('لا توجد إذاعات مطابقة لبحثك', style: GoogleFonts.cairo(color: Colors.white38)),
+                                )
+                              : ListView.builder(
+                                  itemCount: filtered.length,
+                                  itemBuilder: (ctx, i) {
+                                    final st = filtered[i];
+                                    final name = st['name']?.toString() ?? '';
+                                    final url = st['url']?.toString() ?? '';
+                                    final cat = st['category']?.toString() ?? '';
+                                    final isSelected = alert['file'] == url;
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 8),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? const Color(0xFF00F2FE).withOpacity(0.15)
+                                            : Colors.white.withOpacity(0.02),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSelected ? const Color(0xFF00F2FE) : Colors.white.withOpacity(0.06),
+                                        ),
+                                      ),
+                                      child: ListTile(
+                                        onTap: () {
+                                          setState(() {
+                                            alert['type'] = 1;
+                                            alert['file'] = url;
+                                          });
+                                          Navigator.pop(ctx);
+                                        },
+                                        leading: CircleAvatar(
+                                          backgroundColor: isSelected ? const Color(0xFF00F2FE) : Colors.white10,
+                                          child: Icon(
+                                            Icons.radio,
+                                            color: isSelected ? Colors.black : const Color(0xFF00F2FE),
+                                            size: 20,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          name,
+                                          style: GoogleFonts.cairo(
+                                            color: Colors.white,
+                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          cat.isNotEmpty ? cat : url,
+                                          style: GoogleFonts.cairo(color: Colors.white38, fontSize: 11),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        trailing: isSelected
+                                            ? const Icon(Icons.check_circle, color: Color(0xFF00F2FE), size: 20)
+                                            : const Icon(Icons.chevron_left, color: Colors.white24, size: 20),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. Top Settings & Timing Card
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0x992B1055), Color(0x807597DE)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.25),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00F2FE).withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.wb_twilight_rounded, color: Color(0xFF00F2FE), size: 26),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'تنبيهات ما قبل المغرب الذكية',
+                                style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 17),
+                              ),
+                              Text(
+                                'تشغيل صوت محلي أو قائمة تشغيل أو إذاعة مباشرة قبل موعد أذان المغرب',
+                                style: GoogleFonts.cairo(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white12, height: 28),
+
+                    // Offset Stepper
+                    Row(
+                      children: [
+                        Text(
+                          'التوقيت قبل موعد أذان المغرب بـ:',
+                          style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.white12),
+                          ),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                icon: const Icon(Icons.remove_circle_outline, color: Colors.white70, size: 22),
+                                onPressed: () {
+                                  if ((_localMaghribOffset ?? 1) > 0) {
+                                    setState(() {
+                                      _localMaghribOffset = (_localMaghribOffset ?? 1) - 1;
+                                    });
+                                  }
+                                },
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                child: Text(
+                                  '$_localMaghribOffset',
+                                  style: GoogleFonts.orbitron(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 18),
+                                ),
+                              ),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                icon: const Icon(Icons.add_circle_outline, color: Color(0xFF00F2FE), size: 22),
+                                onPressed: () {
+                                  setState(() {
+                                    _localMaghribOffset = (_localMaghribOffset ?? 1) + 1;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'دقيقة',
+                          style: GoogleFonts.cairo(color: Colors.white70, fontSize: 13),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+                    // Global Skip Options
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white.withOpacity(0.06)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.volume_off_outlined, color: Color(0xFFF1C40F), size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'تخطي أذان المغرب تلقائياً (Skip Adhan)',
+                                      style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    Text(
+                                      'كتم أو إلغاء أذان المغرب إذا كان تنبيه المغرب أو الإذاعة قيد التشغيل',
+                                      style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _localMaghribSkipAdhan ?? false,
+                                activeColor: const Color(0xFF00F2FE),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _localMaghribSkipAdhan = val;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          const Divider(color: Colors.white10, height: 16),
+                          Row(
+                            children: [
+                              const Icon(Icons.notifications_off_outlined, color: Color(0xFFBF5AF2), size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'تخطي إقامة المغرب تلقائياً (Skip Iqama)',
+                                      style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    Text(
+                                      'إلغاء تنبيه موعد إقامة صلاة المغرب تلقائياً عند تفعيل التنبيهات',
+                                      style: GoogleFonts.cairo(color: Colors.white54, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Switch(
+                                value: _localMaghribSkipIqama ?? false,
+                                activeColor: const Color(0xFFBF5AF2),
+                                onChanged: (val) {
+                                  setState(() {
+                                    _localMaghribSkipIqama = val;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              // 2. Weekly Alert Cards
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_month, color: Color(0xFF00F2FE), size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'جدول تنبيهات الأسبوع (7 أيام)',
+                        style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'تخصيص كامل لكل يوم',
+                    style: GoogleFonts.cairo(color: Colors.white54, fontSize: 12),
+                  ),
                 ],
               ),
-            );
-          },
+              const SizedBox(height: 12),
+
+              if (_localMaghribAlerts != null)
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _localMaghribAlerts!.length,
+                  itemBuilder: (context, index) {
+                    final alert = _localMaghribAlerts![index];
+                    final dayName = _daysOfWeek[index];
+                    final isEnabled = alert['enabled'] == true;
+                    final rawFile = (alert['file'] ?? '').toString();
+                    final volume = (alert['volume'] as num?)?.toInt() ?? 15;
+                    final loopDuration = (alert['loop'] as num?)?.toInt() ?? 0;
+                    final daySkipAdhan = alert['skipAdhan'] == true;
+                    final daySkipIqama = alert['skipIqama'] == true;
+
+                    // Compute source type: 0 = Single File, 1 = Playlist, 2 = Live Radio
+                    int sourceType = 0;
+                    if (rawFile.startsWith('http://') || rawFile.startsWith('https://') || alert['type'] == 1) {
+                      sourceType = 2;
+                    } else if (rawFile.contains(',')) {
+                      sourceType = 1;
+                    } else {
+                      sourceType = 0;
+                    }
+
+                    // Playlist files parsed
+                    final List<String> playlistItems = rawFile.contains(',')
+                        ? rawFile.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList()
+                        : (rawFile.isNotEmpty && sourceType != 2 ? [rawFile] : []);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isEnabled ? const Color(0x8C1B1435) : const Color(0x4016132C),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isEnabled
+                              ? const Color(0xFF00F2FE).withOpacity(0.35)
+                              : Colors.white.withOpacity(0.06),
+                          width: isEnabled ? 1.2 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Header: Day Name + Status Switch
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 16,
+                                    backgroundColor: isEnabled ? const Color(0xFF00F2FE).withOpacity(0.2) : Colors.white10,
+                                    child: Icon(
+                                      Icons.today,
+                                      color: isEnabled ? const Color(0xFF00F2FE) : Colors.white38,
+                                      size: 18,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    dayName,
+                                    style: GoogleFonts.cairo(
+                                      color: isEnabled ? Colors.white : Colors.white54,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  if (isEnabled) ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: (sourceType == 2
+                                                ? const Color(0xFFBF5AF2)
+                                                : (sourceType == 1 ? const Color(0xFF00F2FE) : const Color(0xFF34C759)))
+                                            .withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        sourceType == 2 ? 'بث راديو' : (sourceType == 1 ? 'قائمة تشغيل' : 'ملف صوتي'),
+                                        style: GoogleFonts.cairo(
+                                          color: sourceType == 2
+                                              ? const Color(0xFFBF5AF2)
+                                              : (sourceType == 1 ? const Color(0xFF00F2FE) : const Color(0xFF34C759)),
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Text(
+                                    isEnabled ? 'مفعل' : 'معطل',
+                                    style: GoogleFonts.cairo(
+                                      color: isEnabled ? const Color(0xFF00F2FE) : Colors.white38,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Switch(
+                                    value: isEnabled,
+                                    activeColor: const Color(0xFF00F2FE),
+                                    onChanged: (val) {
+                                      setState(() {
+                                        alert['enabled'] = val;
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+
+                          if (isEnabled) ...[
+                            const Divider(color: Colors.white10, height: 20),
+
+                            // Source Selector Chips (3 options)
+                            Text(
+                              'مصدر الصوت المفضل:',
+                              style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: Center(
+                                      child: Text(
+                                        'ملف محلي',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 11,
+                                          fontWeight: sourceType == 0 ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    selected: sourceType == 0,
+                                    onSelected: (val) {
+                                      setState(() {
+                                        alert['type'] = 0;
+                                        if (rawFile.startsWith('http') || rawFile.contains(',')) {
+                                          alert['file'] = audioFiles.isNotEmpty ? audioFiles.first : '';
+                                        }
+                                      });
+                                    },
+                                    selectedColor: const Color(0xFF34C759).withOpacity(0.25),
+                                    labelStyle: TextStyle(
+                                      color: sourceType == 0 ? const Color(0xFF34C759) : Colors.white60,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: Center(
+                                      child: Text(
+                                        'قائمة تشغيل',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 11,
+                                          fontWeight: sourceType == 1 ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    selected: sourceType == 1,
+                                    onSelected: (val) {
+                                      setState(() {
+                                        alert['type'] = 0;
+                                        if (rawFile.startsWith('http') || !rawFile.contains(',')) {
+                                          alert['file'] = audioFiles.take(2).join(',');
+                                        }
+                                      });
+                                    },
+                                    selectedColor: const Color(0xFF00F2FE).withOpacity(0.25),
+                                    labelStyle: TextStyle(
+                                      color: sourceType == 1 ? const Color(0xFF00F2FE) : Colors.white60,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: ChoiceChip(
+                                    label: Center(
+                                      child: Text(
+                                        'بث راديو (178+)',
+                                        style: GoogleFonts.cairo(
+                                          fontSize: 11,
+                                          fontWeight: sourceType == 2 ? FontWeight.bold : FontWeight.normal,
+                                        ),
+                                      ),
+                                    ),
+                                    selected: sourceType == 2,
+                                    onSelected: (val) {
+                                      setState(() {
+                                        alert['type'] = 1;
+                                        if (!rawFile.startsWith('http')) {
+                                          alert['file'] = 'http://stream.radiojar.com/8s5u5tpdtwzuv'; // Cairo Radio default
+                                        }
+                                      });
+                                    },
+                                    selectedColor: const Color(0xFFBF5AF2).withOpacity(0.25),
+                                    labelStyle: TextStyle(
+                                      color: sourceType == 2 ? const Color(0xFFBF5AF2) : Colors.white60,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Option 0: Single File Dropdown
+                            if (sourceType == 0) ...[
+                              if (audioFiles.isNotEmpty) ...[
+                                DropdownButtonFormField<String>(
+                                  isExpanded: true,
+                                  dropdownColor: const Color(0xFF1C132E),
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  value: _findMatchingFile(audioFiles, rawFile) ?? audioFiles.first,
+                                  decoration: InputDecoration(
+                                    labelText: 'ملف الصوت من الذاكرة',
+                                    labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+                                    prefixIcon: const Icon(Icons.audio_file, color: Color(0xFF34C759)),
+                                    filled: true,
+                                    fillColor: Colors.black12,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                                  ),
+                                  items: audioFiles.map((f) {
+                                    return DropdownMenuItem<String>(
+                                      value: f,
+                                      child: Text(f, textDirection: TextDirection.ltr, overflow: TextOverflow.ellipsis),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      alert['file'] = val ?? '';
+                                    });
+                                  },
+                                ),
+                              ] else ...[
+                                TextFormField(
+                                  initialValue: rawFile,
+                                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                                  decoration: InputDecoration(
+                                    labelText: 'مسار ملف الصوت (مثال: /audio/maghrib.mp3)',
+                                    labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 12),
+                                    prefixIcon: const Icon(Icons.audio_file, color: Color(0xFF34C759)),
+                                    filled: true,
+                                    fillColor: Colors.black12,
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                                  ),
+                                  onChanged: (val) => alert['file'] = val,
+                                ),
+                              ],
+                            ],
+
+                            // Option 1: Playlist Selector
+                            if (sourceType == 1) ...[
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black12,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: const Color(0xFF00F2FE).withOpacity(0.2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.playlist_play, color: Color(0xFF00F2FE), size: 20),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'ملفات قائمة التشغيل (${playlistItems.length} ملفات)',
+                                            style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: () => openMaghribPlaylistSelector(index),
+                                          icon: const Icon(Icons.playlist_add_check, size: 15),
+                                          label: Text(
+                                            playlistItems.isEmpty ? 'اختيار الملفات' : 'تعديل القائمة',
+                                            style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF00F2FE),
+                                            foregroundColor: Colors.black,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (playlistItems.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: playlistItems.map((f) {
+                                          final fIdx = playlistItems.indexOf(f) + 1;
+                                          return Chip(
+                                            backgroundColor: const Color(0xFF150D2A),
+                                            side: BorderSide(color: const Color(0xFF00F2FE).withOpacity(0.3)),
+                                            avatar: CircleAvatar(
+                                              radius: 10,
+                                              backgroundColor: const Color(0xFF00F2FE),
+                                              child: Text('$fIdx', style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.bold)),
+                                            ),
+                                            label: Text(f, style: GoogleFonts.cairo(color: Colors.white, fontSize: 11)),
+                                            deleteIcon: const Icon(Icons.close, size: 14, color: Colors.white54),
+                                            onDeleted: () {
+                                              setState(() {
+                                                final updated = List<String>.from(playlistItems)..remove(f);
+                                                alert['file'] = updated.join(',');
+                                              });
+                                            },
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        'لم يتم اختيار ملفات بعد. اضغط على زر "اختيار الملفات" لتحديد المقاطع.',
+                                        style: GoogleFonts.cairo(color: Colors.white38, fontSize: 11),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            // Option 2: Live Radio Selector
+                            if (sourceType == 2) ...[
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black12,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: const Color(0xFFBF5AF2).withOpacity(0.2)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.wifi_tethering, color: Color(0xFFBF5AF2), size: 20),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'البث الإذاعي المباشر',
+                                            style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                        ElevatedButton.icon(
+                                          onPressed: () => openMaghribRadioSelector(index),
+                                          icon: const Icon(Icons.radio, size: 15),
+                                          label: Text(
+                                            'تصفح 178+ إذاعة',
+                                            style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFFBF5AF2),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    TextFormField(
+                                      key: ValueKey('radio_url_${index}_$rawFile'),
+                                      initialValue: rawFile,
+                                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                                      textDirection: TextDirection.ltr,
+                                      decoration: InputDecoration(
+                                        labelText: 'رابط البث المباشر (Stream URL)',
+                                        labelStyle: GoogleFonts.cairo(color: Colors.white60, fontSize: 11),
+                                        prefixIcon: const Icon(Icons.link, color: Color(0xFFBF5AF2), size: 18),
+                                        filled: true,
+                                        fillColor: Colors.white.withOpacity(0.04),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      ),
+                                      onChanged: (val) {
+                                        alert['file'] = val.trim();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+
+                            const SizedBox(height: 12),
+
+                            // Duration / Loop Window Setting
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        sourceType == 2
+                                            ? 'مدة البث الإذاعي قبل الأذان:'
+                                            : 'مدة الاستمرار / التكرار:',
+                                        style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 11),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black26,
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: Text(
+                                              sourceType == 2
+                                                  ? '${loopDuration > 0 ? (loopDuration ~/ 60) : (_localMaghribOffset ?? 1)} دقيقة'
+                                                  : (loopDuration > 0 ? '$loopDuration ثانية' : 'كامل الملف'),
+                                              style: GoogleFonts.orbitron(color: const Color(0xFF00F2FE), fontSize: 11, fontWeight: FontWeight.bold),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          if (sourceType == 2) ...[
+                                            Wrap(
+                                              spacing: 4,
+                                              children: [5, 10, 15, 30].map((m) {
+                                                final isSel = loopDuration == m * 60;
+                                                return InkWell(
+                                                  onTap: () {
+                                                    setState(() {
+                                                      alert['loop'] = m * 60;
+                                                    });
+                                                  },
+                                                  child: Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: isSel ? const Color(0xFFBF5AF2) : Colors.white10,
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      '$m د',
+                                                      style: TextStyle(color: isSel ? Colors.white : Colors.white60, fontSize: 10),
+                                                    ),
+                                                  ),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            // Volume Slider
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('مستوى صوت التنبيه:', style: GoogleFonts.cairo(color: const Color(0xFFADCCFF), fontSize: 12)),
+                                Text(
+                                  '$volume / 30',
+                                  style: GoogleFonts.orbitron(color: const Color(0xFF00F2FE), fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                activeTrackColor: const Color(0xFF00F2FE),
+                                inactiveTrackColor: Colors.white.withOpacity(0.1),
+                                thumbColor: const Color(0xFF00F2FE),
+                                trackHeight: 3,
+                                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              ),
+                              child: Slider(
+                                value: volume.toDouble().clamp(0, 30),
+                                min: 0,
+                                max: 30,
+                                divisions: 30,
+                                onChanged: (val) {
+                                  setState(() {
+                                    alert['volume'] = val.toInt();
+                                  });
+                                },
+                              ),
+                            ),
+
+                            // Per-Day Skip Switches Row
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.02),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 36,
+                                        child: Switch(
+                                          value: daySkipAdhan,
+                                          activeColor: const Color(0xFF00F2FE),
+                                          onChanged: (val) {
+                                            setState(() {
+                                              alert['skipAdhan'] = val;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text('تخطي أذان اليوم', style: GoogleFonts.cairo(color: Colors.white70, fontSize: 11)),
+                                    ],
+                                  ),
+                                  Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 36,
+                                        child: Switch(
+                                          value: daySkipIqama,
+                                          activeColor: const Color(0xFFBF5AF2),
+                                          onChanged: (val) {
+                                            setState(() {
+                                              alert['skipIqama'] = val;
+                                            });
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text('تخطي إقامة اليوم', style: GoogleFonts.cairo(color: Colors.white70, fontSize: 11)),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 8),
+
+                            // Test Play Audio Button Row
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () async {
+                                    final currentPlaying = statusState.isPlaying;
+                                    if (currentPlaying) {
+                                      await ref.read(apiServiceProvider).stopAudio();
+                                    } else {
+                                      final f = alert['file']?.toString() ?? '';
+                                      if (f.isEmpty) return;
+                                      if (f.contains(',')) {
+                                        await ref.read(apiServiceProvider).playPlaylist(f, volume, false);
+                                      } else {
+                                        await ref.read(apiServiceProvider).playDirectFile(f);
+                                      }
+                                    }
+                                  },
+                                  icon: Icon(
+                                    statusState.isPlaying
+                                        ? Icons.stop_circle_outlined
+                                        : Icons.play_circle_outline,
+                                    size: 16,
+                                    color: const Color(0xFF00F2FE),
+                                  ),
+                                  label: Text(
+                                    statusState.isPlaying ? 'إيقاف التجربة' : 'تشغيل تجريبي',
+                                    style: GoogleFonts.cairo(color: const Color(0xFF00F2FE), fontSize: 11),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
+              const SizedBox(height: 20),
+
+              // Bottom Save All Configuration Button
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        final success = await ref.read(maghribAlertsProvider.notifier).saveFullConfig(
+                              offset: _localMaghribOffset ?? 1,
+                              skipAdhan: _localMaghribSkipAdhan ?? false,
+                              skipIqama: _localMaghribSkipIqama ?? false,
+                              alertsList: _localMaghribAlerts!,
+                            );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  Icon(
+                                    success ? Icons.check_circle : Icons.error_outline,
+                                    color: success ? Colors.greenAccent : Colors.redAccent,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    success
+                                        ? 'تم حفظ جميع إعدادات وتنبيهات المغرب بنجاح'
+                                        : 'فشل حفظ إعدادات المغرب',
+                                    style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFF1C132E),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.save_rounded, size: 20),
+                      label: Text(
+                        'حفظ جميع إعدادات وتنبيهات المغرب',
+                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00F2FE),
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 4,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      ref.read(maghribAlertsProvider.notifier).refresh();
+                      setState(() {
+                        _localMaghribAlerts = null;
+                        _localMaghribOffset = null;
+                        _localMaghribSkipAdhan = null;
+                        _localMaghribSkipIqama = null;
+                      });
+                    },
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: Text('تحديث', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white12,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
         );
       },
     );
@@ -8671,6 +9567,11 @@ class _PresenceSettingsCardState extends ConsumerState<_PresenceSettingsCard> {
         d['lastTriggerMs'] = live['lastTriggerMs'];
         d['lastRssi'] = live['lastRssi'];
         d['lastIp'] = live['lastIp'];
+      } else if (sourceList.length == 1 && status.isNotEmpty) {
+        // Fallback for single-device legacy firmware status responses
+        d['state'] = status['state'];
+        d['lastSeenMs'] = status['lastSeenMs'];
+        d['lastRssi'] = status['lastRssi'];
       }
       devices.add(d);
     }
