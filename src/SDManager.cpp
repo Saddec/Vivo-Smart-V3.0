@@ -2,8 +2,9 @@
 #include <SD.h>
 #include <SPI.h>
 
-static const uint32_t sdPrimaryFreq = 16000000;   // 16MHz لتسريع قراءة ومعاينة الملفات
-static const uint32_t sdFallbackFreq = 4000000;   // 4MHz احتياطي
+// ترددات الـ SPI: 10MHz تردد أساسي مستقر جداً، و 4MHz تردد احتياطي
+static const uint32_t sdPrimaryFreq = 10000000;   // 10MHz لأقصى توافقية مع مختلف أنواع الكروت والأسلاك
+static const uint32_t sdFallbackFreq = 4000000;   // 4MHz احتياطي فائق الاستقرار
 static const unsigned long sdRetryIntervalMs = 15000;
 
 struct SDPinSet {
@@ -14,42 +15,68 @@ struct SDPinSet {
     const char* name;
 };
 
-// أطراف الـ Hardware FSPI الافتراضية لأقصى استقرار
-static const SDPinSet sdPinSets[] = {
-    {10, 12, 13, 11, "HW_FSPI_10-12-13-11"},
-    {13, 14, 12, 11, "Safe_Pins_13-14-12-11"},
-};
+// أطراف الـ Hardware FSPI الحقيقية والمثبتة في الهاردوير
+static const SDPinSet activePins = {SD_CS_PIN, SD_SCK_PIN, SD_MISO_PIN, SD_MOSI_PIN, "HW_FSPI_10-12-13-11"};
 
 static bool sdInitialized = false;
 static unsigned long lastSdAttempt = 0;
 static String lastSdError = "not_started";
-static SDPinSet activePins = sdPinSets[0];
 static uint32_t cachedTotalMB = 0;
 static uint32_t cachedUsedMB = 0;
 static unsigned long lastSpaceCalcMs = 0;
 
-static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
+// بروتوكول استعادة وتحرير كارت الـ SD العالق برمجياً دون الحاجة لنزعه وتركيبه يدوياً
+static void recoverHungSDCard(const SDPinSet& pins) {
     pinMode(pins.cs, OUTPUT);
     digitalWrite(pins.cs, HIGH);
-    
-    // Enable internal pullups BEFORE SPI.begin to avoid disconnecting the SPI peripheral
+
     pinMode(pins.miso, INPUT_PULLUP);
     pinMode(pins.mosi, INPUT_PULLUP);
     pinMode(pins.sck, INPUT_PULLUP);
-    
+
     SPI.end();
-    delay(10);
+    delay(15);
     SPI.begin(pins.sck, pins.miso, pins.mosi, pins.cs);
     delay(20);
 
-    // Send 80+ dummy clock cycles with CS HIGH to release SD card from any interrupted SPI state after soft/watchdog reset
+    // 1. إرسال أكثر من 300 نبضة ساعة (Clocks) مع إبقاء CS HIGH لإجبار الكارت على إكمال أي عمليات معلقة
     digitalWrite(pins.cs, HIGH);
-    SPI.beginTransaction(SPISettings(400000, MSBFIRST, SPI_MODE0));
-    for (int i = 0; i < 16; ++i) {
+    SPI.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
+    for (int i = 0; i < 40; ++i) {
         SPI.transfer(0xFF);
     }
     SPI.endTransaction();
-    delay(20);
+    delay(10);
+
+    // 2. إرسال أمر CMD12 (Stop Transmission) لتحرير الكارت إذا كان عالقاً في قراءة متصلة (Multi-block Read)
+    digitalWrite(pins.cs, LOW);
+    delayMicroseconds(20);
+    SPI.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
+    SPI.transfer(0x4C); // CMD12
+    SPI.transfer(0x00);
+    SPI.transfer(0x00);
+    SPI.transfer(0x00);
+    SPI.transfer(0x00);
+    SPI.transfer(0x61); // CRC
+    // قراءة حتى يحرر الكارت خط البيانات MISO من حالة الانشغال (Busy)
+    for (int i = 0; i < 50; ++i) {
+        if (SPI.transfer(0xFF) != 0x00) break;
+    }
+    SPI.endTransaction();
+    digitalWrite(pins.cs, HIGH);
+    delayMicroseconds(50);
+
+    // 3. إرسال 20 بايت فارغة إضافية مع CS HIGH للتأكد من استقرار خط الـ SPI
+    SPI.beginTransaction(SPISettings(250000, MSBFIRST, SPI_MODE0));
+    for (int i = 0; i < 20; ++i) {
+        SPI.transfer(0xFF);
+    }
+    SPI.endTransaction();
+    delay(10);
+}
+
+static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
+    recoverHungSDCard(pins);
 
     if (!SD.begin(pins.cs, SPI, frequency)) {
         lastSdError = String(pins.name) + "_begin_failed_" + String(frequency);
@@ -74,7 +101,6 @@ static bool mountSD(const SDPinSet& pins, uint32_t frequency) {
         return false;
     }
 
-    activePins = pins;
     lastSdError = "OK";
     return true;
 }
@@ -94,26 +120,24 @@ bool initSDCard(bool force) {
 
     Serial.println("[SD] 🔄 Trying to mount SD Card...");
 
-    for (const SDPinSet& pins : sdPinSets) {
-        // محاولة أولى بسرعة معتدلة
-        if (mountSD(pins, sdPrimaryFreq)) {
-            sdInitialized = true;
-            Serial.printf("[SD] ✅ Card Mounted Successfully!\n");
-            Serial.printf("[SD] Type: %s | Size: %lu MB | Pins: CS=%u SCK=%u MISO=%u MOSI=%u\n",
-                          getSDCardTypeName(), (unsigned long)getSDTotalMB(),
-                          pins.cs, pins.sck, pins.miso, pins.mosi);
-            unlockSD();
-            return true;
-        }
-        
-        // محاولة احتياطية بسرعة أقل
-        if (mountSD(pins, sdFallbackFreq)) {
-            sdInitialized = true;
-            Serial.printf("[SD] ✅ Card Mounted Successfully (Fallback)\n");
-            Serial.printf("[SD] Type: %s | Size: %lu MB\n", getSDCardTypeName(), (unsigned long)getSDTotalMB());
-            unlockSD();
-            return true;
-        }
+    // محاولة أولى بتردد 10MHz
+    if (mountSD(activePins, sdPrimaryFreq)) {
+        sdInitialized = true;
+        Serial.printf("[SD] ✅ Card Mounted Successfully!\n");
+        Serial.printf("[SD] Type: %s | Size: %lu MB | Pins: CS=%u SCK=%u MISO=%u MOSI=%u (Freq: %lu Hz)\n",
+                      getSDCardTypeName(), (unsigned long)getSDTotalMB(),
+                      activePins.cs, activePins.sck, activePins.miso, activePins.mosi, (unsigned long)sdPrimaryFreq);
+        unlockSD();
+        return true;
+    }
+
+    // محاولة ثانية بتردد احتياطي 4MHz فائق الاستقرار
+    if (mountSD(activePins, sdFallbackFreq)) {
+        sdInitialized = true;
+        Serial.printf("[SD] ✅ Card Mounted Successfully (Fallback 4MHz)\n");
+        Serial.printf("[SD] Type: %s | Size: %lu MB\n", getSDCardTypeName(), (unsigned long)getSDTotalMB());
+        unlockSD();
+        return true;
     }
 
     Serial.printf("[SD] ❌ SD Card failed: %s\n", lastSdError.c_str());

@@ -2687,9 +2687,11 @@ void startWebServer() {
 
     // --- Event Logger APIs ---
     server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest *request) {
-        int limit = 200;
+        int limit = 50;
         if (request->hasParam("limit")) {
             limit = request->getParam("limit")->value().toInt();
+            if (limit > 80) limit = 80;
+            if (limit < 1) limit = 1;
         }
         String levelFilter = "";
         if (request->hasParam("level")) {
@@ -2698,7 +2700,9 @@ void startWebServer() {
 
         std::vector<String> logs = EventLogger::getInstance().getRecentLogs(limit, levelFilter);
         
-        String json = "[";
+        String json;
+        json.reserve(min((size_t)(logs.size() * 140 + 32), (size_t)12288));
+        json = "[";
         for (size_t i = 0; i < logs.size(); i++) {
             String line = logs[i];
             int p1 = line.indexOf('|');

@@ -33,7 +33,7 @@ static const char* defaultPass = "123456789";
 static const char* setupApName = "VivoSmart-Setup";
 static DNSServer dnsServer;
 static const unsigned long reconnectIntervalMs = 15000;
-static const unsigned long apEnableDelayMs = 15000;
+static const unsigned long apEnableDelayMs = 60000;
 static const unsigned long apDisableStableMs = 5000;
 IPAddress staticIP(192,168,1,100), gateway(192,168,1,1), subnet(255,255,255,0), dns(8,8,8,8);
 
@@ -295,15 +295,18 @@ void maintainWiFi() {
             return;
         }
 
-        // No client connected to Setup AP: allow a brief 5s check every 30s, then silence STA scanning for 25s
+        // No client connected to Setup AP: allow a 20s check every 40s to re-establish STA connection
         if (apStaTryActive) {
-            if (nowMs - apReconnectTryStartedAt >= 5000) {
+            if (WiFi.status() == WL_CONNECTED) {
+                apStaTryActive = false;
+                stopSetupAp();
+            } else if (nowMs - apReconnectTryStartedAt >= 20000) {
                 WiFi.setAutoReconnect(false);
                 WiFi.disconnect(false);
                 apStaTryActive = false;
                 lastReconnectAttempt = nowMs;
             }
-        } else if (nowMs - lastReconnectAttempt >= 30000) {
+        } else if (nowMs - lastReconnectAttempt >= 40000) {
             lastReconnectAttempt = nowMs;
             apReconnectTryStartedAt = nowMs;
             apStaTryActive = true;
