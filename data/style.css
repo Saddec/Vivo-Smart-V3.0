@@ -1516,3 +1516,175 @@ body.is-mobile.logged-in .mobile-header {
   filter: brightness(1.15);
 }
 
+/* =========================================================
+   Maghrib Weekly Alert Cards (Dedicated Scoped Styling)
+========================================================= */
+.maghrib-day-card {
+  background: rgba(18, 14, 38, 0.75) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(0, 242, 254, 0.22) !important;
+  border-radius: 16px !important;
+  padding: 22px !important;
+  margin-bottom: 18px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35) !important;
+  transition: all 0.3s ease !important;
+}
+
+.maghrib-day-card:hover {
+  border-color: rgba(0, 242, 254, 0.45) !important;
+  box-shadow: 0 10px 30px rgba(0, 242, 254, 0.15) !important;
+}
+
+.maghrib-card-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+  padding-bottom: 14px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+.maghrib-day-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.maghrib-day-badge {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 10px !important;
+  background: rgba(241, 196, 15, 0.15) !important;
+  border: 1px solid rgba(241, 196, 15, 0.3) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #f1c40f !important;
+  font-size: 18px !important;
+}
+
+.maghrib-day-name {
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  letter-spacing: 0.3px !important;
+}
+
+.maghrib-enable-pill {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+  padding: 8px 16px !important;
+  border-radius: 30px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+.maghrib-enable-pill span {
+  font-size: 13.5px !important;
+  font-weight: 600 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.maghrib-grid-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  gap: 16px !important;
+}
+
+.maghrib-form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.maghrib-form-label {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: none !important;
+}
+
+.maghrib-form-control {
+  width: 100% !important;
+  height: 46px !important;
+  padding: 8px 14px !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  background: rgba(10, 8, 28, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 10px !important;
+  color: #ffffff !important;
+  box-sizing: border-box !important;
+  transition: all 0.2s ease !important;
+}
+
+.maghrib-form-control:focus {
+  border-color: #00f2fe !important;
+  box-shadow: 0 0 12px rgba(0, 242, 254, 0.3) !important;
+  outline: none !important;
+}
+
+.maghrib-skip-box {
+  background: rgba(0, 0, 0, 0.3) !important;
+  border: 1px solid rgba(0, 242, 254, 0.2) !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+}
+
+.maghrib-skip-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+}
+
+.maghrib-skip-info {
+  flex: 1 1 240px !important;
+}
+
+.maghrib-skip-title {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #00f2fe !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-bottom: 4px !important;
+}
+
+.maghrib-skip-desc {
+  font-size: 12px !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  line-height: 1.5 !important;
+  display: block !important;
+}
+
+.maghrib-bottom-row {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: 16px !important;
+  align-items: center !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 12px !important;
+  padding: 14px 18px !important;
+}
+
+

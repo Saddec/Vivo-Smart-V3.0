@@ -2702,18 +2702,18 @@ function loadMaghribAlerts() {
       const radioOptions = radios.map(r => `<option value="${safeAttr(r.url)}" ${r.url === a.file ? 'selected' : ''}>${safeText(r.name)}</option>`).join('');
 
       return `
-        <div class="eid-alert-row" style="background:rgba(255,255,255,0.03); padding:18px; border-radius:14px; border:1px solid rgba(0,242,254,0.15); display:flex; flex-direction:column; gap:14px; box-shadow:0 4px 15px rgba(0,0,0,0.2);">
+        <div class="maghrib-day-card">
           
           <!-- رأس البطاقة: اليوم ومفتاح التفعيل -->
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">
-            <div style="display:flex; align-items:center; gap:10px;">
-              <div style="width:36px; height:36px; border-radius:10px; background:rgba(241,196,15,0.15); display:flex; align-items:center; justify-content:center; color:#f1c40f; font-size:16px;">
+          <div class="maghrib-card-header">
+            <div class="maghrib-day-title">
+              <div class="maghrib-day-badge">
                 <i class="fas fa-calendar-day"></i>
               </div>
-              <span style="font-size:17px; font-weight:bold; color:#ffffff;">يوم ${d}</span>
+              <span class="maghrib-day-name">يوم ${d}</span>
             </div>
-            <div style="display:flex; align-items:center; gap:10px; background:rgba(0,0,0,0.25); padding:6px 14px; border-radius:20px; border:1px solid rgba(255,255,255,0.08);">
-              <span style="font-size:13px; font-weight:bold; color:rgba(255,255,255,0.85);">تفعيل التنبيه لهذا اليوم</span>
+            <div class="maghrib-enable-pill">
+              <span>تفعيل التنبيه لهذا اليوم</span>
               <label class="switch" style="margin:0;">
                 <input type="checkbox" id="maghribEnabled_${i}" ${a.enabled ? 'checked' : ''}>
                 <span class="slider"></span>
@@ -2722,36 +2722,36 @@ function loadMaghribAlerts() {
           </div>
 
           <!-- الصف الأول: اختيار نوع ومصدر الصوت -->
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:15px;">
-            <div>
-              <label style="font-size:13px; font-weight:bold; color:rgba(255,255,255,0.85); display:block; margin-bottom:6px;"><i class="fas fa-broadcast-tower" style="color:#00f2fe;"></i> نوع التنبيه / البث</label>
-              <select id="maghribType_${i}" onchange="toggleMaghribType(${i})" style="width:100%; height:44px; margin:0; font-size:14px; border-radius:8px;">
+          <div class="maghrib-grid-row">
+            <div class="maghrib-form-group">
+              <label class="maghrib-form-label"><i class="fas fa-broadcast-tower" style="color:#00f2fe;"></i> نوع التنبيه / البث</label>
+              <select id="maghribType_${i}" onchange="toggleMaghribType(${i})" class="maghrib-form-control">
                 <option value="0" ${!isRadio ? 'selected' : ''}>📁 ملف صوتي من الذاكرة (SD Card)</option>
                 <option value="1" ${isRadio ? 'selected' : ''}>📻 إذاعة بث مباشر (Online Radio)</option>
               </select>
             </div>
 
-            <div id="maghribFileRow_${i}" style="${isRadio ? 'display:none;' : ''}">
-              <label style="font-size:13px; font-weight:bold; color:rgba(255,255,255,0.85); display:block; margin-bottom:6px;"><i class="fas fa-music" style="color:#e056fd;"></i> اختيار الملف الصوتي</label>
-              <select id="maghribFile_${i}" style="width:100%; height:44px; margin:0; font-size:14px; border-radius:8px;">
+            <div id="maghribFileRow_${i}" class="maghrib-form-group" style="${isRadio ? 'display:none;' : ''}">
+              <label class="maghrib-form-label"><i class="fas fa-music" style="color:#e056fd;"></i> اختيار الملف الصوتي</label>
+              <select id="maghribFile_${i}" class="maghrib-form-control">
                 ${fileOptions || '<option value="">لا توجد ملفات صوتية</option>'}
               </select>
             </div>
 
-            <div id="maghribRadioRow_${i}" style="${!isRadio ? 'display:none;' : ''}">
-              <label style="font-size:13px; font-weight:bold; color:rgba(255,255,255,0.85); display:block; margin-bottom:6px;"><i class="fas fa-satellite-dish" style="color:#2ecc71;"></i> اختيار محطة الإذاعة</label>
-              <select id="maghribRadio_${i}" style="width:100%; height:44px; margin:0; font-size:14px; border-radius:8px;">
+            <div id="maghribRadioRow_${i}" class="maghrib-form-group" style="${!isRadio ? 'display:none;' : ''}">
+              <label class="maghrib-form-label"><i class="fas fa-satellite-dish" style="color:#2ecc71;"></i> اختيار محطة الإذاعة</label>
+              <select id="maghribRadio_${i}" class="maghrib-form-control">
                 ${radioOptions || '<option value="">لا توجد محطات إذاعية</option>'}
               </select>
             </div>
           </div>
 
           <!-- الصف الثاني: خيارات إلغاء الأذان والإقامة المستقلة لكل يوم -->
-          <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:14px; display:flex; flex-direction:column; gap:12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
-              <div style="flex:1; min-width:240px;">
-                <strong style="font-size:13.5px; color:#00f2fe; display:block; margin-bottom:3px;"><i class="fas fa-volume-mute"></i> إلغاء أذان المغرب عند وجود تنبيه / إذاعة نشطة</strong>
-                <small style="color:rgba(255,255,255,0.65); font-size:12px; line-height:1.4; display:block;">عند تفعيله، لن يتم مقاطعة البث الإذاعي أو التنبيه الصوتي بأذان المغرب، وسيستمر الصوت بالعمل دون توقف.</small>
+          <div class="maghrib-skip-box">
+            <div class="maghrib-skip-row">
+              <div class="maghrib-skip-info">
+                <div class="maghrib-skip-title"><i class="fas fa-volume-mute"></i> إلغاء أذان المغرب عند وجود تنبيه / إذاعة نشطة</div>
+                <span class="maghrib-skip-desc">عند تفعيله، لن يتم مقاطعة البث الإذاعي أو التنبيه الصوتي بأذان المغرب، وسيستمر الصوت بالعمل دون توقف.</span>
               </div>
               <label class="switch" style="margin:0; flex-shrink:0;">
                 <input type="checkbox" id="maghribSkipAdhan_${i}" ${a.skipAdhan ? 'checked' : ''}>
@@ -2759,10 +2759,10 @@ function loadMaghribAlerts() {
               </label>
             </div>
 
-            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; border-top:1px solid rgba(255,255,255,0.06); padding-top:10px;">
-              <div style="flex:1; min-width:240px;">
-                <strong style="font-size:13.5px; color:#00f2fe; display:block; margin-bottom:3px;"><i class="fas fa-bell-slash"></i> إلغاء إقامة صلاة المغرب عند وجود تنبيه / إذاعة نشطة</strong>
-                <small style="color:rgba(255,255,255,0.65); font-size:12px; line-height:1.4; display:block;">عند تفعيله، لن يتم رفع تكبيرات إقامة المغرب حتى لا تقطع البث أو التنبيه المستمر.</small>
+            <div class="maghrib-skip-row" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:12px;">
+              <div class="maghrib-skip-info">
+                <div class="maghrib-skip-title"><i class="fas fa-bell-slash"></i> إلغاء إقامة صلاة المغرب عند وجود تنبيه / إذاعة نشطة</div>
+                <span class="maghrib-skip-desc">عند تفعيله، لن يتم رفع تكبيرات إقامة المغرب حتى لا تقطع البث أو التنبيه المستمر.</span>
               </div>
               <label class="switch" style="margin:0; flex-shrink:0;">
                 <input type="checkbox" id="maghribSkipIqama_${i}" ${a.skipIqama ? 'checked' : ''}>
@@ -2772,26 +2772,26 @@ function loadMaghribAlerts() {
           </div>
 
           <!-- الصف الثالث: المدة والصوت وأزرار التحكم -->
-          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:10px; padding:12px 16px;">
+          <div class="maghrib-bottom-row">
             <div>
-              <label style="font-size:12.5px; font-weight:bold; color:rgba(255,255,255,0.8); display:block; margin-bottom:4px;"><i class="fas fa-stopwatch" style="color:#f39c12;"></i> مدة التشغيل (بالدقائق)</label>
-              <input type="number" id="maghribLoop_${i}" value="${a.loop || 0}" min="0" max="180" placeholder="0 = حتى الأذان" style="margin:0; width:100%; height:40px; box-sizing:border-box; border-radius:8px;">
-              <small style="font-size:11px; color:rgba(255,255,255,0.5); display:block; margin-top:3px;">0 تعني الاستمرار حتى وقت أذان المغرب</small>
+              <label class="maghrib-form-label" style="margin-bottom:6px;"><i class="fas fa-stopwatch" style="color:#f39c12;"></i> مدة التشغيل (بالدقائق)</label>
+              <input type="number" id="maghribLoop_${i}" value="${a.loop || 0}" min="0" max="180" placeholder="0 = حتى الأذان" class="maghrib-form-control">
+              <small style="font-size:11px; color:rgba(255,255,255,0.5); display:block; margin-top:4px;">0 تعني الاستمرار حتى وقت أذان المغرب</small>
             </div>
 
             <div>
-              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <label style="font-size:12.5px; font-weight:bold; color:rgba(255,255,255,0.8); margin:0;"><i class="fas fa-volume-up" style="color:#2ecc71;"></i> مستوى الصوت</label>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <label class="maghrib-form-label" style="margin:0;"><i class="fas fa-volume-up" style="color:#2ecc71;"></i> مستوى الصوت</label>
                 <span id="magVolVal_${i}" style="font-weight:bold; color:#00f2fe; font-size:14px; background:rgba(0,242,254,0.1); padding:2px 8px; border-radius:6px;">${a.volume || 15}</span>
               </div>
-              <input type="range" id="maghribVolume_${i}" value="${a.volume || 15}" min="0" max="30" oninput="$('magVolVal_${i}').textContent=this.value" style="width:100%; margin:0;">
+              <input type="range" id="maghribVolume_${i}" value="${a.volume || 15}" min="0" max="30" oninput="$('magVolVal_${i}').textContent=this.value" style="width:100%; margin:0; cursor:pointer;">
             </div>
 
             <div style="display:flex; gap:10px; justify-content:flex-end; align-items:center;">
-              <button type="button" class="pres-action-btn pres-btn-play" onclick="testMaghribItem(${i})" title="تجربة تشغيل هذا التنبيه" style="min-width:100px; height:42px;">
+              <button type="button" class="pres-action-btn pres-btn-play" onclick="testMaghribItem(${i})" title="تجربة تشغيل هذا التنبيه" style="min-width:100px; height:44px;">
                 <i class="fas fa-play"></i> تجربة
               </button>
-              <button type="button" class="pres-action-btn pres-btn-delete" onclick="stopAudio()" title="إيقاف الصوت" style="min-width:80px; height:42px;">
+              <button type="button" class="pres-action-btn pres-btn-delete" onclick="stopAudio()" title="إيقاف الصوت" style="min-width:80px; height:44px;">
                 <i class="fas fa-stop"></i> إيقاف
               </button>
             </div>
